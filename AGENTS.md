@@ -67,6 +67,12 @@ scrolling/sliders, and `rx <Idle|MPos:125,84.5,-12|WCO:100,50,-20|FS:0,0>` for
 sample feedback. Commands use LCD pixels with origin at the upper left.
 Physical two-finger pinch is not supplied by the single-pointer injection device.
 
+Wi-Fi credentials persist in the `panelwifi` NVS namespace after obtaining an IP.
+Startup reconnects automatically; transient disconnects retry once per second
+within the 30-second connection window. Explicit Disconnect stops retries.
+`tools/check-wifi-reboot.py` checks three RTS reboots using saved credentials;
+it restores UART-disconnected demo mode and physical touch afterward.
+
 For the complete command reference, console protocol, failure handling and
 reproduction steps, read [docs/device-ui-development.md](docs/device-ui-development.md).
 `tools/capture-gallery.py` is the repeatable page/dialog capture sequence. It

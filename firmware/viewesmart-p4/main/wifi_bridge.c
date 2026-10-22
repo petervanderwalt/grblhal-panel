@@ -22,8 +22,8 @@ static QueueHandle_t queue;
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 static wifi_bridge_state_t state = {.status = "Not connected"};
 static wifi_config_t config;
-static bool initialized, ignore_disconnect;
-static uint32_t started;
+static bool initialized, ignore_disconnect, retry_pending;
+static uint32_t started, retry_since;
 #define LOCK() portENTER_CRITICAL(&lock)
 #define UNLOCK() portEXIT_CRITICAL(&lock)
 static uint32_t now(void) { return xTaskGetTickCount() * portTICK_PERIOD_MS; }
@@ -33,6 +33,7 @@ static void status(const char *text) {
     UNLOCK();
 }
 static void failure(esp_err_t err) {
+    retry_pending = false;
     char message[96];
     snprintf(message, sizeof message, "Wi-Fi: %s", esp_err_to_name(err));
     LOCK();
@@ -107,6 +108,7 @@ static void save(void) {
         status("Connected; could not save network");
 }
 static void connect_network(const request_t *r) {
+    retry_pending = false;
     wifi_bridge_state_t previous;
     wifi_bridge_snapshot(&previous);
     esp_err_t err = start();
@@ -169,6 +171,7 @@ static void worker(void *arg) {
             } else if (r.type == CONNECT)
                 connect_network(&r);
             else if (r.type == DISCONNECT) {
+                retry_pending = false;
                 wifi_bridge_state_t previous;
                 wifi_bridge_snapshot(&previous);
                 ignore_disconnect = previous.connected;
@@ -214,15 +217,24 @@ static void worker(void *arg) {
                 if (ignore_disconnect)
                     ignore_disconnect = false;
                 else {
-                    char text[96];
-                    snprintf(text, sizeof text, "Connection failed / disconnected (%d)", r.reason);
                     LOCK();
-                    state.connected = state.connecting = false;
+                    bool reconnect = state.connected || state.connecting;
+                    if (state.connected)
+                        started = now();
+                    state.connected = false;
+                    state.connecting = reconnect;
                     state.ip[0] = 0;
                     UNLOCK();
+                    // The C6 can miss the first authentication after startup.
+                    retry_pending = reconnect;
+                    retry_since = now();
+                    char text[96];
+                    snprintf(text, sizeof text, reconnect ? "Retrying connection (%d)..." :
+                             "Disconnected (%d)", r.reason);
                     status(text);
                 }
             } else if (r.type == GOT_IP) {
+                retry_pending = false;
                 LOCK();
                 state.connected = true;
                 state.connecting = false;
@@ -236,6 +248,13 @@ static void worker(void *arg) {
         }
         wifi_bridge_state_t current;
         wifi_bridge_snapshot(&current);
+        if (retry_pending && !current.scanning && now() - retry_since >= 1000 &&
+            now() - started <= 30000) {
+            retry_pending = false;
+            esp_err_t err = esp_wifi_connect();
+            if (err != ESP_OK)
+                failure(err);
+        }
         if (current.connected && !current.scanning && now() - signal_at >= 5000) {
             signal_at = now();
             int rssi = 0;
@@ -248,8 +267,10 @@ static void worker(void *arg) {
         if ((current.scanning || current.connecting) && now() - started > 30000) {
             if (current.scanning)
                 esp_wifi_scan_stop();
-            else
+            else {
+                ignore_disconnect = true;
                 esp_wifi_disconnect();
+            }
             failure(ESP_ERR_TIMEOUT);
         }
     }
