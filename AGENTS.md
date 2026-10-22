@@ -153,6 +153,8 @@ parent afterward. Page rebuilds cancel slides and restore x=0. Mode and speed
 selection update in place; only change matrix disabled flags when readiness changes.
 Command-busy locks input immediately but keeps setup colours steady for the first
 200 ms while Idle; offline, faults, Hold and sustained busy states use pale disabled styling.
+Speed/mode selectors retain their checked palette throughout Idle/Jog while input
+is unavailable; they still grey out for disconnect, Hold, alarms and errors.
 Use subtle button
 gradients and card shadows. Fault dialogs have square edges and red title bands; successful
 completion uses green. Include simulated alarms and errors in workflow checks.

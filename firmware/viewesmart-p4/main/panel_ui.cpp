@@ -314,6 +314,7 @@ static void enable_choices(lv_obj_t *m, bool on, bool brief_busy = false) {
         lv_obj_set_style_text_color(m, lv_color_hex(brief_busy ? (checked ? BLUE : TEXT) : MUTED), selector);
         lv_obj_set_style_border_color(m, lv_color_hex(brief_busy && checked ? BLUE : LINE), selector);
         lv_obj_set_style_border_width(m, brief_busy ? (checked ? 2 : 1) : 0, selector);
+        lv_obj_set_style_color_filter_opa(m, LV_OPA_TRANSP, selector);
     }
     if (unchanged)
         return;
@@ -1181,9 +1182,12 @@ static void refresh(lv_timer_t *) {
     else if (!busy_since)
         busy_since = now();
     bool brief_busy = command_busy && now() - busy_since < 200;
+    bool steady_selection = state.online && state.identified && state.status && !state.alarm &&
+                            !state.error && !state.sd_active &&
+                            (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3));
     enable(probe_btn, on, brief_busy);
-    enable_choices(speed_choices, on, brief_busy);
-    enable_choices(mode_choices, on, brief_busy);
+    enable_choices(speed_choices, on, steady_selection);
+    enable_choices(mode_choices, on, steady_selection);
     enable(step_dropdown, on && !continuous, brief_busy && !continuous);
     char s[256];
     snprintf(s, sizeof s, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
