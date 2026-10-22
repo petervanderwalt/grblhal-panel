@@ -111,6 +111,10 @@ sample data from demonstration mode; Wi-Fi uses the onboard radio.
 
 ![Continuous jog with distance disabled](docs/screenshots/panel-jog-continuous.png)
 
+**Disconnected**
+
+![Disconnected Jog controls](docs/screenshots/panel-jog-disconnected.png)
+
 **Disabled controls during Hold**
 
 ![Readable disabled jog arrows during Hold](docs/screenshots/panel-jog-disabled.png)

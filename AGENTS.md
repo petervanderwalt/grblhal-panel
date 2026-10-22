@@ -152,6 +152,10 @@ completion uses green. Include simulated alarms and errors in workflow checks.
 Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero
 use quiet flat backgrounds with subtle axis-coloured outlines; DRO action buttons
 are quiet too. Keep the jog pad and orange Probe action prominent.
+Neutral buttons and dropdowns use light fills and dark text. Jog speed and mode
+use native one-checked button matrices with pale blue selection styling.
+Probe and jog selectors are disabled and pale whenever machine setup is unavailable.
+Set per-item DISABLED controls on button matrices as well as the widget state.
 The Settings section is labelled Probe, without Defaults.
 Jog DRO and jog-pad cards are both 440 px high. There is no small footer status
 label. Notices use dialogs; the header alarm/error status reopens fault dialogs.

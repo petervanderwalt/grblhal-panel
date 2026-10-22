@@ -51,7 +51,8 @@ static lv_obj_t *left_surface, *right_surface, *tabview;
 static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
 static lv_obj_t *root, *body, *state_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[3];
-static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause;
+static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause, *probe_btn;
+static lv_obj_t *speed_choices, *mode_choices, *step_dropdown;
 static lv_obj_t *axis_zero[3], *axis_home[3];
 static lv_obj_t *axis_name[3], *machine_heading, *work_heading;
 static uint8_t jog_speed = 0;
@@ -192,12 +193,14 @@ static lv_obj_t *label(lv_obj_t *p, const char *s, int x, int y, int w, int size
 }
 static lv_obj_t *button(lv_obj_t *p, const char *s, int x, int y, int w, int h, lv_event_cb_t cb,
                         uintptr_t data = 0, uint32_t color = EDGE) {
+    if (color == EDGE)
+        color = BG;
     lv_obj_t *b = lv_button_create(p);
     lv_obj_set_pos(b, x, y);
     lv_obj_set_size(b, w, h);
     lv_obj_set_style_bg_color(b, lv_color_hex(color), 0);
     lv_obj_set_style_bg_grad_color(b, lv_color_lighten(lv_color_hex(color), 24), 0);
-    lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_grad_dir(b, color == BG ? LV_GRAD_DIR_NONE : LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_radius(b, 14, 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_set_style_shadow_ofs_y(b, 3, 0);
@@ -242,6 +245,53 @@ static void soften(lv_obj_t *b, uint32_t accent = LINE) {
     lv_obj_set_style_border_width(b, 1, 0);
     lv_obj_set_style_border_color(b, lv_color_mix(lv_color_hex(accent), lv_color_hex(CARD), 72), 0);
     lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(TEXT), 0);
+}
+static lv_obj_t *choices(lv_obj_t *parent, const char *const *map, int selected, int x, int y, int w, int h,
+                    lv_event_cb_t callback) {
+    lv_obj_t *m = lv_buttonmatrix_create(parent);
+    lv_obj_set_pos(m, x, y);
+    lv_obj_set_size(m, w, h);
+    lv_buttonmatrix_set_map(m, map);
+    lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_NO_REPEAT);
+    lv_buttonmatrix_set_one_checked(m, true);
+    lv_buttonmatrix_set_button_ctrl(m, selected, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_set_style_bg_opa(m, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(m, 0, 0);
+    lv_obj_set_style_pad_all(m, 0, 0);
+    lv_obj_set_style_pad_column(m, 8, 0);
+    lv_obj_set_style_bg_color(m, lv_color_hex(BG), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(m, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_bg_grad_dir(m, LV_GRAD_DIR_NONE, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(m, 0, LV_PART_ITEMS);
+    lv_obj_set_style_radius(m, 14, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(m, font(16), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(m, lv_color_hex(TEXT), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(m, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(m, lv_color_hex(LINE), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(m, lv_color_hex(0xE8E9FA), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(m, lv_color_hex(BLUE), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(m, lv_color_hex(BLUE), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(m, 2, LV_PART_ITEMS | LV_STATE_CHECKED);
+    const lv_style_selector_t disabled[] = {LV_PART_ITEMS | LV_STATE_DISABLED,
+                                            LV_PART_ITEMS | LV_STATE_DISABLED | LV_STATE_CHECKED};
+    for (auto selector : disabled) {
+        lv_obj_set_style_bg_color(m, lv_color_hex(DISABLED), selector);
+        lv_obj_set_style_text_color(m, lv_color_hex(MUTED), selector);
+        lv_obj_set_style_border_color(m, lv_color_hex(LINE), selector);
+        lv_obj_set_style_border_width(m, 0, selector);
+    }
+    lv_obj_add_event_cb(m, callback, LV_EVENT_VALUE_CHANGED, nullptr);
+    return m;
+}
+static void enable_choices(lv_obj_t *m, bool on) {
+    if (!m)
+        return;
+    enable(m, on);
+    if (on)
+        lv_buttonmatrix_clear_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_DISABLED);
+    else
+        lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_DISABLED);
 }
 static bool ready() {
     return state.online && state.status && state.identified && !state.busy && !state.alarm && !state.error &&
@@ -475,12 +525,12 @@ static void jog_event(lv_event_t *e) {
 }
 static void jog_mode(lv_event_t *e) {
     release_jog();
-    continuous = (uintptr_t)lv_event_get_user_data(e);
+    continuous = lv_buttonmatrix_get_selected_button((lv_obj_t *)lv_event_get_target(e)) == 1;
     build_page();
 }
 static void speed_click(lv_event_t *e) {
     release_jog();
-    jog_speed = (uintptr_t)lv_event_get_user_data(e);
+    jog_speed = lv_buttonmatrix_get_selected_button((lv_obj_t *)lv_event_get_target(e));
     save();
     build_page();
 }
@@ -631,8 +681,11 @@ static lv_obj_t *dropdown(lv_obj_t *parent, const char *options, int selected, i
     lv_obj_set_size(d, width, 48);
     lv_dropdown_set_options(d, options);
     lv_dropdown_set_selected(d, selected);
-    lv_obj_set_style_bg_color(d, lv_color_hex(EDGE), 0);
-    lv_obj_set_style_text_color(d, lv_color_hex(WHITE), 0);
+    lv_obj_set_style_bg_color(d, lv_color_hex(BG), 0);
+    lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_grad_dir(d, LV_GRAD_DIR_NONE, 0);
+    lv_obj_set_style_text_color(d, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_text_color(d, lv_color_hex(TEXT), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(d, LV_OPA_COVER, LV_STATE_DISABLED);
     lv_obj_set_style_text_color(d, lv_color_hex(MUTED), LV_STATE_DISABLED);
     lv_obj_set_style_text_color(d, lv_color_hex(MUTED), LV_PART_INDICATOR | LV_STATE_DISABLED);
@@ -913,6 +966,7 @@ static void build_page() {
     wifi_row_status = nullptr;
     file_box = file_title = progress = progress_text = time_text = start_btn = refresh_btn = nullptr;
     feed_slider = spindle_slider = feed_text = spindle_text = nullptr;
+    speed_choices = mode_choices = step_dropdown = nullptr;
     gcode_viewer_detach();
     lv_obj_clean(body);
     runtime_snapshot(state);
@@ -929,14 +983,12 @@ static void build_page() {
     if (page == 0) {
         label(body, "JOG FEEDRATE", 0, 0, 270, 12, MUTED);
         label(body, "JOG DISTANCE", 282, 0, 218, 12, MUTED);
-        const char *speeds[] = {"Fast", "Med", "Slow"};
-        for (int i = 0; i < 3; i++)
-            button(body, speeds[i], i * 90, 20, 80, 48, speed_click, i, jog_speed == i ? BLUE : EDGE);
-        button(body, "Incremental", 0, 80, 246, 56, jog_mode, 0, !continuous ? BLUE : EDGE);
-        button(body, "Continuous", 254, 80, 246, 56, jog_mode, 1, continuous ? BLUE : EDGE);
-        enable(dropdown(body, inches ? "0.01 in\n0.1 in\n1 in\n10 in" : "0.1 mm\n1 mm\n10 mm\n100 mm",
-                        step_index, 282, 20, 218, step_changed),
-               !continuous);
+        static const char *const speeds[] = {"Fast", "Med", "Slow", ""};
+        static const char *const modes[] = {"Incremental", "Continuous", ""};
+        speed_choices = choices(body, speeds, jog_speed, 0, 20, 260, 48, speed_click);
+        mode_choices = choices(body, modes, continuous ? 1 : 0, 0, 80, 500, 56, jog_mode);
+        step_dropdown = dropdown(body, inches ? "0.01 in\n0.1 in\n1 in\n10 in" : "0.1 mm\n1 mm\n10 mm\n100 mm",
+                                 step_index, 282, 20, 218, step_changed);
         const char *names[] = {
             LV_SYMBOL_LEFT " " LV_SYMBOL_UP,   "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,   "X-", "X+",
             LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
@@ -1074,6 +1126,10 @@ static void refresh(lv_timer_t *) {
         }
     }
     bool on = ready();
+    enable(probe_btn, on);
+    enable_choices(speed_choices, on);
+    enable_choices(mode_choices, on);
+    enable(step_dropdown, on && !continuous);
     char s[256];
     snprintf(s, sizeof s, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
     lv_label_set_text(state_label, s);
@@ -1212,6 +1268,7 @@ extern "C" void panel_ui_create() {
     right_surface = surface(root, 500, 64, 516, 440);
     label(root, "grblHAL", 16, 20, 148, 22, WHITE);
     wifi_header = button(root, "", 548, 4, 460, 52, show_wifi);
+    lv_obj_set_style_bg_color(wifi_header, lv_color_hex(EDGE), 0);
     lv_obj_delete(lv_obj_get_child(wifi_header, 0));
     lv_obj_set_style_bg_grad_dir(wifi_header, LV_GRAD_DIR_NONE, 0);
     lv_obj_set_style_shadow_width(wifi_header, 0, 0);
@@ -1293,7 +1350,7 @@ extern "C" void panel_ui_create() {
     jog_tools = box(root, 16, 400, 472, 80, BG);
     lv_obj_set_style_border_width(jog_tools, 0, 0);
     lv_obj_set_style_bg_opa(jog_tools, LV_OPA_TRANSP, 0);
-    button(jog_tools, "Probe", 0, 0, 228, 64, show_probe, 0, 0xA95B12);
+    probe_btn = button(jog_tools, "Probe", 0, 0, 228, 64, show_probe, 0, 0xA95B12);
     wcs_dropdown = dropdown(jog_tools, "G54\nG55\nG56\nG57\nG58\nG59", 0, 244, 8, 228, wcs);
     job_controls = box(root, 16, 330, 228, 80, BG);
     lv_obj_set_style_border_width(job_controls, 0, 0);
