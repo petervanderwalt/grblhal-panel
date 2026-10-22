@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "gcode_viewer.h"
 #include "panel_debug.h"
+#include "panel_upload.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,6 +46,7 @@ static bool send_line(void *, const char *s) {
 }
 extern "C" bool panel_debug_test() {
     bool ok = panel::model_self_test();
+    ok = upload_self_test() && ok;
     bool viewer = gcode_viewer_parser_test();
     printf("@UGTEST %s viewer_parser\n", viewer ? "PASS" : "FAIL");
     return ok && viewer;
@@ -72,6 +74,33 @@ static bool send_rt(void *, uint8_t b) {
     return installed && uart_write_bytes(UART_NUM_1, &b, 1) == 1;
 }
 static Model model(send_line, send_rt, nullptr);
+static char *upload_data;
+static uint32_t upload_revision;
+static bool relist;
+static bool send_raw(void *, const uint8_t *bytes, size_t size) {
+    return installed && !demo && uart_write_bytes(UART_NUM_1, bytes, size) == (int)size;
+}
+static Upload upload(send_raw, nullptr);
+static void finish_upload() {
+    if (!upload_data)
+        return;
+    model.state.upload_success = upload.success();
+    model.state.upload_bytes = upload.transferred();
+    model.state.upload_revision = ++upload_revision;
+    snprintf(model.state.message, sizeof model.state.message, "%s", upload.message());
+    model.transfer_finished(now());
+    rx_used = 0;
+    rx_overflow = false;
+    relist = upload.success();
+    free(upload_data);
+    upload_data = nullptr;
+}
+static void cancel_upload(const char *reason) {
+    if (upload_data) {
+        upload.cancel(reason);
+        finish_upload();
+    }
+}
 static void mock_reply() {
     if (!pending) {
         return;
@@ -132,6 +161,7 @@ static void worker(void *) {
             uart_event_t event;
             while (xQueueReceive(uart_events, &event, 0) == pdTRUE) {
                 if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL) {
+                    cancel_upload("UART overflow during SD upload");
                     model.disconnect();
                     uart_flush_input(UART_NUM_1);
                     used = 0;
@@ -147,6 +177,10 @@ static void worker(void *) {
                     break;
                 for (int i = 0; i < n; i++) {
                     uint8_t c = bytes[i];
+                    if (model.state.uploading) {
+                        upload.receive(c, now());
+                        continue;
+                    }
                     if (c == '\r' || c == '\n') {
                         if (overflow && model.state.downloading) {
                             model.disconnect();
@@ -173,7 +207,18 @@ static void worker(void *) {
             model.state.last_status = t;
             demo_status = t;
         }
-        model.tick(t);
+        if (upload_data) {
+            upload.tick(t);
+            model.state.upload_bytes = upload.transferred();
+            if (!upload.active())
+                finish_upload();
+        }
+        if (!model.state.uploading)
+            model.tick(t);
+        if (relist && model.idle()) {
+            relist = false;
+            model.list();
+        }
         if (demo)
             mock_reply();
         xSemaphoreGive(mutex);
@@ -192,6 +237,7 @@ bool runtime_connect(int tx, int rx, int baud) {
     if (tx < 0 || tx > 54 || rx < 0 || rx > 54 || tx == rx || baud < 9600 || baud > 921600)
         return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
+    cancel_upload("SD upload cancelled by reconnect");
     if (installed) {
         uart_driver_delete(UART_NUM_1);
         installed = false;
@@ -228,6 +274,7 @@ bool runtime_connect(int tx, int rx, int baud) {
 }
 void runtime_disconnect() {
     xSemaphoreTake(mutex, portMAX_DELAY);
+    cancel_upload("SD upload disconnected");
     if (installed)
         uart_driver_delete(UART_NUM_1);
     installed = false;
@@ -299,6 +346,7 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         ok = model.resume();
         break;
     case Action::Stop:
+        cancel_upload("SD upload stopped");
         ok = model.stop();
         break;
     case Action::JogCancel:
@@ -380,6 +428,44 @@ bool runtime_preview_acquire(const char **data, size_t *size) {
 void runtime_preview_release() {
     xSemaphoreTake(mutex, portMAX_DELAY);
     preview_locked = false;
+    xSemaphoreGive(mutex);
+}
+bool runtime_can_upload() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ready = installed && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    xSemaphoreGive(mutex);
+    return ready;
+}
+bool runtime_upload(const char *path, const char *data, size_t size) {
+    if (!path || !data || !size || size > MaxPreviewBytes)
+        return false;
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ready = installed && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    if (ready) {
+        upload_data = (char *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ready = upload_data != nullptr;
+        if (ready) {
+            memcpy(upload_data, data, size);
+            model.state.uploading = model.state.busy = true;
+            model.state.upload_success = false;
+            model.state.upload_bytes = 0;
+            model.state.upload_total = size;
+            model.state.upload_revision = ++upload_revision;
+            snprintf(model.state.upload_path, sizeof model.state.upload_path, "%s", path);
+            rx_used = 0;
+            rx_overflow = false;
+            uart_flush_input(UART_NUM_1);
+            ready = upload.start(path, upload_data, size, now());
+            if (!ready)
+                finish_upload();
+        }
+    }
+    xSemaphoreGive(mutex);
+    return ready;
+}
+void runtime_cancel_upload() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    cancel_upload("SD upload cancelled");
     xSemaphoreGive(mutex);
 }
 } // namespace panel

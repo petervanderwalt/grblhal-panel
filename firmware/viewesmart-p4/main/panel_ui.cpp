@@ -5,17 +5,24 @@
 #include "lvgl.h"
 #include "nvs.h"
 #include "panel_runtime.h"
+#include "wifi_bridge.h"
 #include <atomic>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+extern "C" {
+LV_IMAGE_DECLARE(panel_wifi_lock);
+}
 
 namespace {
 using namespace panel;
-constexpr uint32_t BG = 0x101923, CARD = 0x192837, EDGE = 0x2C4053, TEXT = 0xEAF2F8, MUTED = 0x9AAFC0,
-                   BLUE = 0x3FC6F4, RED = 0xF16B73, GREEN = 0x62D6AC, AMBER = 0xF5C768;
+constexpr uint32_t BG = 0xD9E2ED, CARD = 0xFFFFFF, EDGE = 0x303247, TEXT = 0x303247, MUTED = 0x68758B,
+                   BLUE = 0x5356C9, RED = 0xDC383B, GREEN = 0x40A943, AMBER = 0xF2B94F, WHITE = 0xFFFFFF,
+                   LINE = 0xE2E8F1, DISABLED = 0xE8EDF5;
+constexpr uint32_t AXIS_COLORS[] = {RED, 0x2D8530, BLUE};
+constexpr uint32_t XY_COLOR = 0x247C87;
 struct Preferences {
     uint32_t magic = 0x50414E31;
     ProbeSettings probe;
@@ -23,6 +30,15 @@ struct Preferences {
 };
 static Preferences prefs;
 static State state;
+static wifi_bridge_state_t wifi;
+static lv_obj_t *wifi_row_status, *wifi_status, *wifi_list, *wifi_spinner, *wifi_scan_btn,
+    *wifi_disconnect_btn, *wifi_password;
+static unsigned wifi_revision;
+static char wifi_ssid[33];
+static uint8_t wifi_auth;
+static bool wifi_attempt;
+static lv_obj_t *wifi_password_error;
+static void show_wifi(lv_event_t * = nullptr);
 enum { JogPage, FilesPage, SettingsPage, JobPage, CompletePage };
 static int page = JogPage;
 static bool inches = false, probe_return = false;
@@ -31,7 +47,9 @@ static lv_obj_t *jog_tools, *wcs_dropdown, *feed_slider, *spindle_slider, *feed_
 static int fault_seen = 0;
 static uint32_t override_sent = 0;
 static void show_probe(lv_event_t * = nullptr);
-static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis_work[3], *axis_machine[3],
+static lv_obj_t *left_surface, *right_surface, *tabview;
+static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
+static lv_obj_t *root, *body, *state_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[3];
 static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause;
 static lv_obj_t *axis_zero[3], *axis_home[3];
@@ -46,8 +64,8 @@ static char preview_path[160], preview_message[192];
 static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *start_btn, *refresh_btn,
     *probe_start, *probe_status, *contact_btn;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
-static char selected[160] = "", notice[192] = "";
-static uint32_t revision = 0, notice_until = 0;
+static char selected[160] = "";
+static uint32_t revision = 0;
 static bool continuous = false, jog_held = false;
 static lv_obj_t *jog_buttons[10];
 static int jog_count;
@@ -60,6 +78,7 @@ struct Edit {
     bool converted = false;
 };
 static Edit editing;
+static char edit_initial[24];
 static bool (*confirmation)() = nullptr;
 static void build_page();
 static void release_jog();
@@ -72,9 +91,10 @@ static uint32_t now() { return lv_tick_get(); }
 static void layout_stop() {
     if (!stop_btn)
         return;
-    bool job = page == JobPage && !modal;
-    lv_obj_set_pos(stop_btn, job ? 260 : 790, job ? 330 : 528);
-    lv_obj_set_size(stop_btn, job ? 228 : 218, job ? 80 : 64);
+    if (page == JobPage && !modal)
+        lv_obj_remove_flag(stop_btn, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(stop_btn, LV_OBJ_FLAG_HIDDEN);
 }
 static void save() {
     nvs_handle_t h;
@@ -141,12 +161,24 @@ static lv_obj_t *box(lv_obj_t *p, int x, int y, int w, int h, uint32_t color = C
     lv_obj_set_pos(o, x, y);
     lv_obj_set_size(o, w, h);
     lv_obj_set_style_bg_color(o, lv_color_hex(color), 0);
-    lv_obj_set_style_border_color(o, lv_color_hex(EDGE), 0);
+    lv_obj_set_style_border_color(o, lv_color_hex(LINE), 0);
     lv_obj_set_style_border_width(o, 1, 0);
-    lv_obj_set_style_radius(o, 12, 0);
+    lv_obj_set_style_radius(o, 16, 0);
     lv_obj_set_style_pad_all(o, 0, 0);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
     return o;
+}
+static lv_obj_t *surface(lv_obj_t *p, int x, int y, int w, int h) {
+    lv_obj_t *o = box(p, x, y, w, h);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_shadow_width(o, 14, 0);
+    lv_obj_set_style_shadow_ofs_y(o, 4, 0);
+    lv_obj_set_style_shadow_color(o, lv_color_hex(EDGE), 0);
+    lv_obj_set_style_shadow_opa(o, LV_OPA_10, 0);
+    return o;
+}
+static uint32_t button_text(uint32_t color) {
+    return color == AMBER || color == CARD || color == BG ? TEXT : WHITE;
 }
 static lv_obj_t *label(lv_obj_t *p, const char *s, int x, int y, int w, int size = 16,
                        uint32_t color = TEXT) {
@@ -164,14 +196,20 @@ static lv_obj_t *button(lv_obj_t *p, const char *s, int x, int y, int w, int h, 
     lv_obj_set_pos(b, x, y);
     lv_obj_set_size(b, w, h);
     lv_obj_set_style_bg_color(b, lv_color_hex(color), 0);
-    lv_obj_set_style_radius(b, 10, 0);
+    lv_obj_set_style_bg_grad_color(b, lv_color_lighten(lv_color_hex(color), 24), 0);
+    lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_radius(b, 14, 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_style_shadow_ofs_y(b, 3, 0);
+    lv_obj_set_style_shadow_color(b, lv_color_hex(color), 0);
+    lv_obj_set_style_shadow_opa(b, LV_OPA_20, 0);
+    lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_NONE, LV_STATE_DISABLED);
+    lv_obj_set_style_shadow_opa(b, LV_OPA_TRANSP, LV_STATE_DISABLED);
     lv_obj_set_style_pad_all(b, 3, 0);
     lv_obj_t *l = lv_label_create(b);
     lv_label_set_text(l, s);
     lv_obj_set_style_text_font(l, font(16), 0);
-    lv_obj_set_style_text_color(
-        l, lv_color_hex((color == BLUE || color == GREEN || color == AMBER) ? BG : TEXT), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(button_text(color)), 0);
     lv_obj_set_width(l, w - 10);
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(l);
@@ -187,29 +225,22 @@ static void enable(lv_obj_t *b, bool on) {
     else
         lv_obj_add_state(b, LV_STATE_DISABLED);
     lv_obj_set_style_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(EDGE), LV_STATE_DISABLED);
+    lv_obj_set_style_bg_color(b, lv_color_hex(DISABLED), LV_STATE_DISABLED);
     lv_obj_set_style_color_filter_opa(b, LV_OPA_TRANSP, LV_STATE_DISABLED);
     if (lv_obj_check_type(b, &lv_button_class) && lv_obj_get_child_count(b)) {
         lv_obj_t *text = lv_obj_get_child(b, 0);
         if (lv_obj_check_type(text, &lv_label_class)) {
             uint32_t color = lv_color_to_u32(lv_obj_get_style_bg_color(b, 0)) & 0xFFFFFF;
-            lv_obj_set_style_text_color(text,
-                                        lv_color_hex(!on ? MUTED
-                                                     : (color == BLUE || color == GREEN || color == AMBER)
-                                                         ? BG
-                                                         : TEXT),
-                                        0);
-        }
+            lv_obj_set_style_text_color(text, lv_color_hex(on ? button_text(color) : MUTED), 0);
+        } else if (lv_obj_check_type(text, &lv_line_class))
+            lv_obj_set_style_line_color(text, lv_color_hex(on ? WHITE : MUTED), 0);
     }
 }
 static bool ready() {
     return state.online && state.status && state.identified && !state.busy && !state.alarm && !state.error &&
            !state.sd_active && !strcmp(state.mode, "Idle");
 }
-static void notify(const char *s) {
-    snprintf(notice, sizeof notice, "%s", s);
-    notice_until = now() + 5000;
-}
+static void notify(const char *s);
 static void result(bool ok) {
     if (!ok)
         notify("Action unavailable: check connection, machine state and setup.");
@@ -221,16 +252,23 @@ static void close_modal() {
     number = nullptr;
     number_error = nullptr;
     confirmation = nullptr;
+    wifi_password_error = nullptr;
+    wifi_status = wifi_list = wifi_spinner = wifi_scan_btn = wifi_disconnect_btn = wifi_password = nullptr;
     probe_start = probe_status = contact_btn = nullptr;
     layout_stop();
 }
-static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320) {
+static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320, uint32_t accent = BLUE) {
     close_modal();
-    modal = box(lv_layer_top(), 0, 0, 1024, 600, BG);
+    modal = box(lv_layer_top(), 0, 0, 1024, 600, EDGE);
     lv_obj_set_style_bg_opa(modal, LV_OPA_80, 0);
     lv_obj_set_style_radius(modal, 0, 0);
-    lv_obj_t *card = box(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
-    label(card, title, 24, 22, width - 48, 22);
+    lv_obj_t *card = surface(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
+    if (accent == RED)
+        lv_obj_set_style_radius(card, 0, 0);
+    lv_obj_t *heading = box(card, 0, 0, width, 64, accent);
+    lv_obj_set_style_border_width(heading, 0, 0);
+    lv_obj_set_style_radius(heading, 0, 0);
+    label(card, title, 24, 22, width - 48, 22, WHITE);
     layout_stop();
     lv_obj_move_foreground(stop_btn);
     return card;
@@ -252,12 +290,17 @@ static void cancelled(lv_event_t *) {
         show_probe();
     }
 }
-static void confirm(const char *title, const char *text, bool (*fn)()) {
-    lv_obj_t *c = open_modal(title);
+static void notify(const char *s) {
+    lv_obj_t *c = open_modal("Notice");
+    label(c, s, 24, 90, 552, 18);
+    button(c, "OK", 24, 242, 552, 54, cancelled, 0, BLUE);
+}
+static void confirm(const char *title, const char *text, bool (*fn)(), uint32_t accent = BLUE) {
+    lv_obj_t *c = open_modal(title, 600, 320, accent);
     label(c, text, 24, 78, 552, 18, MUTED);
     confirmation = fn;
     button(c, "Cancel", 24, 242, 220, 54, cancelled);
-    button(c, "Confirm", 264, 242, 312, 54, confirmed, 0, BLUE);
+    button(c, "Confirm", 264, 242, 312, 54, confirmed, 0, accent);
 }
 static void key(lv_event_t *e) {
     const char *k = (const char *)lv_event_get_user_data(e);
@@ -274,6 +317,8 @@ static void apply_number(lv_event_t *) {
     float f = strtof(s, &end);
     if (editing.converted)
         f *= display_scale(inches);
+    if (!strcmp(s, edit_initial))
+        f = *editing.value;
     if (!*s || *end || !isfinite(f) || f < editing.min || f > editing.max ||
         (editing.integer && floorf(f) != f)) {
         lv_label_set_text(number_error, "Outside range / check the number");
@@ -299,8 +344,9 @@ static void edit(Edit e) {
     lv_textarea_set_max_length(number, 10);
     lv_textarea_set_accepted_chars(number, "0123456789.");
     char value[24];
-    snprintf(value, sizeof value, e.integer ? "%.0f" : (inches ? "%.5f" : "%.3f"),
+    snprintf(value, sizeof value, e.integer ? "%.0f" : "%.3f",
              *e.value / (e.converted ? display_scale(inches) : 1));
+    snprintf(edit_initial, sizeof edit_initial, "%s", value);
     lv_textarea_set_text(number, value);
     lv_obj_set_style_text_font(number, font(28), 0);
     lv_obj_set_style_bg_color(number, lv_color_hex(BG), 0);
@@ -357,7 +403,7 @@ static void edit_value(lv_event_t *e) {
 }
 static void value_button(lv_obj_t *p, const char *title, float value, int x, int y, int w, int id) {
     char text[80];
-    snprintf(text, sizeof text, id >= 8 ? "%s\n%.0f" : (inches ? "%s\n%.5f" : "%s\n%.3f"), title,
+    snprintf(text, sizeof text, id >= 8 ? "%s\n%.0f" : "%s\n%.3f", title,
              value / (id < 8 ? display_scale(inches) : 1));
     button(p, text, x, y, w, 66, edit_value, id);
 }
@@ -464,12 +510,6 @@ static void view_action(lv_event_t *e) {
     case 1:
         gcode_viewer_set_preset(GCODE_VIEW_PRESET_ISO);
         break;
-    case 2:
-        gcode_viewer_zoom(1.25f);
-        break;
-    case 3:
-        gcode_viewer_zoom(.8f);
-        break;
     }
 }
 static void file_action(lv_event_t *e) {
@@ -563,7 +603,7 @@ static void jog_arrow(lv_obj_t *button, int direction) {
     lv_obj_t *line = lv_line_create(button);
     lv_line_set_points(line, points[direction], 5);
     lv_obj_set_size(line, 48, 48);
-    lv_obj_set_style_line_color(line, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_line_color(line, lv_color_hex(WHITE), 0);
     lv_obj_set_style_line_width(line, 3, 0);
     lv_obj_set_style_line_rounded(line, true, 0);
     lv_obj_remove_flag(line, LV_OBJ_FLAG_CLICKABLE);
@@ -581,7 +621,11 @@ static lv_obj_t *dropdown(lv_obj_t *parent, const char *options, int selected, i
     lv_dropdown_set_options(d, options);
     lv_dropdown_set_selected(d, selected);
     lv_obj_set_style_bg_color(d, lv_color_hex(EDGE), 0);
-    lv_obj_set_style_text_color(d, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_text_color(d, lv_color_hex(WHITE), 0);
+    lv_obj_set_style_bg_opa(d, LV_OPA_COVER, LV_STATE_DISABLED);
+    lv_obj_set_style_text_color(d, lv_color_hex(MUTED), LV_STATE_DISABLED);
+    lv_obj_set_style_text_color(d, lv_color_hex(MUTED), LV_PART_INDICATOR | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_grad_dir(d, LV_GRAD_DIR_NONE, LV_STATE_DISABLED);
     lv_obj_set_style_border_width(d, 0, 0);
     lv_obj_set_style_text_font(d, font(18), 0);
     lv_obj_t *list = lv_dropdown_get_list(d);
@@ -611,12 +655,16 @@ static void demo_click(lv_event_t *) { runtime_demo(!runtime_is_demo()); }
 static bool unlock() { return runtime_action(Action::Unlock); }
 static bool acknowledge() { return runtime_action(Action::Acknowledge); }
 static void recover(lv_event_t *) {
-    if (state.alarm)
-        confirm("Unlock alarm?",
+    char title[64];
+    if (state.alarm) {
+        snprintf(title, sizeof title, "ALARM %d / Unlock?", state.alarm);
+        confirm(title,
                 "Find and remove the alarm cause first.\n$X unlocks; it does not restore a lost position.",
-                unlock);
-    else if (state.error)
-        confirm("Acknowledge command error?", state.message, acknowledge);
+                unlock, RED);
+    } else if (state.error) {
+        snprintf(title, sizeof title, "ERROR %d / Acknowledge?", state.error);
+        confirm(title, state.message, acknowledge, RED);
+    }
     else
         notify("No active alarm or command error.");
 }
@@ -626,7 +674,7 @@ static void navigate(lv_event_t *e) {
         return;
     close_modal();
     preview_show = false;
-    show_page((uintptr_t)lv_event_get_user_data(e));
+    show_page(lv_tabview_get_tab_active(tabview));
 }
 static void visibility(lv_obj_t *o, bool visible) {
     if (visible)
@@ -649,18 +697,19 @@ static void layout_dro() {
         visibility(axis_zero[i], jog);
         lv_obj_set_pos(axis_machine[i], 120, 24);
         lv_obj_set_width(axis_machine[i], 104);
-        lv_obj_set_pos(axis_work[i], jog ? 230 : 260, 18);
+        lv_obj_set_pos(axis_work[i], jog ? 230 : 260, jog ? 16 : 18);
         lv_obj_set_width(axis_work[i], jog ? 148 : 192);
-        lv_obj_set_style_text_font(axis_work[i], font(22), 0);
+        lv_obj_set_style_text_font(axis_work[i], font(jog ? 28 : 22), 0);
     }
     visibility(machine_heading, jog || job);
     visibility(work_heading, jog || job);
+    visibility(left_surface, jog || job);
+    visibility(right_surface, jog || job);
+    visibility(tabview, page < JobPage);
     visibility(job_controls, job);
     layout_stop();
     visibility(dro_actions, jog);
     visibility(jog_tools, jog);
-    for (int i = 0; i < 3; i++)
-        visibility(nav[i], page < JobPage);
 }
 static void show_probe(lv_event_t *) {
     lv_obj_t *c = open_modal("Corner probe", 920, 440);
@@ -708,15 +757,141 @@ static lv_obj_t *override_control(const char *title, int y, bool spindle, lv_obj
     lv_obj_set_size(slider, 452, 18);
     lv_slider_set_range(slider, 10, 200);
     lv_slider_set_value(slider, 100, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(EDGE), 0);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(LINE), 0);
     lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_KNOB);
     lv_obj_set_style_pad_all(slider, 12, LV_PART_KNOB);
     lv_obj_add_event_cb(slider, override_changed, LV_EVENT_RELEASED, (void *)(uintptr_t)spindle);
     return slider;
 }
+static void wifi_result(esp_err_t err) {
+    if (err != ESP_OK)
+        notify(esp_err_to_name(err));
+}
+static void wifi_scan(lv_event_t *) { wifi_result(wifi_bridge_scan()); }
+static void wifi_disconnect(lv_event_t *) { wifi_result(wifi_bridge_disconnect()); }
+static void wifi_connect(lv_event_t *) {
+    const char *password = lv_textarea_get_text(wifi_password);
+    if (wifi_auth && strlen(password) < 8) {
+        lv_label_set_text(wifi_password_error, "Use at least 8 characters");
+        return;
+    }
+    esp_err_t err = wifi_bridge_connect(wifi_ssid, password);
+    if (err != ESP_OK) {
+        lv_label_set_text(wifi_password_error, esp_err_to_name(err));
+        return;
+    }
+    wifi_attempt = true;
+    show_wifi();
+}
+static void wifi_password_visible(lv_event_t *e) {
+    lv_obj_t *check = (lv_obj_t *)lv_event_get_target(e);
+    lv_textarea_set_password_mode(wifi_password, !lv_obj_has_state(check, LV_STATE_CHECKED));
+}
+static void wifi_choose(lv_event_t *e) {
+    unsigned i = (uintptr_t)lv_event_get_user_data(e);
+    if (i >= wifi.count || wifi.scanning || wifi.connecting)
+        return;
+    snprintf(wifi_ssid, sizeof wifi_ssid, "%s", wifi.networks[i].ssid);
+    wifi_auth = wifi.networks[i].authmode;
+    char title[64];
+    snprintf(title, sizeof title, "Connect to Wi-Fi: %s", wifi_ssid);
+    lv_obj_t *c = open_modal(title, 920, 500);
+    wifi_password = lv_textarea_create(c);
+    lv_obj_set_pos(wifi_password, 24, 108);
+    lv_obj_set_size(wifi_password, 872, 54);
+    lv_textarea_set_one_line(wifi_password, true);
+    lv_textarea_set_password_mode(wifi_password, true);
+    lv_textarea_set_max_length(wifi_password, 64);
+    lv_textarea_set_password_show_time(wifi_password, 0);
+    wifi_password_error = label(c, "", 24, 164, 872, 12, RED);
+    lv_textarea_set_placeholder_text(wifi_password, wifi_auth ? "Password" : "Open network");
+    lv_obj_set_style_bg_color(wifi_password, lv_color_hex(BG), 0);
+    lv_obj_set_style_text_color(wifi_password, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_text_font(wifi_password, font(22), 0);
+    button(c, "Cancel", 24, 182, 200, 54, show_wifi);
+    button(c, "Connect", 688, 182, 208, 54, wifi_connect, 0, BLUE);
+    lv_obj_t *check = lv_checkbox_create(c);
+    lv_obj_set_pos(check, 260, 198);
+    lv_checkbox_set_text(check, "Show password");
+    lv_obj_set_style_text_color(check, lv_color_hex(TEXT), 0);
+    lv_obj_add_event_cb(check, wifi_password_visible, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *keyboard = lv_keyboard_create(c);
+    lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(keyboard, 24, 252);
+    lv_obj_set_size(keyboard, 872, 222);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_keyboard_set_textarea(keyboard, wifi_password);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(BG), 0);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(EDGE), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(WHITE), LV_PART_ITEMS);
+}
+static void wifi_networks() {
+    lv_obj_clean(wifi_list);
+    for (unsigned i = 0; i < wifi.count; i++) {
+        lv_obj_t *row = button(wifi_list, "", 0, i * 66, 870, 58, wifi_choose, i, CARD);
+        lv_obj_set_style_bg_grad_dir(row, LV_GRAD_DIR_NONE, 0);
+        lv_obj_set_style_radius(row, 0, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_shadow_width(row, 0, 0);
+        lv_obj_delete(lv_obj_get_child(row, 0));
+        label(row, wifi.networks[i].ssid, 16, 18, 610, 20);
+        char signal[64];
+        snprintf(signal, sizeof signal, "%d dBm", wifi.networks[i].rssi);
+        lv_obj_t *strength = label(row, signal, 650, 20, 148, 16, MUTED);
+        lv_obj_set_style_text_align(strength, LV_TEXT_ALIGN_RIGHT, 0);
+        if (wifi.networks[i].authmode) {
+            lv_obj_t *lock = lv_image_create(row);
+            lv_image_set_src(lock, &panel_wifi_lock);
+            lv_obj_set_pos(lock, 814, 20);
+            lv_obj_set_style_image_recolor(lock, lv_color_hex(MUTED), 0);
+            lv_obj_set_style_image_recolor_opa(lock, LV_OPA_COVER, 0);
+        }
+    }
+    wifi_revision = wifi.revision;
+}
+static void show_wifi(lv_event_t *) {
+    wifi_bridge_snapshot(&wifi);
+    if (!wifi.scanning && !wifi.connecting && !wifi.count)
+        wifi_scan(nullptr);
+    lv_obj_t *c = open_modal("Wi-Fi", 920, 480);
+    lv_obj_set_style_radius(c, 0, 0);
+    wifi_scan_btn = button(c, "Scan", 560, 80, 140, 52, wifi_scan);
+    wifi_disconnect_btn = button(c, "Disconnect", 712, 80, 184, 52, wifi_disconnect);
+    lv_obj_t *close = button(c, LV_SYMBOL_CLOSE, 832, 8, 64, 48, cancelled, 0, BLUE);
+    lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_grad_dir(close, LV_GRAD_DIR_NONE, 0);
+    wifi_status = label(c, "", 80, 92, 450, 18);
+    lv_label_set_long_mode(wifi_status, LV_LABEL_LONG_DOT);
+    wifi_spinner = lv_spinner_create(c);
+    lv_obj_set_pos(wifi_spinner, 24, 86);
+    lv_obj_set_size(wifi_spinner, 36, 36);
+    lv_obj_set_style_arc_color(wifi_spinner, lv_color_hex(BLUE), LV_PART_INDICATOR);
+    wifi_list = box(c, 24, 144, 872, 304, CARD);
+    lv_obj_set_style_border_width(wifi_list, 0, 0);
+    lv_obj_set_style_radius(wifi_list, 0, 0);
+    lv_obj_add_flag(wifi_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(wifi_list, LV_DIR_VER);
+    wifi_networks();
+    refresh(nullptr);
+}
+static void wifi_result_ok(lv_event_t *) {
+    close_modal();
+    build_page();
+}
+static void wifi_notification() {
+    lv_obj_t *c = open_modal(wifi.connected ? "Successfully connected" : "Could not connect", 600, 320,
+                             wifi.connected ? GREEN : RED);
+    char message[192];
+    if (wifi.connected)
+        snprintf(message, sizeof message, "%s\nIP address: %s", wifi.ssid, wifi.ip);
+    else
+        snprintf(message, sizeof message, "%s\n%s", wifi.ssid, wifi.status);
+    label(c, message, 24, 90, 552, 20, wifi.connected ? GREEN : RED);
+    button(c, "OK", 24, 242, 552, 54, wifi_result_ok, 0, wifi.connected ? GREEN : RED);
+}
 static void setting_row(lv_obj_t *parent, const char *title, float value, int y, int id) {
-    lv_obj_t *row = box(parent, 0, y, 970, 76);
+    lv_obj_t *row = surface(parent, 0, y, 970, 76);
     label(row, title, 20, 25, 620, 20);
     char text[48];
     snprintf(text, sizeof text, id >= 8 ? "%.0f" : "%.3f %s", value / (id < 8 ? display_scale(inches) : 1),
@@ -726,6 +901,7 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
 static void build_page() {
     release_jog();
     jog_count = 0;
+    wifi_row_status = nullptr;
     file_box = file_title = progress = progress_text = time_text = start_btn = refresh_btn = nullptr;
     feed_slider = spindle_slider = feed_text = spindle_text = nullptr;
     gcode_viewer_detach();
@@ -735,8 +911,12 @@ static void build_page() {
     lv_obj_set_pos(body, page == JogPage || page == JobPage ? 508 : 16, 76);
     lv_obj_set_size(body, page == JogPage || page == JobPage ? 500 : 992, 424);
     lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
-    for (int i = 0; i < 3; i++)
-        lv_obj_set_style_bg_color(nav[i], lv_color_hex(i == page ? 0x25445B : BG), 0);
+    if (page < JobPage)
+        lv_tabview_set_active(tabview, page, LV_ANIM_OFF);
+    bool floating = page == JogPage || page == JobPage || page == SettingsPage;
+    lv_obj_set_style_bg_color(body, lv_color_hex(CARD), 0);
+    lv_obj_set_style_bg_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_10, 0);
     if (page == 0) {
         label(body, "JOG FEEDRATE", 0, 0, 270, 12, MUTED);
         label(body, "JOG DISTANCE", 282, 0, 218, 12, MUTED);
@@ -752,10 +932,13 @@ static void build_page() {
             LV_SYMBOL_LEFT " " LV_SYMBOL_UP,   "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,   "X-", "X+",
             LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
         const int cells[] = {0, 1, 2, 3, 5, 6, 7, 8};
+        const uint32_t colors[] = {XY_COLOR, AXIS_COLORS[1], XY_COLOR, AXIS_COLORS[0], AXIS_COLORS[0],
+                                   XY_COLOR, AXIS_COLORS[1], XY_COLOR, AXIS_COLORS[2], AXIS_COLORS[2]};
         for (int i = 0; i < 10; i++) {
             int x = i < 8 ? (cells[i] % 3) * 116 : 360;
             int y = i < 8 ? 152 + (cells[i] / 3) * 90 : (i == 8 ? 152 : 288);
-            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 108 : 140, i < 8 ? 80 : 124, nullptr);
+            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 108 : 140, i < 8 ? 80 : 124, nullptr, 0,
+                                 colors[i]);
             lv_obj_set_style_text_font(lv_obj_get_child(b, 0), font(28), 0);
             if (i < 8)
                 jog_arrow(b, i);
@@ -763,63 +946,76 @@ static void build_page() {
             jog_buttons[jog_count++] = b;
         }
     } else if (page == FilesPage && preview_show && state.download_ready) {
-        label(body, preview_path, 0, 0, 730, 20);
-        button(body, "Back to files", 784, 0, 208, 48, preview_back);
-        lv_obj_t *canvas = box(body, 0, 48, 764, 370);
-        gcode_viewer_attach(canvas, 764, 370);
-        button(body, "Top", 784, 70, 98, 64, view_action, 0);
-        button(body, "3D", 894, 70, 98, 64, view_action, 1);
-        button(body, LV_SYMBOL_PLUS, 784, 150, 98, 64, view_action, 2);
-        button(body, LV_SYMBOL_MINUS, 894, 150, 98, 64, view_action, 3);
-        start_btn = button(body, "Run from SD", 784, 350, 208, 64, start_click, 0, BLUE);
+        lv_obj_t *name = label(body, preview_path, 20, 18, 724, 20);
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        button(body, "Back to files", 768, 12, 204, 48, preview_back);
+        lv_obj_t *canvas = box(body, 16, 76, 740, 328);
+        lv_obj_set_style_radius(canvas, 0, 0);
+        lv_obj_set_style_border_width(canvas, 0, 0);
+        gcode_viewer_attach(canvas, 740, 328);
+        button(body, "Top", 772, 90, 96, 64, view_action, 0);
+        button(body, "3D", 880, 90, 96, 64, view_action, 1);
+        start_btn = button(body, "Run from SD", 772, 330, 204, 64, start_click, 0, BLUE);
     } else if (page == FilesPage) {
-        label(body, "Controller SD", 0, 0, 600, 22);
-        refresh_btn = button(body, "Refresh", 784, 0, 208, 48, list_click);
+        refresh_btn = button(body, "Refresh", 768, 12, 208, 48, list_click);
         label(body, "FILE", 16, 58, 500, 12, MUTED);
         label(body, "SIZE", 552, 58, 120, 12, MUTED);
-        file_box = box(body, 0, 80, 992, 340, BG);
+        file_box = box(body, 0, 80, 992, 340, CARD);
         lv_obj_add_flag(file_box, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(file_box, LV_DIR_VER);
         files();
     } else if (page == SettingsPage) {
         lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(body, LV_DIR_VER);
-        label(body, "Settings", 0, 0, 960, 22);
-        lv_obj_t *units = box(body, 0, 44, 970, 80);
+        label(body, "Settings", 0, 0, 960, 22, WHITE);
+        lv_obj_t *units = surface(body, 0, 44, 970, 80);
         label(units, "Display units", 20, 28, 500, 20);
         button(units, "mm", 680, 12, 130, 56, units_changed, 0, !inches ? BLUE : EDGE);
         button(units, "inch", 820, 12, 130, 56, units_changed, 1, inches ? BLUE : EDGE);
-        label(body, "Probe defaults", 0, 150, 960, 18, MUTED);
-        setting_row(body, "Plate X offset", prefs.probe.x, 182, 3);
-        setting_row(body, "Plate Y offset", prefs.probe.y, 270, 4);
-        setting_row(body, "Plate Z thickness", prefs.probe.z, 358, 5);
-        setting_row(body, "Probe feed", prefs.probe.feed, 446, 6);
-        setting_row(body, "Corner start inset", prefs.probe.inset, 534, 7);
-        label(body, "Controller UART", 0, 646, 960, 18, MUTED);
-        setting_row(body, "TX pin", prefs.tx, 678, 8);
-        setting_row(body, "RX pin", prefs.rx, 766, 9);
-        setting_row(body, "Baud rate", prefs.baud, 854, 10);
-        button(body, state.online ? "Disconnect" : "Connect controller", 0, 950, 472, 64, connect_click, 0,
+        lv_obj_t *network = surface(body, 0, 140, 970, 88);
+        label(network, "Wi-Fi", 20, 12, 620, 20);
+        wifi_row_status = label(network, "", 20, 46, 620, 14, MUTED);
+        button(network, "Networks", 680, 16, 270, 56, show_wifi);
+        label(body, "Probe", 0, 260, 960, 18, MUTED);
+        setting_row(body, "Plate X offset", prefs.probe.x, 292, 3);
+        setting_row(body, "Plate Y offset", prefs.probe.y, 380, 4);
+        setting_row(body, "Plate Z thickness", prefs.probe.z, 468, 5);
+        setting_row(body, "Probe feed", prefs.probe.feed, 556, 6);
+        setting_row(body, "Corner start inset", prefs.probe.inset, 644, 7);
+        label(body, "Controller UART", 0, 756, 960, 18, MUTED);
+        setting_row(body, "TX pin", prefs.tx, 788, 8);
+        setting_row(body, "RX pin", prefs.rx, 876, 9);
+        setting_row(body, "Baud rate", prefs.baud, 964, 10);
+        button(body, state.online ? "Disconnect" : "Connect controller", 0, 1060, 472, 64, connect_click, 0,
                BLUE);
-        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 950, 472, 64,
+        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 1060, 472, 64,
                demo_click);
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
         lv_obj_set_height(file_title, 26);
         lv_label_set_long_mode(file_title, LV_LABEL_LONG_DOT);
-        progress_text = label(body, "", 0, 48, 300, 32, BLUE);
-        time_text = label(body, "", 300, 62, 200, 20);
-        progress = lv_bar_create(body);
-        lv_obj_set_pos(progress, 0, 104);
-        lv_obj_set_size(progress, 500, 14);
-        lv_obj_set_style_bg_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
+        progress_text = label(body, "", 128, 48, 350, 32, BLUE);
+        time_text = label(body, "", 128, 96, 300, 20);
+        progress = lv_arc_create(body);
+        lv_obj_set_pos(progress, 0, 36);
+        lv_obj_set_size(progress, 100, 100);
+        lv_arc_set_rotation(progress, 270);
+        lv_arc_set_bg_angles(progress, 0, 360);
+        lv_arc_set_range(progress, 0, 100);
+        lv_obj_remove_style(progress, nullptr, LV_PART_KNOB);
+        lv_obj_remove_flag(progress, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_arc_width(progress, 7, 0);
+        lv_obj_set_style_arc_width(progress, 7, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(progress, lv_color_hex(LINE), 0);
+        lv_obj_set_style_arc_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
         feed_slider = override_control("Feed override", 148, false, &feed_text);
         spindle_slider = override_control("Speed override", 258, true, &spindle_text);
 
     } else if (page == CompletePage) {
-        label(body, "Job Complete", 140, 80, 712, 32, GREEN);
-        label(body, state.filename, 140, 144, 712, 22);
-        button(body, "OK", 290, 250, 412, 80, job_ok, 0, BLUE);
+        lv_obj_set_style_bg_color(body, lv_color_hex(GREEN), 0);
+        label(body, LV_SYMBOL_OK "  Job Complete", 140, 80, 712, 32, WHITE);
+        label(body, state.filename, 140, 144, 712, 22, WHITE);
+        button(body, "OK", 290, 250, 412, 80, job_ok, 0, CARD);
     }
     refresh(nullptr);
 }
@@ -839,7 +1035,8 @@ static void refresh(lv_timer_t *) {
     if (parsed == 2 || parsed == 3) {
         preview_parsing.store(0);
         preview_show = parsed == 2 && state.download_ready && !strcmp(preview_path, state.download_path);
-        notify(preview_message);
+        if (parsed == 3)
+            notify(preview_message);
         if (page == 1) {
             build_page();
             return;
@@ -874,31 +1071,22 @@ static void refresh(lv_timer_t *) {
                                              : state.status                    ? GREEN
                                                                                : MUTED),
                                 0);
-    snprintf(s, sizeof s, "G%d  /  %s  /  %s", state.wcs, inches ? "inch" : "mm",
-             state.identified ? (state.extended ? "RT 0x80" : "Legacy status") : "UART offline");
-    lv_label_set_text(protocol_label, s);
-    uint32_t colors[] = {RED, GREEN, BLUE};
     for (int i = 0; i < 3; i++) {
         if (state.coordinates && state.wco_known) {
-            snprintf(s, sizeof s, inches ? "% .4f" : "% .3f", state.work[i] / display_scale(inches));
+            snprintf(s, sizeof s, "% .3f", state.work[i] / display_scale(inches));
             lv_label_set_text(axis_work[i], s);
-            snprintf(s, sizeof s, inches ? "% .4f" : "% .3f", state.machine[i] / display_scale(inches));
+            snprintf(s, sizeof s, "% .3f", state.machine[i] / display_scale(inches));
             lv_label_set_text(axis_machine[i], s);
         } else {
             lv_label_set_text(axis_work[i], "--.---");
             lv_label_set_text(axis_machine[i], "M  --.---");
         }
         lv_obj_set_style_text_color(axis_work[i], lv_color_hex(state.status ? TEXT : MUTED), 0);
-        lv_obj_set_style_border_color(axis_card[i], lv_color_hex(state.status ? colors[i] : EDGE), 0);
     }
-    const char *msg = now() < notice_until ? notice : state.message;
     if (state.alarm || state.error)
-        snprintf(s, sizeof s, "%s %d / %s", state.alarm ? "ALARM" : "ERROR",
-                 state.alarm ? state.alarm : state.error, msg);
+        lv_obj_add_flag(state_label, LV_OBJ_FLAG_CLICKABLE);
     else
-        snprintf(s, sizeof s, "%s", msg);
-    lv_label_set_text(status_text, s);
-    lv_obj_set_style_text_color(status_text, lv_color_hex(state.alarm || state.error ? RED : MUTED), 0);
+        lv_obj_remove_flag(state_label, LV_OBJ_FLAG_CLICKABLE);
     for (int i = 0; i < 3; i++)
         enable(axis_zero[i], on);
     enable(zero_all_btn, on);
@@ -928,7 +1116,7 @@ static void refresh(lv_timer_t *) {
     if (page == JobPage && progress) {
         snprintf(s, sizeof s, "%.1f %%", state.percent);
         lv_label_set_text(progress_text, s);
-        lv_bar_set_value(progress, (int)state.percent, LV_ANIM_OFF);
+        lv_arc_set_value(progress, (int)state.percent);
         snprintf(s, sizeof s, "%02lu:%02lu:%02lu", (unsigned long)state.elapsed / 3600,
                  (unsigned long)state.elapsed / 60 % 60, (unsigned long)state.elapsed % 60);
         lv_label_set_text(time_text, s);
@@ -949,6 +1137,30 @@ static void refresh(lv_timer_t *) {
         enable(wcs_dropdown, on);
         if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59)
             lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
+    }
+    wifi_bridge_snapshot(&wifi);
+    lv_label_set_text(wifi_header_name, wifi.connected ? wifi.ssid : wifi.connecting ? "Connecting..." : "Not connected");
+    lv_label_set_text(wifi_header_ip, wifi.connected ? wifi.ip : "Wi-Fi");
+    lv_obj_set_style_text_color(wifi_icon, lv_color_hex(wifi.connected ? WHITE : MUTED), 0);
+    lv_obj_set_style_opa(wifi_icon, !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
+                                         wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50, 0);
+    if (wifi_attempt && !wifi.connecting && page < JobPage) {
+        wifi_attempt = false;
+        wifi_notification();
+    }
+    char network_status[160];
+    snprintf(network_status, sizeof network_status, wifi.connected && !wifi.scanning ? "%s / %s" : "%s",
+             wifi.connected && !wifi.scanning ? wifi.ssid : wifi.status, wifi.ip);
+    if (wifi_row_status)
+        lv_label_set_text(wifi_row_status, network_status);
+    if (wifi_status) {
+        lv_label_set_text(wifi_status, network_status);
+        visibility(wifi_spinner, wifi.scanning || wifi.connecting);
+        enable(wifi_scan_btn, !wifi.scanning && !wifi.connecting);
+        enable(wifi_disconnect_btn, wifi.connected && !wifi.scanning && !wifi.connecting);
+        if (wifi_revision != wifi.revision)
+            wifi_networks();
+        enable(wifi_list, !wifi.scanning && !wifi.connecting);
     }
     int fault = state.alarm ? state.alarm : -state.error;
     if (!fault)
@@ -975,32 +1187,75 @@ static void refresh(lv_timer_t *) {
 } // namespace
 extern "C" void panel_ui_create() {
     runtime_init();
+    wifi_result(wifi_bridge_init());
     load();
     root = lv_screen_active();
     lv_obj_set_style_bg_color(root, lv_color_hex(BG), 0);
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-    label(root, "grblHAL", 16, 20, 148, 22);
+    lv_obj_t *header = box(root, 0, 0, 1024, 136, EDGE);
+    lv_obj_set_style_radius(header, 0, 0);
+    lv_obj_set_style_border_width(header, 0, 0);
+    left_surface = surface(root, 8, 64, 488, 440);
+    right_surface = surface(root, 500, 64, 516, 440);
+    label(root, "grblHAL", 16, 20, 148, 22, WHITE);
+    wifi_header = button(root, "", 548, 4, 460, 52, show_wifi);
+    lv_obj_delete(lv_obj_get_child(wifi_header, 0));
+    lv_obj_set_style_bg_grad_dir(wifi_header, LV_GRAD_DIR_NONE, 0);
+    lv_obj_set_style_shadow_width(wifi_header, 0, 0);
+    wifi_header_name = label(wifi_header, "Not connected", 64, 4, 380, 18, WHITE);
+    lv_label_set_long_mode(wifi_header_name, LV_LABEL_LONG_DOT);
+    wifi_header_ip = label(wifi_header, "Wi-Fi", 64, 28, 380, 14, WHITE);
+    wifi_icon = label(wifi_header, LV_SYMBOL_WIFI, 16, 12, 40, 28, WHITE);
     state_label = label(root, "Disconnected", 174, 22, 352, 20, MUTED);
-    protocol_label = label(root, "UART offline", 690, 504, 318, 12, MUTED);
-    lv_obj_set_style_text_align(protocol_label, LV_TEXT_ALIGN_RIGHT, 0);
     const char *tabs[] = {"Jog", "Files", "Settings"};
-    for (int i = 0; i < 3; i++)
-        nav[i] = button(root, tabs[i], 16 + i * 254, 528, 244, 64, navigate, i, EDGE);
+    tabview = lv_tabview_create(root);
+    lv_obj_set_pos(tabview, 8, 528);
+    lv_obj_set_size(tabview, 1008, 72);
+    lv_obj_set_style_bg_opa(tabview, LV_OPA_TRANSP, 0);
+    lv_tabview_set_tab_bar_position(tabview, LV_DIR_BOTTOM);
+    lv_tabview_set_tab_bar_size(tabview, 72);
+    lv_obj_t *tab_bar = lv_tabview_get_tab_bar(tabview);
+    lv_obj_set_style_bg_color(tab_bar, lv_color_hex(CARD), 0);
+    lv_obj_set_style_pad_all(tab_bar, 0, 0);
+    lv_obj_set_style_pad_column(tab_bar, 0, 0);
+    for (int i = 0; i < 3; i++) {
+        lv_tabview_add_tab(tabview, tabs[i]);
+        const uint32_t accents[] = {BLUE, 0x2D8530, 0xA95B12};
+        lv_color_t accent = lv_color_hex(accents[i]);
+        nav[i] = lv_obj_get_child(tab_bar, i);
+        lv_obj_set_style_bg_opa(nav[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(nav[i], LV_OPA_COVER, LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(nav[i], lv_color_lighten(accent, 215), 0);
+        lv_obj_set_style_bg_color(nav[i], accent, LV_STATE_CHECKED);
+        lv_obj_set_style_bg_grad_color(nav[i], lv_color_lighten(accent, 24), LV_STATE_CHECKED);
+        lv_obj_set_style_bg_grad_dir(nav[i], LV_GRAD_DIR_VER, LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(nav[i], accent, 0);
+        lv_obj_set_style_text_color(nav[i], lv_color_hex(WHITE), LV_STATE_CHECKED);
+        lv_obj_set_style_text_font(nav[i], font(20), 0);
+        lv_obj_set_style_text_font(nav[i], font(22), LV_STATE_CHECKED);
+        lv_obj_set_style_radius(nav[i], 0, 0);
+        lv_obj_set_style_shadow_width(nav[i], 0, 0);
+        lv_obj_set_style_border_width(nav[i], 0, 0);
+        lv_obj_set_style_border_width(nav[i], 0, LV_STATE_CHECKED);
+    }
+    // Page content shares the persistent DRO and is rebuilt by the existing renderer.
+    lv_obj_add_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(tabview, navigate, LV_EVENT_VALUE_CHANGED, nullptr);
     const char *axes[] = {"X", "Y", "Z"};
-    uint32_t colors[] = {RED, GREEN, BLUE};
     for (int i = 0; i < 3; i++) {
         lv_obj_t *c = box(root, 16 + i * 336, 66, 320, 98);
         axis_card[i] = c;
-        axis_name[i] = label(c, axes[i], 16, 16, 30, 20, colors[i]);
+        lv_obj_set_style_border_width(c, 0, 0);
+        axis_name[i] = label(c, axes[i], 16, 16, 30, 20, AXIS_COLORS[i]);
         axis_work[i] = label(c, "--.---", 66, 10, 238, 32);
         lv_obj_set_style_text_align(axis_work[i], LV_TEXT_ALIGN_RIGHT, 0);
         axis_machine[i] = label(c, "M  --.---", 104, 65, 110, 14, MUTED);
         lv_obj_set_style_text_align(axis_machine[i], LV_TEXT_ALIGN_RIGHT, 0);
         char s[16];
         snprintf(s, sizeof s, "Home %c", "XYZ"[i]);
-        axis_home[i] = button(c, s, 12, 48, 84, 44, home_click, "XYZ"[i]);
+        axis_home[i] = button(c, s, 12, 48, 84, 44, home_click, "XYZ"[i], AXIS_COLORS[i]);
         snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
-        axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i);
+        axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i, AXIS_COLORS[i]);
     }
     machine_heading = label(root, "MACHINE", 136, 70, 104, 12, MUTED);
     work_heading = label(root, "WORK", 246, 70, 148, 12, MUTED);
@@ -1009,29 +1264,28 @@ extern "C" void panel_ui_create() {
 
     dro_actions = box(root, 16, 314, 472, 64, BG);
     lv_obj_set_style_border_width(dro_actions, 0, 0);
+    lv_obj_set_style_bg_opa(dro_actions, LV_OPA_TRANSP, 0);
     home_btn = button(dro_actions, "Home all", 0, 0, 112, 64, home_click);
     goto_buttons[0] = button(dro_actions, "Go to XY\nzero", 120, 0, 112, 64, goto_click, 3);
     goto_buttons[1] = button(dro_actions, "Go to Z\nzero", 240, 0, 112, 64, goto_click, 4);
     zero_all_btn = button(dro_actions, "Set zero\nall", 360, 0, 112, 64, zero_click, 7);
     jog_tools = box(root, 16, 400, 472, 80, BG);
     lv_obj_set_style_border_width(jog_tools, 0, 0);
+    lv_obj_set_style_bg_opa(jog_tools, LV_OPA_TRANSP, 0);
     button(jog_tools, "Probe", 0, 0, 228, 64, show_probe);
     wcs_dropdown = dropdown(jog_tools, "G54\nG55\nG56\nG57\nG58\nG59", 0, 244, 8, 228, wcs);
     job_controls = box(root, 16, 330, 228, 80, BG);
     lv_obj_set_style_border_width(job_controls, 0, 0);
+    lv_obj_set_style_bg_opa(job_controls, LV_OPA_TRANSP, 0);
     job_pause = button(job_controls, "Pause", 0, 0, 228, 80, job_pause_click, 0, AMBER);
     lv_obj_set_style_text_font(lv_obj_get_child(job_pause, 0), font(22), 0);
-    body = box(root, 16, 240, 992, 264, BG);
+    body = surface(root, 16, 240, 992, 264);
     lv_obj_set_style_border_width(body, 0, 0);
-    status_text = label(root, "Connect controller in Settings", 16, 504, 654, 14, MUTED);
-    lv_obj_set_height(status_text, 20);
-    lv_label_set_long_mode(status_text, LV_LABEL_LONG_DOT);
 
-    stop_btn = button(lv_layer_top(), "STOP", 790, 528, 218, 64, nullptr, 0, 0x8A353F);
+    stop_btn = button(root, "Stop", 260, 330, 228, 80, nullptr, 0, RED);
     lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_PRESSED, nullptr);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
-    lv_obj_add_flag(status_text, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(status_text, recover, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
     build_page();
     lv_timer_create(refresh, 100, nullptr);
 }
@@ -1041,4 +1295,11 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
              "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.tx,
              prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page);
+}
+
+extern "C" bool panel_ui_wifi_password(const char *password) {
+    if (!wifi_password || !password || strlen(password) > 64)
+        return false;
+    lv_textarea_set_text(wifi_password, password);
+    return true;
 }

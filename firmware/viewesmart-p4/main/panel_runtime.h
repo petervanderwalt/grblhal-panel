@@ -34,4 +34,7 @@ void runtime_last_tx(char *buffer, size_t size);
 bool model_self_test();
 bool runtime_preview_acquire(const char **data, size_t *size);
 void runtime_preview_release();
+bool runtime_can_upload();
+bool runtime_upload(const char *path, const char *data, size_t size);
+void runtime_cancel_upload();
 } // namespace panel

@@ -15,6 +15,7 @@
 #include "lvgl.h"
 #include "panel_debug.h"
 #include "panel_ui.h"
+#include "wifi_bridge.h"
 
 static lv_indev_t *remote_input;
 static lv_point_t touch_point;
@@ -35,7 +36,9 @@ static void input_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 static void reply(const char *text)
 {
-    uart_write_bytes(UART_NUM_0, text, strlen(text));
+    /* Share stdout's lock with SDK logs so each protocol line stays intact. */
+    fputs(text, stdout);
+    fflush(stdout);
 }
 
 static void screenshot(void)
@@ -130,6 +133,21 @@ static void command(const char *line)
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strcmp(line,"UG WIFI STATE")) {
+        char data[1024],out[1040]; wifi_bridge_debug(data,sizeof data);
+        snprintf(out,sizeof out,"@UGDATA %s\n",data);reply(out);
+    } else if (!strncmp(line,"UG WIFI PASSWORD ",17)) {
+        const char *hex = line + 17; size_t n = strlen(hex); char password[65] = {0};
+        bool valid = n <= 128 && n % 2 == 0;
+        for (size_t i = 0; valid && i < n; i += 2) {
+            unsigned byte; int used = 0;
+            if (sscanf(hex+i,"%2x%n",&byte,&used) != 1 || used != 2 || byte < 32 || byte > 126) valid = false;
+            else password[i/2] = byte;
+        }
+        bsp_display_lock(0);
+        bool ok = valid && panel_ui_wifi_password(password);
+        bsp_display_unlock(); memset(password,0,sizeof password);
+        reply(ok ? "@UGOK WIFI\n" : "@UGERR wifi_password_field\n");
     } else if (!strcmp(line, "UG SHOT")) {
         screenshot();
     } else if ((swipe || (sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 && line[consumed] == 0) ||

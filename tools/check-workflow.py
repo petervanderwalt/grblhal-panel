@@ -60,10 +60,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        # Close a previously opened modal using Stop, then reset the preview model.
-        tap(899, 560)
-        time.sleep(1)
-        tap(648, 560)
+        tap(848, 564)
         page(2)
         original_diameter = data("PREFS")["diameter"]
         tap(901, 160)
@@ -74,7 +71,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("SWIPE 500 460 500 160")
         time.sleep(.5)
         shot("panel-settings-uart")
-        tap(138, 560)
+        tap(176, 564)
         page(0)
         tap(631, 184)
         prefs = data("PREFS")
@@ -89,11 +86,11 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         number(".25")
         assert abs(data("PREFS")["diameter"] - 6.35) < .001
         tap(916, 118)
-        tap(648, 560)
+        tap(848, 564)
         tap(761, 160)
         assert data("PREFS")["inches"] == 0
         shot("panel-settings")
-        tap(138, 560)
+        tap(176, 564)
         shot("panel-jog")
         tap(130, 432)
         tap(280, 272)
@@ -107,9 +104,9 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(130, 432)
         tap(916, 118)  # Close probe
         page(0)
-        tap(392, 560)
+        tap(512, 564)
         page(1)
-        tap(904, 100)
+        tap(888, 112)
         assert data("STATE")["files"] == 3
         shot("panel-files")
         tap(922, 189)  # First row Run
@@ -119,7 +116,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert data("STATE")["job"]
         command("RX <Run|SD:42.5,/bracket.nc|MPos:125,84.5,-12|FS:800,12000|Ov:100,100,100>")
         time.sleep(.3)
-        tap(138, 560)
+        tap(176, 564)
         page(3)  # Jog cannot be reached during a job.
         tap(130, 370)
         assert "0x21" in command("LAST")
@@ -151,10 +148,17 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         time.sleep(.3)
         command("RX ALARM:1")
         time.sleep(.3)
-        tap(899, 560)  # Stop remains reachable above the fault dialog.
+        shot("panel-alarm")
+        tap(342, 409)  # Dismiss the fault dialog
+        tap(374, 370)  # Job Stop remains below the DRO
         time.sleep(.7)
         page(0)
         assert not data("STATE")["job"]
+        command("RX error:20")
+        time.sleep(.3)
+        shot("panel-error")
+        tap(630, 409)  # Acknowledge error
+        assert data("STATE")["error"] == 0
         print("PASS: units, settings scroll, probe modal, row Run, locked job screen, overrides, completion and Stop", flush=True)
     finally:
         command("TOUCH ON")

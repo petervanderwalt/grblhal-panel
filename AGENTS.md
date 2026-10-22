@@ -50,13 +50,29 @@ python tools/ui-remote.py --port COM12 session
 In session mode, enter these commands (paths may contain spaces):
 
 ```text
-shot captures/home.png
-tap 650 420
-shot captures/setup.png
-tap 70 565
-shot captures/home-again.png
+demo on
+touch off
+shot captures/jog.png
+tap 848 564
+shot captures/settings.png
+tap 176 564
+touch on
 quit
 ```
+
+`demo on` disconnects the real controller UART before injecting feedback. Always
+send it before automated machine-control tests. Wi-Fi remains a real C6 connection.
+Use `hold X Y MS` for continuous-jog press/release, `swipe X1 Y1 X2 Y2` for
+scrolling/sliders, and `rx <Idle|MPos:125,84.5,-12|WCO:100,50,-20|FS:0,0>` for
+sample feedback. Commands use LCD pixels with origin at the upper left.
+Physical two-finger pinch is not supplied by the single-pointer injection device.
+
+For the complete command reference, console protocol, failure handling and
+reproduction steps, read [docs/device-ui-development.md](docs/device-ui-development.md).
+`tools/capture-gallery.py` is the repeatable page/dialog capture sequence. It
+captures into ignored `captures/gallery/`; inspect every PNG before copying it to
+`docs/screenshots/`. The README gallery must show this firmware's actual LCD,
+not mockups or reconstructed layouts.
 
 Keep one session open for multi-step navigation. Session commands can also be
 piped from a text file. Only one serial client may own COM12. The host probes the
@@ -67,10 +83,9 @@ Inspect every resulting PNG before claiming a UI task complete. Test at least a
 navigation round trip. A capture takes seconds and depends on image complexity;
 do not treat this as video.
 
-Taps invoke real LVGL events and may activate machine controls. The user confirmed
-the CNC was disconnected for the initial tests. Reconfirm isolation before future
-tests involving motion, homing, probing, spindle, or job execution. Do not assume
-that today's disconnection remains true indefinitely.
+Taps invoke real LVGL events and may activate machine controls. Automated checks
+must use UART-disconnected preview. Before live controller tests outside preview,
+confirm machine isolation; do not assume an earlier disconnection still applies.
 
 ## Code to retain when porting this workflow
 
@@ -125,13 +140,36 @@ codes rather than displaying truncated geometry. Preserve responsive Stop during
 
 Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
 rows on the left and group the entire XYZ pad on the right, with Z immediately
-beside XY and a blank centre. Use Jog / Files / Settings navigation. Files and
-Settings have no DRO. Probe is a modal launched from Jog; remove Probe and Zero /
+beside XY and a blank centre. Use Jog / Files / Settings navigation.
+Jog work coordinates use 28 px type and DRO rows have no coloured borders.
+Do not show protocol command bytes or a redundant units/WCS footer to end users.
+The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
+duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
+Jog / Files / Settings tab accents are purple / green / orange, with opaque
+backgrounds and a solid selected fill; no top selection line. Use subtle button
+gradients and card shadows. Fault dialogs have square edges and red title bands; successful
+completion uses green. Include simulated alarms and errors in workflow checks.
+Axis jog, Home and Zero buttons use X red / Y green / Z blue; XY diagonals use teal.
+The Settings section is labelled Probe, without Defaults.
+Jog DRO and jog-pad cards are both 440 px high. There is no small footer status
+label. Notices use dialogs; the header alarm/error status reopens fault dialogs.
+Disabled dropdowns use solid light backgrounds and muted dark text and chevrons.
+Disabled XY/diagonal arrow strokes use the same muted dark colour as Z button text.
+File preview controls and filename are inset inside the card. Keep Top/3D and
+physical pinch zoom, without +/- buttons or successful download/parse notices.
+The file-list interior is white; the main grey background separates the cards.
+Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
+The Wi-Fi scan dialog has square bottom corners too. Keep touch buttons rounded.
+Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
+Scan rows show signal strength followed by a lock icon for secured networks; open
+networks have no lock. The Font Awesome glyph and license are in main/assets/.
+Files and Settings have no DRO. Probe is a modal launched from Jog; remove Probe and Zero /
 Home tabs. G54-G59 uses a dropdown on Jog. Keep labels short; omit instructional
 filler such as "tap once" and "move the set distance". Settings uses labelled rows.
 
-STOP stays visible above all pages/dialogs and sends Ctrl-X on touch-down without
-confirmation. Keep confirmations for homing, zeroing, probing and starting jobs.
+The controller has physical E-stop buttons. There is no global on-screen STOP.
+Job Stop sends Ctrl-X on touch-down without confirmation, below the DROs.
+Keep confirmations for homing, zeroing, probing and starting jobs.
 Keep per-axis Home/Zero on each Jog DRO, with Home all, Go to XY zero, Go to Z zero
 and Set zero all directly below. Set zero changes offsets; Go to zero moves.
 Go XY follows `DROHandler.goXY0()`: machine Z-5 mm, X0, Y0, restore machine Z.
@@ -152,12 +190,13 @@ time, Pause/Resume, Feed/Speed sliders and Stop. Hide navigation during jobs.
 Completion needs fresh Idle; Program End alone is insufficient. Stopped or failed
 jobs never count as complete. Files has full-width rows with size, Preview and Run.
 Alarms/errors use dialogs, with no persistent Recover button. Disabled controls
-must remain readable: muted light text on an opaque dark button. Preserve probe
+must remain readable: muted dark text/arrows on a solid light background. Preserve probe
 contact, geometry and spindle interlocks.
 
 On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
-Resume after hold feedback. Stop returns to its bottom-right position on other
-screens and while a dialog is open, so it never obscures dialog actions.
+Resume after hold feedback. Dialogs cover these controls and have their own close
+or Cancel action. Jog / Files / Settings use the native LVGL bottom tabview,
+with no content swiping; hide it during jobs and until completion is acknowledged.
 
 `tools/check-workflow.py` checks LCD units, settings swipes, the Probe modal,
 row Run, navigation lock, overrides and outcomes with UART1 disconnected.

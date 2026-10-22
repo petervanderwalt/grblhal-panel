@@ -22,10 +22,14 @@ struct ProbeSettings {
 };
 struct State {
     bool online = false, identified = false, extended = false, status = false;
+    bool ymodem = false;
     bool coordinates = false, wco_known = false, modal_known = false, inches = false, absolute = true;
     bool report_inches = false, probe = false, probe_known = false, contact_ready = false;
     bool busy = false, probing = false, listing = false, sd_active = false, job_seen_run = false;
     bool downloading = false, download_ready = false;
+    bool uploading = false, upload_success = false;
+    uint32_t upload_bytes = 0, upload_total = 0, upload_revision = 0;
+    char upload_path[101] = "";
     bool job_complete = false, job_end = false, job_failed = false, overrides_known = false;
     int feed_override = 100, spindle_override = 100;
     uint32_t download_bytes = 0, download_total = 0, download_revision = 0;
@@ -68,6 +72,7 @@ class Model {
     bool probe_corner(const ProbeSettings &settings);
     bool acknowledge_error();
     bool override_target(bool spindle, int percent);
+    void transfer_finished(uint32_t now);
 
   private:
     Line line_;

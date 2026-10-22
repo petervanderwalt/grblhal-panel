@@ -1,55 +1,80 @@
 # grblHAL panel
 
-Firmware development for the VIEWESMART 7-inch 1024x600 ESP32-P4/C6 touch display.
+A touchscreen pendant for grblHAL CNC controllers, built for the VIEWESMART
+7-inch ESP32-P4/C6 display. Home the machine, set up the stock, choose a file
+from the controller’s SD card and follow the job from a dedicated run screen.
 
-Native LVGL grblHAL interface with real hardware screenshot capture and injected
-touches over the COM12 USB UART. Controller communication uses UART1, TX37/RX38
-at 115200 baud, configured and connected from Settings.
+The landscape layout puts the position readout on the left and the jog controls
+on the right for two-handed use. Large controls, axis colours and clear alarm
+screens keep the common machine operations within reach.
 
-Jog has an eight-direction XY pad, separate Z controls, Incremental/Continuous
-modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
-The landscape Jog screen uses compact vertical DRO rows on the left and a grouped
-XYZ jog pad on the right, with Z directly beside XY and an empty centre. Each axis
-has Home and Zero. Home all, Go to XY zero, Go to Z zero and Set zero all sit
-below the DRO; Probe opens a modal and G54-G59 uses a dropdown.
-Go to zero moves the machine; Set zero changes the active work offset. Both
-require confirmation. Go to XY zero follows Ooznest Control: rapid via machine
-Z-5 mm, X0, Y0, then restore original machine Z. Go to Z zero rapids to work Z0.
-Generated motion uses mm and restores the original absolute/incremental mode.
+## Machine setup
 
-Settings uses labelled rows. Units can be mm or inch; positions, probe geometry
-and jog distances convert on the LCD. Internal geometry and motion commands stay
-in mm. Jog steps are 0.1 / 1 / 10 / 100 mm or 0.01 / 0.1 / 1 / 10 inch.
-Continuous sends one long jog and raw `0x85` on release or loss of touch.
-Incremental sends one move and finishes its set distance. Fast / Med / Slow use
-100% / 50% / 25% of the lowest moving-axis `$110`-`$112` maximum rate, matching
-Ooznest Control. The fallback is 1000 mm/min. Units, step and speed are saved.
+- **Jog:** eight-direction XY pad, separate Z controls, incremental moves or
+  continuous movement while held. Releasing a continuous jog stops it.
+- **Jog speed:** Slow, Med and Fast presets, with metric steps of
+  0.1 / 1 / 10 / 100 mm or imperial steps of 0.01 / 0.1 / 1 / 10 inch.
+- **Position:** compact machine and work coordinates, individual axis homing
+  and zeroing, Home All, Set Zero All, Go to XY Zero and Go to Z Zero.
+- **Work offsets:** G54–G59 selection beside the Probe control.
+- **Corner probing:** XYZ touch-plate setup with tool diameter entered on a
+  numeric keypad. Plate dimensions and probe settings are configurable.
 
-Workflow: Home -> Jog/probe stock zero -> Files -> Run. Files uses full-width rows
-with size, Preview and confirmed Run actions. Running switches to a separate screen
-with read-only DROs, percentage, elapsed time, Pause/Resume and Feed/Speed override
-sliders (10-200%). Overrides use actual `Ov:` feedback and grblHAL realtime commands.
-Jog and settings navigation is hidden during a job. Job Complete appears after fresh
-Idle feedback; OK returns to Jog. Stopped or failed jobs never count as complete.
-Alarms/errors open a dialog; tap the status message to reopen it.
+Go-to-zero and zero-setting actions require confirmation. Go to XY Zero moves
+via machine Z −5 mm before moving X and Y, then restores the previous machine Z.
+Go to Z Zero moves directly to work Z0. Check this clearance against your setup.
 
-On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
-Resume after hold feedback. Stop returns to its bottom-right position on other
-screens and while a dialog is open, so it never obscures dialog actions.
+## Files and jobs
 
-STOP stays visible on every page and above dialogs, and immediately sends Ctrl-X
-without confirmation. This resets the controller, so position may need checking
-or re-homing afterward. Plate defaults are X10/Y10/Z5 mm; enter tool diameter
-in the Probe modal and edit plate defaults in Settings. Preview disconnects the
-controller UART and uses synthetic feedback, visibly marked on screen.
+Browse files on the **controller’s SD card**, with file sizes and Preview/Run
+actions in each row. Preview downloads the selected file into display memory
+and shows its toolpath in Top or 3D view. Drag to pan and pinch to zoom.
+Running a file is a separate, confirmed action.
 
-- [Development instructions and code map](AGENTS.md)
-- [Screenshot and touch workflow](docs/device-ui-development.md)
-- [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)
+During a job, the run screen shows positions, progress and elapsed time, with
+Pause/Resume and Stop below the readout. Feed and spindle overrides use the
+controller’s reported values. Setup navigation is hidden until the job ends.
+After Job Complete is acknowledged, the pendant returns to Jog.
 
-## Build
+Alarms and command errors appear in red dialogs. The header fault indicator
+reopens the current fault. Job Stop sends a controller reset; check position
+and re-home as needed afterward. Emergency stopping remains a hardware function.
 
-With ESP-IDF 5.3.4 installed:
+The toolpath viewer supports G0/G1 and IJK G2/G3 arcs in G17/G18/G19, absolute
+and relative coordinates, and metric/imperial files. The download limit is
+2 MiB. Macros, canned cycles, R arcs and offset-changing codes are unsupported
+for preview; those files can still be run directly from controller SD.
+The preview does not simulate collisions or controller execution.
+
+## Settings and Wi-Fi
+
+Choose metric or imperial display units, configure the controller UART, and
+adjust probe geometry and feeds. Display units are converted locally; generated
+motion commands and internal geometry remain in millimetres.
+
+Open Wi-Fi from Settings or the header icon. Scan, select a network and enter
+its password using the onscreen keyboard. Each network row shows signal strength
+and a lock for secured networks. The connection result appears in a popup;
+OK closes both the popup and network window. Successful credentials are saved
+for reconnection. The header shows the connected SSID and IP address.
+
+## Hardware and project status
+
+- VIEWESMART 7-inch 1024×600 ESP32-P4 display with ESP32-C6 Wi-Fi coprocessor.
+- Native LVGL interface, built with ESP-IDF 5.3.4 and LVGL 9.2.2.
+- Controller UART defaults: TX GPIO37, RX GPIO38, 115200 baud; configurable in Settings.
+- USB UART for programming and development tools.
+
+This is firmware under development. The interface and Wi-Fi have been exercised
+on the display. Physical controller motion, probing and SD transfers still need
+hardware validation. RS485 and the grblHAL panel plugin are being investigated.
+The source also includes an experimental Wi-Fi G-code handoff and controller-SD
+upload implementation; end-to-end transfer validation and its user interface
+are pending.
+
+## Build and development
+
+With ESP-IDF 5.3.4 installed and its environment activated:
 
 ```powershell
 cd firmware/viewesmart-p4
@@ -58,64 +83,164 @@ idf.py build
 idf.py -p COM12 app-flash
 ```
 
-The checked-in sdkconfig preserves the tested display configuration; do not reset
-it just to change targets. On an already configured checkout, use `idf.py build`
-directly. Dependency manifests and dependencies.lock identify managed components,
-which are downloaded by ESP-IDF and excluded from Git.
+Replace COM12 with your display’s port. The checked-in `sdkconfig` contains the
+tested board configuration. ESP-IDF downloads the managed components listed in
+the dependency manifests and lock file.
 
-## Capture and interact
+Development tools capture the actual LCD framebuffer and inject taps, holds and
+swipes over USB UART. Demonstration mode disconnects the controller UART and
+supplies sample machine feedback for UI checks.
 
-Use Python with pyserial installed, from the repository root:
+- [Development instructions and source map](AGENTS.md)
+- [Screenshot, touch injection and test guide](docs/device-ui-development.md)
+- [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)
 
-```powershell
-python tools/ui-remote.py self-test
-python tools/ui-remote.py --port COM12 session
-```
+## Screenshots
 
-Then enter `shot captures/home.png`, `tap 650 420`, and
-`shot captures/setup.png`. Finish with `quit`.
-Disconnect the CNC before automated UI exploration: taps are real UI input.
+Screens from the 1024×600 display. Machine data and SD files shown here are
+sample data from demonstration mode; Wi-Fi uses the onboard radio.
 
-Run `python tools/check-workflow.py` for units, settings scrolling, probe modal,
-SD run, job controls, completion and Stop checks. `tools/check-jog.py` covers
-diagonals, release-to-stop, homing and zeroing. Both use UART-disconnected preview
-feedback, temporarily disable physical touch and restore it in cleanup.
-Actual controller wiring and physical motion/probing still require validation.
+**Jog — metric, incremental**
 
-![Jog pad on the physical display](docs/screenshots/panel-jog.png)
+![Metric jog screen with axis-coloured controls](docs/screenshots/panel-jog.png)
 
-![Running job on the physical display](docs/screenshots/panel-job.png)
+<details>
+<summary>Jog modes, probing and confirmations</summary>
 
-Other device captures: [Files](docs/screenshots/panel-files.png),
-[Settings](docs/screenshots/panel-settings.png), [Probe](docs/screenshots/panel-probe.png),
-[Job Complete](docs/screenshots/panel-complete.png).
+**Continuous jog**
 
-## G-code preview
+![Continuous jog with distance disabled](docs/screenshots/panel-jog-continuous.png)
 
-On Files, refresh the controller SD list and tap Preview in a file row.
-The pendant downloads it using `$F<=/path` and reuses uGsender's G-code viewer.
-Choose Top or 3D, drag to pan, and use +/− to zoom. Back to files returns to the
-list. Run from SD is a separate confirmed action; preview never streams motion.
+**Disabled controls during Hold**
 
-Downloads are cached in display RAM, with a 2 MiB limit and a 10-second inactivity
-timeout. Parsing runs in a background task; Stop remains available over dialogs.
-Transfers must finish with `ok`; UART overflow, overlong lines, failed writes and
-unsupported previews never produce a successful partial preview. A new status
-report is required before further manual commands after downloading.
+![Readable disabled jog arrows during Hold](docs/screenshots/panel-jog-disabled.png)
 
-The reused viewer supports G0/G1 and IJK G2/G3 arcs in G17/G18/G19, absolute/relative
-coordinates and mm/inches. Macros, canned cycles, R arcs and offset-changing codes
-are rejected for preview; direct controller SD run remains available. This is a
-toolpath preview, not a controller execution or collision simulation.
+**Inch display**
 
-Protocol sources: [Ooznest Control SD handling](https://github.com/Ooznest/ooznest-control/blob/main/js/features/sdcard.js)
-and [grblHAL SD commands](https://github.com/grblHAL/Plugin_SD_card).
+![Inch coordinates and jog distances](docs/screenshots/panel-jog-inch.png)
 
-`python tools/check-preview.py` checks the real display with UART disconnected and
-synthetic controller file data, captures both views, and checks the separate run
-confirmation. Physical controller download remains unverified.
+**Corner probing**
 
-![Controller SD toolpath preview](docs/screenshots/sd-preview-3d.png)
+![Corner probe geometry and contact check](docs/screenshots/panel-probe.png)
+
+**Numeric input**
+
+![Tool diameter numeric keypad](docs/screenshots/panel-numpad.png)
+
+**Homing confirmation**
+
+![Home all confirmation](docs/screenshots/panel-home-confirm.png)
+
+**Zeroing confirmation**
+
+![Set work zero confirmation](docs/screenshots/panel-zero-confirm.png)
+
+</details>
+
+<details>
+<summary>Settings</summary>
+
+**Display units and Wi-Fi**
+
+![Settings units and network](docs/screenshots/panel-settings.png)
+
+**Probe configuration**
+
+![Probe configuration rows](docs/screenshots/panel-settings-probe.png)
+
+**Probe feed and corner start inset**
+
+![Lower probe configuration rows](docs/screenshots/panel-settings-probe-lower.png)
+
+**Controller UART configuration**
+
+![Controller TX RX baud and preview controls](docs/screenshots/panel-settings-uart.png)
+
+**Inch display setting**
+
+![Inch units selected in settings](docs/screenshots/panel-settings-inch.png)
+
+</details>
+
+<details>
+<summary>Controller files and toolpath preview</summary>
+
+**Controller SD listing — sample files**
+
+![Simulated controller file listing](docs/screenshots/panel-files.png)
+
+**3D view**
+
+![Controller file toolpath in 3D](docs/screenshots/sd-preview-3d.png)
+
+**Top view**
+
+![Controller file toolpath from above](docs/screenshots/sd-preview-top.png)
+
+**Run confirmation**
+
+![Confirm running a controller SD file](docs/screenshots/panel-run-confirm.png)
+
+</details>
+
+<details>
+<summary>Running, paused and completed jobs</summary>
+
+**Running**
+
+![Job progress DRO and overrides](docs/screenshots/panel-job.png)
+
+**Paused**
+
+![Paused job with Resume control](docs/screenshots/panel-job-paused.png)
+
+**Complete**
+
+![Successful job completion](docs/screenshots/panel-complete.png)
+
+</details>
+
+<details>
+<summary>Alarms and command errors</summary>
+
+**Controller alarm**
+
+![Red alarm dialog](docs/screenshots/panel-alarm.png)
+
+**Command error**
+
+![Red unsupported-command error dialog](docs/screenshots/panel-error.png)
+
+</details>
+
+<details>
+<summary>Wi-Fi scan, password entry and connection results</summary>
+
+**Scan in progress**
+
+![Wi-Fi scan progress spinner](docs/screenshots/wifi-scanning.png)
+
+**Scanned networks**
+
+![Networks with signal strength and lock icons](docs/screenshots/wifi-networks.png)
+
+**Password entry**
+
+![Empty Wi-Fi password field and keyboard](docs/screenshots/wifi-password.png)
+
+**Password validation**
+
+![Minimum password length validation](docs/screenshots/wifi-password-validation.png)
+
+**Connection failed**
+
+![Wi-Fi connection failure notification](docs/screenshots/wifi-failed.png)
+
+**Connected**
+
+![Wi-Fi successful connection notification](docs/screenshots/wifi-connected.png)
+
+</details>
 
 Board source and documentation:
 [VIEWESMART hardware](https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY).

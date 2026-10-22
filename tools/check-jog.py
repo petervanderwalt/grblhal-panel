@@ -40,9 +40,9 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        tap(648, 560)
+        tap(848, 564)
         tap(761, 160)  # Metric display units
-        tap(138, 560)
+        tap(176, 564)
         tap(631, 184)  # Incremental
         command("RX $110=6000")
         command("RX $111=3000")
@@ -108,15 +108,15 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert "0x21" in command("LAST")
         tap(130, 370)
         assert "0x7E" in command("LAST")
-        tap(392, 560)  # Navigation is locked during the job
+        tap(512, 564)  # Navigation is locked during the job
         tap(374, 370)  # Job Stop below the DRO
         data = json.loads(command("STATE").removeprefix("@UGDATA "))
         assert not data["job"], "Stop opened a dialog or left the job running"
         tap(88, 560)
-        # Stop also stays reachable above a confirmation dialog.
+        # A confirmation can be cancelled without issuing motion.
         idle()
         tap(72, 346)  # Home all confirmation below the DRO
-        tap(899, 560)  # Stop closes it, without homing
+        tap(342, 409)  # Cancel without homing
         time.sleep(.5)
         idle()
         tap(562, 268)

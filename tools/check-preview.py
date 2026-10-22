@@ -38,8 +38,8 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        tap(392, 560)
-        tap(904, 100)
+        tap(512, 564)
+        tap(888, 112)
         assert state()["files"] == 3
         tap(778, 189)
         assert "$F<=/bracket.nc" in command("LAST")
@@ -47,18 +47,17 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         data = state()
         assert data["download_ready"] and data["download_bytes"] > 100 and not data["job"], data
         shot("sd-preview-3d.png")
-        tap(849, 178)  # Top
+        tap(836, 198)  # Top
         shot("sd-preview-top.png")
-        tap(849, 258)  # Zoom in
-        tap(959, 258)  # Zoom out
-        tap(904, 100)  # Back to files
+        tap(944, 198)  # 3D; zoom uses physical pinch input
+        tap(886, 112)  # Back to files
         tap(922, 189)  # Run selected, separate from preview
         tap(630, 409)
         assert "$F=/bracket.nc" in command("LAST")
         assert state()["job"]
         tap(374, 370)
         assert not state()["job"]
-        tap(88, 560)
-        print("PASS: SD download, viewer, Top/3D, zoom, file round trip and separate confirmed run", flush=True)
+        tap(176, 564)
+        print("PASS: SD download, viewer, Top/3D, file round trip and separate confirmed run; physical pinch not injected", flush=True)
     finally:
         command("TOUCH ON")

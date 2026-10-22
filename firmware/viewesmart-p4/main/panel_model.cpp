@@ -113,7 +113,13 @@ void Model::disconnect() {
 }
 bool Model::idle() const {
     return state.online && state.identified && state.status && !strcmp(state.mode, "Idle") && !state.alarm &&
-           !state.error && !state.busy && !state.sd_active;
+           !state.error && !state.busy && !state.sd_active && !state.uploading;
+}
+void Model::transfer_finished(uint32_t now) {
+    state.uploading = state.busy = state.status = false;
+    state.download_ready = false;
+    identified_at_ = now;
+    poll_ = now - 250;
 }
 bool Model::append(const char *s) {
     if (queued_ >= 40 || strlen(s) >= sizeof queue_[0] || strchr(s, '\n') || strchr(s, '\r'))
@@ -549,6 +555,20 @@ void Model::receive(const char *line, uint32_t now) {
         return;
     if (!state.online)
         return;
+    if (!strncmp(line, "[NEWOPT:", 8)) {
+        state.ymodem = false;
+        const char *p = line + 8;
+        while (*p && *p != ']') {
+            size_t n = strcspn(p, ",]");
+            if (n == 2 && !strncmp(p, "YM", 2))
+                state.ymodem = true;
+            p += n;
+            if (*p == ',')
+                p++;
+            else
+                break;
+        }
+    }
     if (!strncmp(line, "Grbl", 4)) {
         begin(now);
         return;
