@@ -10,7 +10,7 @@ Jog has an eight-direction XY pad, separate Z controls, Incremental/Continuous
 modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
 The landscape layout is intended for two-handed use: XY by the left thumb,
 large Z controls by the right, full-width DROs above, and bottom navigation.
-Each DRO has an axis-zero button. Individual homing is on Zero / Home.
+Each DRO has Home and Zero buttons for that axis. Individual homing is also on Zero / Home.
 On Jog, Home all, Go to XY zero, Go to Z zero and Set zero all sit directly below
 the DRO. Go to zero moves the machine; Set zero changes the active work offset.
 Both require confirmation. Go to XY zero follows Ooznest Control: rapid via machine

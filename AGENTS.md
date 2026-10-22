@@ -126,8 +126,8 @@ codes rather than displaying truncated geometry. Preserve responsive Stop during
 Design for landscape, two-handed pendant use. Keep large XY targets at the left,
 Z at the right, DROs above the hands, and bottom navigation. STOP must stay visible
 on all pages and above dialogs, and send Ctrl-X on touch-down without confirmation. Keep confirmations
-for homing, zeroing, probing and starting jobs. Per-axis zero is on each DRO;
-individual homing is on Zero / Home. Update injected-touch coordinates when moving controls.
+for homing, zeroing, probing and starting jobs. Per-axis Home and Zero are on each DRO;
+individual homing is also on Zero / Home. Update injected-touch coordinates when moving controls.
 Keep Home all, Go to XY zero, Go to Z zero and Set zero all directly beneath the
 DRO on Jog. Set zero changes offsets; Go to zero moves and must be confirmed.
 Go XY follows `DROHandler.goXY0()`: machine Z−5 mm, X0, Y0, restore machine Z.

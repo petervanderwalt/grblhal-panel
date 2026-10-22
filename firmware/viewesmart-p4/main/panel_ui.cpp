@@ -27,7 +27,7 @@ static int page = 0;
 static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[5];
 static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
-static lv_obj_t *axis_zero[3];
+static lv_obj_t *axis_zero[3], *axis_home[3];
 static lv_obj_t *dro_actions, *goto_buttons[2], *zero_all_btn;
 static lv_obj_t *preview_btn;
 static bool preview_pending = false, preview_show = false;
@@ -718,8 +718,10 @@ static void refresh(lv_timer_t *) {
         enable(goto_buttons[i], on && state.coordinates && state.wco_known && state.modal_known);
     for (int i = 0; i < jog_count; i++)
         enable(jog_buttons[i], on || jog_held);
-    enable(home_btn, on || (state.online && state.identified && state.status && !state.busy &&
-                            !strncmp(state.mode, "Alarm", 5)));
+    bool can_home = on || (state.online && state.identified && state.status && !state.busy &&
+                           !state.sd_active && !strncmp(state.mode, "Alarm", 5));
+    enable(home_btn, can_home);
+    for (int i = 0; i < 3; i++) enable(axis_home[i], can_home);
     enable(pause_btn, state.online && state.status && !strncmp(state.mode, "Run", 3));
     enable(resume_btn, state.online && state.status && !strcmp(state.mode, "Hold:0"));
     enable(stop_btn, state.online || state.identified);
@@ -792,9 +794,11 @@ extern "C" void panel_ui_create() {
         label(c, axes[i], 16, 16, 30, 20, colors[i]);
         axis_work[i] = label(c, "--.---", 66, 10, 238, 32);
         lv_obj_set_style_text_align(axis_work[i], LV_TEXT_ALIGN_RIGHT, 0);
-        axis_machine[i] = label(c, "M  --.---", 16, 65, 188, 14, MUTED);
+        axis_machine[i] = label(c, "M  --.---", 104, 65, 110, 14, MUTED);
         lv_obj_set_style_text_align(axis_machine[i], LV_TEXT_ALIGN_RIGHT, 0);
         char s[16];
+        snprintf(s, sizeof s, "Home %c", "XYZ"[i]);
+        axis_home[i] = button(c, s, 12, 48, 84, 44, home_click, "XYZ"[i]);
         snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
         axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i);
     }

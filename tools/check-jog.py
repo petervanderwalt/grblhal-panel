@@ -56,8 +56,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         shot("jog-continuous.png")
         tap(490, 272)
         shot("jog-incremental.png")
-        tap(550, 560)  # Zero / Home
-        tap(189, 456)  # Home X
+        tap(70, 136)  # Home X beside the DRO
         shot("home-x-confirm.png")
         tap(630, 409)
         assert "$HX" in command("LAST")
