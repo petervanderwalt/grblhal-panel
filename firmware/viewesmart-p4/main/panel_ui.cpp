@@ -1208,10 +1208,12 @@ extern "C" void panel_ui_create() {
     lv_obj_delete(lv_obj_get_child(wifi_header, 0));
     lv_obj_set_style_bg_grad_dir(wifi_header, LV_GRAD_DIR_NONE, 0);
     lv_obj_set_style_shadow_width(wifi_header, 0, 0);
-    wifi_header_name = label(wifi_header, "Not connected", 64, 4, 380, 18, WHITE);
+    wifi_header_name = label(wifi_header, "Not connected", 16, 4, 380, 18, WHITE);
+    lv_obj_set_style_text_align(wifi_header_name, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(wifi_header_name, LV_LABEL_LONG_DOT);
-    wifi_header_ip = label(wifi_header, "Wi-Fi", 64, 28, 380, 14, WHITE);
-    wifi_icon = label(wifi_header, LV_SYMBOL_WIFI, 16, 12, 40, 28, WHITE);
+    wifi_header_ip = label(wifi_header, "Wi-Fi", 16, 28, 380, 14, WHITE);
+    lv_obj_set_style_text_align(wifi_header_ip, LV_TEXT_ALIGN_RIGHT, 0);
+    wifi_icon = label(wifi_header, LV_SYMBOL_WIFI, 412, 12, 40, 28, WHITE);
     state_label = label(root, "Disconnected", 174, 22, 352, 20, MUTED);
     const char *tabs[] = {"Jog", "Files", "Settings"};
     tabview = lv_tabview_create(root);
