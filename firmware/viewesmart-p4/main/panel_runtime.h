@@ -4,6 +4,7 @@ namespace panel {
 enum class Action {
     List,
     Run,
+    Preview,
     Jog,
     Zero,
     Wcs,
@@ -27,4 +28,6 @@ bool runtime_is_demo();
 bool runtime_inject(const char *line);
 void runtime_last_tx(char *buffer, size_t size);
 bool model_self_test();
+bool runtime_preview_acquire(const char **data, size_t *size);
+void runtime_preview_release();
 } // namespace panel

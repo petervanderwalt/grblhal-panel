@@ -24,6 +24,8 @@ typedef void (*gcode_viewer_progress_cb_t)(int progress, void *user_data);
 void gcode_viewer_attach(lv_obj_t *parent, lv_coord_t width, lv_coord_t height);
 void gcode_viewer_detach(void);
 bool gcode_viewer_load_file(const char *path, char *status, size_t status_len);
+bool gcode_viewer_parse_memory(const char *data, size_t size, char *status, size_t status_len);
+bool gcode_viewer_parser_test(void);
 void gcode_viewer_set_progress_callback(gcode_viewer_progress_cb_t cb, void *user_data);
 void gcode_viewer_set_preset(gcode_view_preset_t preset);
 void gcode_viewer_rotate(float delta_x, float delta_y);

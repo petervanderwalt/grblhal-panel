@@ -1,9 +1,11 @@
 #include "panel_runtime.h"
 #include "driver/uart.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "gcode_viewer.h"
 #include "panel_debug.h"
 #include <assert.h>
 #include <stdio.h>
@@ -11,9 +13,21 @@
 
 namespace panel {
 static SemaphoreHandle_t mutex;
+static QueueHandle_t uart_events;
 static bool installed = false, demo = false, pending = false;
 static char last_tx[192], pending_line[192];
 static size_t rx_used = 0;
+static char *preview_data = nullptr;
+static size_t preview_size = 0;
+static bool preview_locked = false;
+static bool preview_write(void *, const char *data, size_t size) {
+    if (!preview_data || preview_size + size > MaxPreviewBytes)
+        return false;
+    memcpy(preview_data + preview_size, data, size);
+    preview_size += size;
+    preview_data[preview_size] = 0;
+    return true;
+}
 static bool rx_overflow = false;
 static uint32_t now() { return xTaskGetTickCount() * portTICK_PERIOD_MS; }
 static bool send_line(void *, const char *s) {
@@ -29,7 +43,12 @@ static bool send_line(void *, const char *s) {
     int n = snprintf(command, sizeof command, "%s\n", s);
     return uart_write_bytes(UART_NUM_1, command, n) == n;
 }
-extern "C" bool panel_debug_test() { return panel::model_self_test(); }
+extern "C" bool panel_debug_test() {
+    bool ok = panel::model_self_test();
+    bool viewer = gcode_viewer_parser_test();
+    printf("@UGTEST %s viewer_parser\n", viewer ? "PASS" : "FAIL");
+    return ok && viewer;
+}
 extern "C" void panel_debug_demo(bool on) { panel::runtime_demo(on); }
 extern "C" bool panel_debug_receive(const char *line) { return panel::runtime_inject(line); }
 extern "C" void panel_debug_last(char *b, size_t n) { panel::runtime_last_tx(b, n); }
@@ -39,9 +58,11 @@ extern "C" void panel_debug_state(char *b, size_t n) {
     snprintf(
         b, n,
         "{\"online\":%d,\"identified\":%d,\"extended\":%d,\"ready\":%d,\"alarm\":%d,\"error\":%d,\"x\":%.3f,"
-        "\"y\":%.3f,\"z\":%.3f,\"percent\":%.2f,\"job\":%d,\"files\":%d,\"probing\":%d,\"contact\":%d}",
+        "\"y\":%.3f,\"z\":%.3f,\"percent\":%.2f,\"job\":%d,\"files\":%d,\"probing\":%d,\"contact\":%d,"
+        "\"downloading\":%d,\"download_ready\":%d,\"download_bytes\":%lu}",
         s.online, s.identified, s.extended, s.status, s.alarm, s.error, s.work[0], s.work[1], s.work[2],
-        s.percent, s.sd_active, s.file_count, s.probing, s.contact_ready);
+        s.percent, s.sd_active, s.file_count, s.probing, s.contact_ready, s.downloading, s.download_ready,
+        (unsigned long)s.download_bytes);
 }
 static bool send_rt(void *, uint8_t b) {
     if (b != 0x80 && b != 0x87 && b != '?')
@@ -67,6 +88,29 @@ static void mock_reply() {
         model.receive("[FILE:/bracket.nc|SIZE:24861]", t);
         model.receive("[FILE:/spoilboard.nc|SIZE:98110]", t);
         model.receive("[FILE:/jobs/pocket.nc|SIZE:12480]", t);
+    } else if (!strncmp(pending_line, "$F<=", 4)) {
+        const char *lines[] = {"(Preview sample)",
+                               "G21 G90 G17",
+                               "G0 X0 Y0 Z5",
+                               "G1 Z-2 F100",
+                               "G1 X60 Y0 F600",
+                               "Y40",
+                               "X0",
+                               "Y0",
+                               "G0 Z5",
+                               "X10 Y10",
+                               "G1 Z-2",
+                               "X50",
+                               "Y30",
+                               "X10",
+                               "Y10",
+                               "G0 Z5",
+                               "M30"};
+        for (const char *line : lines)
+            model.receive(line, t);
+        model.receive("ok", t);
+        model.receive("<Idle|FS:0,0>", t);
+        return;
     } else if (!strncmp(pending_line, "$F=", 3)) {
         char line[256];
         snprintf(line, sizeof line, "<Run|MPos:125,84.5,-12|FS:800,12000|SD:0,%s>", pending_line + 3);
@@ -83,22 +127,41 @@ static void worker(void *) {
     for (;;) {
         xSemaphoreTake(mutex, portMAX_DELAY);
         if (installed && !demo) {
-            uint8_t bytes[256];
-            int n = uart_read_bytes(UART_NUM_1, bytes, sizeof bytes, 0);
-            for (int i = 0; i < n; i++) {
-                uint8_t c = bytes[i];
-                if (c == '\r' || c == '\n') {
-                    if (used && !overflow) {
-                        line[used] = 0;
-                        model.receive(line, now());
-                    }
+            uart_event_t event;
+            while (xQueueReceive(uart_events, &event, 0) == pdTRUE) {
+                if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL) {
+                    model.disconnect();
+                    uart_flush_input(UART_NUM_1);
                     used = 0;
                     overflow = false;
-                } else if (c >= 32 && c < 127) {
-                    if (used + 1 < sizeof line && !overflow)
-                        line[used++] = c;
-                    else
-                        overflow = true;
+                    snprintf(model.state.message, sizeof model.state.message,
+                             "UART overflow; preview invalid. Reconnect controller.");
+                }
+            }
+            uint8_t bytes[1024];
+            for (int batch = 0; batch < 8; batch++) {
+                int n = uart_read_bytes(UART_NUM_1, bytes, sizeof bytes, 0);
+                if (!n)
+                    break;
+                for (int i = 0; i < n; i++) {
+                    uint8_t c = bytes[i];
+                    if (c == '\r' || c == '\n') {
+                        if (overflow && model.state.downloading) {
+                            model.disconnect();
+                            snprintf(model.state.message, sizeof model.state.message,
+                                     "Preview line too long; reconnect controller");
+                        } else if (used && !overflow) {
+                            line[used] = 0;
+                            model.receive(line, now());
+                        }
+                        used = 0;
+                        overflow = false;
+                    } else if (c >= 32 && c < 127) {
+                        if (used + 1 < sizeof line && !overflow)
+                            line[used++] = c;
+                        else
+                            overflow = true;
+                    }
                 }
             }
         }
@@ -143,7 +206,7 @@ bool runtime_connect(int tx, int rx, int baud) {
     c.stop_bits = UART_STOP_BITS_1;
     c.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
     c.source_clk = UART_SCLK_DEFAULT;
-    esp_err_t err = uart_driver_install(UART_NUM_1, 4096, 0, 0, nullptr, 0);
+    esp_err_t err = uart_driver_install(UART_NUM_1, 16384, 0, 20, &uart_events, 0);
     if (err == ESP_OK) {
         installed = true;
         err = uart_param_config(UART_NUM_1, &c);
@@ -187,6 +250,17 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         break;
     case Action::Run:
         ok = model.run(text);
+        break;
+    case Action::Preview:
+        if (!preview_locked && model.idle()) {
+            if (!preview_data)
+                preview_data =
+                    (char *)heap_caps_malloc(MaxPreviewBytes + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (preview_data) {
+                ok = model.download(text, preview_write, nullptr);
+                if (ok) preview_size = 0;
+            }
+        }
         break;
     case Action::Jog:
         ok = text && (strlen(text) == 3 ? model.jog_vector(text, x, y) : model.jog(text[0], x, y));
@@ -268,6 +342,22 @@ bool runtime_inject(const char *s) {
 void runtime_last_tx(char *s, size_t n) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     snprintf(s, n, "%s", last_tx);
+    xSemaphoreGive(mutex);
+}
+bool runtime_preview_acquire(const char **data, size_t *size) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.state.download_ready && !model.state.downloading && !preview_locked;
+    if (ok) {
+        preview_locked = true;
+        *data = preview_data;
+        *size = preview_size;
+    }
+    xSemaphoreGive(mutex);
+    return ok;
+}
+void runtime_preview_release() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    preview_locked = false;
     xSemaphoreGive(mutex);
 }
 } // namespace panel

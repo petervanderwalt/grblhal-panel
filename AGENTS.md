@@ -111,6 +111,17 @@ little-endian RGB565 image.
   NVS preferences and confirmations.
 - `main/tests/panel_model_test.cpp`: embedded protocol tests (`UG TEST`).
 - `tools/check-jog.py`: physical display checks using preview feedback and injected touches.
+- `tools/check-preview.py`: controller SD download/view/run checks using synthetic file contents.
+- `main/gcode_viewer.cpp`: reused uGsender renderer, memory parsing and view controls.
+
+SD preview uses `$F<=/path`, never `$F=/path` until a separate confirmed Run.
+Keep the 2 MiB PSRAM cap, acknowledgement requirement, inactivity timeout and
+overflow invalidation. File content must be consumed by the download sink before
+normal report parsing. Do not interpret G-code file content as controller reports.
+Filter realtime characters from filenames and honour `UNUSABLE` file entries.
+Background parsing holds the RAM cache against replacement. Never attach or render
+the canvas while the parser task is editing its vertices. Preview rejects unsupported
+codes rather than displaying truncated geometry. Preserve responsive Stop during parsing.
 
 Design for landscape, two-handed pendant use. Keep large XY targets at the left,
 Z at the right, DROs above the hands, and bottom navigation. STOP must stay visible

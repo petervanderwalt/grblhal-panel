@@ -1,7 +1,11 @@
 #include "panel_ui.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "gcode_viewer.h"
 #include "lvgl.h"
 #include "nvs.h"
 #include "panel_runtime.h"
+#include <atomic>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,6 +28,12 @@ static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis
     *axis_card[3], *nav[5];
 static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
 static lv_obj_t *axis_zero[3];
+static lv_obj_t *preview_btn;
+static bool preview_pending = false, preview_show = false;
+static std::atomic<int> preview_parsing{0};
+static const char *preview_data;
+static size_t preview_size;
+static char preview_path[160], preview_message[192];
 static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *line_text, *start_btn,
     *refresh_btn, *probe_start, *probe_status, *contact_btn, *wcs_label;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
@@ -294,7 +304,10 @@ static void value_button(lv_obj_t *p, const char *title, float value, int x, int
     button(p, text, x, y, w, 66, edit_value, id);
 }
 static bool stop() { return runtime_action(Action::Stop); }
-static bool home() { char axis[] = {home_axis, 0}; return runtime_action(Action::Home, home_axis ? axis : nullptr); }
+static bool home() {
+    char axis[] = {home_axis, 0};
+    return runtime_action(Action::Home, home_axis ? axis : nullptr);
+}
 static bool run() { return runtime_action(Action::Run, selected); }
 static bool probe() { return runtime_probe(prefs.probe); }
 static void home_click(lv_event_t *e) {
@@ -318,7 +331,8 @@ static void release_jog() {
 }
 static void jog_event(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
-        if (jog_held) return;
+        if (jog_held)
+            return;
         const char *directions[] = {"-+0", "0+0", "++0", "-00", "+00", "--0", "0-0", "+-0", "00+", "00-"};
         bool ok = runtime_action(Action::Jog, directions[(uintptr_t)lv_event_get_user_data(e)],
                                  continuous ? 10000 : prefs.step, prefs.jog_feed);
@@ -340,9 +354,47 @@ static void start_click(lv_event_t *) {
              selected);
     confirm("Start SD job?", text, run);
 }
+static void parse_preview(void *) {
+    bool ok = gcode_viewer_parse_memory(preview_data, preview_size, preview_message, sizeof preview_message);
+    runtime_preview_release();
+    preview_parsing.store(ok ? 2 : 3);
+    vTaskDelete(nullptr);
+}
+static void preview_click(lv_event_t *) {
+    if (preview_parsing.load() || preview_pending)
+        return;
+    if (runtime_action(Action::Preview, selected)) {
+        snprintf(preview_path, sizeof preview_path, "%s", selected);
+        preview_pending = true;
+        preview_show = false;
+    } else {
+        runtime_snapshot(state);
+        notify(state.message);
+    }
+}
+static void preview_back(lv_event_t *) {
+    preview_show = false;
+    build_page();
+}
+static void view_action(lv_event_t *e) {
+    switch ((uintptr_t)lv_event_get_user_data(e)) {
+    case 0:
+        gcode_viewer_set_preset(GCODE_VIEW_PRESET_TOP);
+        break;
+    case 1:
+        gcode_viewer_set_preset(GCODE_VIEW_PRESET_ISO);
+        break;
+    case 2:
+        gcode_viewer_zoom(1.25f);
+        break;
+    case 3:
+        gcode_viewer_zoom(.8f);
+        break;
+    }
+}
 static void select_file(lv_event_t *e) {
     int i = (uintptr_t)lv_event_get_user_data(e);
-    if (i < state.file_count && !state.files[i].directory) {
+    if (i < state.file_count && !state.files[i].directory && !state.files[i].unusable) {
         snprintf(selected, sizeof selected, "%s", state.files[i].path);
         lv_label_set_text(file_title, selected);
         refresh(nullptr);
@@ -363,7 +415,7 @@ static void files() {
                  state.files[i].path, state.files[i].size / 1024.f);
         lv_obj_t *b = button(file_box, s, 8, 8 + i * 53, 426, 46, select_file, i,
                              !strcmp(selected, state.files[i].path) ? 0x28516A : EDGE);
-        enable(b, !state.files[i].directory);
+        enable(b, !state.files[i].directory && !state.files[i].unusable);
     }
     revision = state.file_revision;
 }
@@ -420,8 +472,10 @@ static void build_page() {
     jog_count = 0;
     gate_count = 0;
     home_btn = nullptr;
+    preview_btn = nullptr;
     file_box = file_title = progress = progress_text = time_text = line_text = start_btn = refresh_btn =
         probe_start = probe_status = contact_btn = wcs_label = nullptr;
+    gcode_viewer_detach();
     lv_obj_clean(body);
     lv_obj_set_pos(body, page == 0 ? 16 : 90, 176);
     lv_obj_set_width(body, page == 0 ? 992 : 844);
@@ -438,9 +492,10 @@ static void build_page() {
         enable(button(body, s, 370, 76, 208, 64, edit_value, 0), !continuous);
         snprintf(s, sizeof s, "Feed %.0f mm/min", prefs.jog_feed);
         button(body, s, 594, 76, 208, 64, edit_value, 1);
-        const char *names[] = {LV_SYMBOL_LEFT " " LV_SYMBOL_UP, "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,
-                              "X-", "X+", LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
-        const int cells[] = {0,1,2,3,5,6,7,8};
+        const char *names[] = {
+            LV_SYMBOL_LEFT " " LV_SYMBOL_UP,   "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,   "X-", "X+",
+            LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
+        const int cells[] = {0, 1, 2, 3, 5, 6, 7, 8};
         for (int i = 0; i < 10; i++) {
             int x = i < 8 ? (cells[i] % 3) * 114 : 844;
             int y = i < 8 ? 36 + (cells[i] / 3) * 96 : (i == 8 ? 36 : 188);
@@ -452,7 +507,19 @@ static void build_page() {
         label(body, "XY", 146, 162, 70, 22, MUTED);
         home_btn = button(body, LV_SYMBOL_HOME "  Home all", 370, 152, 208, 64, home_click);
         gate(button(body, "Zero XYZ", 594, 152, 208, 64, zero_click, 7));
-        label(body, continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance", 370, 244, 432, 20, MUTED);
+        label(body, continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance", 370,
+              244, 432, 20, MUTED);
+    } else if (page == 1 && preview_show && state.download_ready) {
+        label(body, preview_path, 0, 0, 620, 18);
+        button(body, "Back to files", 636, 0, 208, 48, preview_back);
+        lv_obj_t *canvas = box(body, 0, 48, 620, 272);
+        gcode_viewer_attach(canvas, 620, 272);
+        button(body, "Top", 636, 62, 98, 64, view_action, 0);
+        button(body, "3D", 746, 62, 98, 64, view_action, 1);
+        button(body, LV_SYMBOL_PLUS, 636, 138, 98, 64, view_action, 2);
+        button(body, LV_SYMBOL_MINUS, 746, 138, 98, 64, view_action, 3);
+        label(body, "Drag to pan", 636, 216, 208, 16, MUTED);
+        start_btn = button(body, "Run from SD", 636, 252, 208, 64, start_click, 0, BLUE);
     } else if (page == 1) {
         label(body, "Controller SD", 0, 0, 280, 22);
         refresh_btn = button(body, "Refresh", 316, 0, 128, 40, list_click, 0);
@@ -470,7 +537,8 @@ static void build_page() {
         lv_obj_set_style_bg_color(progress, lv_color_hex(EDGE), 0);
         lv_obj_set_style_bg_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
         line_text = label(body, "No active SD job", 480, 174, 364, 16, MUTED);
-        start_btn = button(body, "Run selected file", 480, 236, 364, 60, start_click, 0, BLUE);
+        start_btn = button(body, "Run selected", 480, 236, 174, 60, start_click, 0, BLUE);
+        preview_btn = button(body, "Preview", 670, 236, 174, 60, preview_click);
     } else if (page == 2) {
         label(body, "Corner probe", 0, 0, 350, 22);
         label(body, "OUTSIDE CORNER", 0, 42, 350, 12, MUTED);
@@ -531,6 +599,35 @@ static void build_page() {
 }
 static void refresh(lv_timer_t *) {
     runtime_snapshot(state);
+    int parsed = preview_parsing.load();
+    if (parsed == 2 || parsed == 3) {
+        preview_parsing.store(0);
+        preview_show = parsed == 2 && state.download_ready && !strcmp(preview_path, state.download_path);
+        notify(preview_message);
+        if (page == 1) {
+            build_page();
+            return;
+        }
+    }
+    if (preview_pending && !state.downloading && !state.busy) {
+        preview_pending = false;
+        if (state.download_ready && !strcmp(preview_path, state.download_path) &&
+            runtime_preview_acquire(&preview_data, &preview_size)) {
+            preview_parsing.store(1);
+            if (xTaskCreate(parse_preview, "preview_parse", 8192, nullptr, 2, nullptr) != pdPASS) {
+                runtime_preview_release();
+                preview_parsing.store(0);
+                notify("Not enough memory to parse preview");
+            }
+        }
+    }
+    if (preview_show && !state.download_ready) {
+        preview_show = false;
+        if (page == 1) {
+            build_page();
+            return;
+        }
+    }
     bool on = ready();
     char s[256];
     snprintf(s, sizeof s, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
@@ -578,6 +675,9 @@ static void refresh(lv_timer_t *) {
     enable(resume_btn, state.online && state.status && !strcmp(state.mode, "Hold:0"));
     enable(stop_btn, state.online || state.identified);
     enable(recover_btn, state.online && (state.alarm || state.error));
+    enable(preview_btn, on && *selected && !preview_pending && preview_parsing.load() == 0);
+    if (page == 1 && preview_show)
+        enable(start_btn, on && !strcmp(selected, preview_path));
     if (page == 1 && file_box) {
         if (revision != state.file_revision)
             files();
@@ -586,6 +686,10 @@ static void refresh(lv_timer_t *) {
         if (state.sd_active)
             lv_label_set_text(file_title, state.filename);
         snprintf(s, sizeof s, "%.1f %%", state.percent);
+        if (state.downloading)
+            snprintf(s, sizeof s, "%lu KB", (unsigned long)state.download_bytes / 1024);
+        else if (preview_parsing.load() == 1)
+            snprintf(s, sizeof s, "Parsing...");
         lv_label_set_text(progress_text, s);
         lv_bar_set_value(progress, (int)state.percent, LV_ANIM_OFF);
         snprintf(s, sizeof s, "%02lu:%02lu:%02lu", (unsigned long)state.elapsed / 3600,

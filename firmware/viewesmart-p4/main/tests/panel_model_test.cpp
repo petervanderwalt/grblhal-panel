@@ -10,7 +10,19 @@ struct Capture {
     uint8_t bytes[96] = {};
     int n = 0, b = 0;
     bool fail = false;
+    char download[2048] = {};
+    size_t downloaded = 0;
+    bool fail_download = false;
 };
+static bool download_data(void *p, const char *data, size_t n) {
+    auto &c = *(Capture *)p;
+    if (c.fail_download || c.downloaded + n >= sizeof c.download)
+        return false;
+    memcpy(c.download + c.downloaded, data, n);
+    c.downloaded += n;
+    c.download[c.downloaded] = 0;
+    return true;
+}
 static bool line(void *p, const char *s) {
     auto &c = *(Capture *)p;
     if (c.n < 48)
@@ -161,6 +173,54 @@ static bool commands_and_faults() {
     CHECK(!model->state.status);
     return true;
 }
+static bool sd_download() {
+    ready();
+    capture->downloaded = 0;
+    capture->fail_download = false;
+    CHECK(!model->download("/missing.nc", download_data, capture));
+    CHECK(model->list());
+    model->tick(500);
+    model->receive("[FILE:/preview.nc|SIZE:100]", 501);
+    model->receive("[FILE:/large.nc|SIZE:3000000]", 501);
+    model->receive("[FILE:/bad~.nc|SIZE:50]", 501);
+    model->receive("[FILE:/unusable.nc|SIZE:50|UNUSABLE]", 501);
+    model->receive("ok", 501);
+    model->tick(502);
+    CHECK(!model->download("/large.nc", download_data, capture));
+    CHECK(!model->download("/bad~.nc", download_data, capture) && !model->run("/bad~.nc"));
+    CHECK(!model->download("/unusable.nc", download_data, capture));
+    CHECK(model->download("/preview.nc", download_data, capture));
+    model->tick(503);
+    CHECK(!strcmp(capture->lines[1], "$F<=/preview.nc"));
+    CHECK(!model->jog('X', 1, 600) && !model->run("/preview.nc"));
+    model->receive("G21 G90", 3000);
+    model->tick(3001); // A long transfer is not a lost-status failure.
+    CHECK(model->state.online && model->state.downloading);
+    model->receive("<Idle|MPos:1,2,3>", 3002);
+    model->receive("G1 X10 Y20", 3003);
+    model->receive("%ok", 3004);
+    model->tick(3005);
+    CHECK(model->state.download_ready && !model->state.busy);
+    CHECK(!strcmp(capture->download, "G21 G90\nG1 X10 Y20\n%\n"));
+    CHECK(model->state.download_bytes == capture->downloaded);
+    CHECK(!model->jog('X', 1, 600));
+    model->receive("<Idle>", 3005);
+    CHECK(model->download("/preview.nc", download_data, capture));
+    model->tick(3006);
+    capture->fail_download = true;
+    model->receive("G1 X99", 3007);
+    CHECK(model->state.downloading && model->state.busy);
+    model->receive("ok", 3008);
+    model->tick(3009);
+    CHECK(!model->state.download_ready && !model->state.busy);
+    model->receive("<Idle>", 3009);
+    capture->fail_download = false;
+    CHECK(model->download("/preview.nc", download_data, capture));
+    model->tick(3010);
+    model->tick(13011);
+    CHECK(!model->state.online && !model->state.download_ready);
+    return true;
+}
 static bool corner_sequence() {
     ready();
     ProbeSettings p;
@@ -240,6 +300,7 @@ bool model_self_test() {
     const Test tests[] = {{"identification_and_realtime", identification},
                           {"coordinates_and_probe_pins", coordinates_and_probe_pins},
                           {"sd_and_progress", sd_and_progress},
+                          {"sd_download", sd_download},
                           {"commands_and_faults", commands_and_faults},
                           {"corner_sequence", corner_sequence},
                           {"feedback_and_write_failure", lost_feedback_and_write_failure}};

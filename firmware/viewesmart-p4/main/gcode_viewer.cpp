@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -10,6 +11,8 @@
 #include "bsp/touch.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_touch.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 namespace {
 
@@ -46,6 +49,7 @@ struct ViewerState {
     std::vector<PackedVertex> vertices;
     float cam_rot_y = 0.78f;
     float cam_rot_x = -0.78f;
+    float cos_x = 1, sin_x = 0, cos_y = 1, sin_y = 0;
     float model_scale = 1.0f;
     float pan_x = 0.0f;
     float pan_y = 0.0f;
@@ -126,12 +130,51 @@ static float parse_axis_value(const std::string &line, char axis, float fallback
         return fallback;
     }
 
-    size_t end = pos + 1;
-    while (end < line.size() && (isdigit(static_cast<unsigned char>(line[end])) || line[end] == '.' || line[end] == '-')) {
-        ++end;
+    char *end;
+    float value = strtof(line.c_str() + pos + 1, &end);
+    return end == line.c_str() + pos + 1 || !std::isfinite(value) ? fallback : value;
+}
+static float axis_target(const std::string &line, char axis, float current, const MachineState &state)
+{
+    const float scale = state.mm ? 1.f : 25.4f;
+    return parse_axis_value(line, axis, state.abs ? current / scale : 0.f) * scale + (state.abs ? 0.f : current);
+}
+static bool modal_block(std::string &line, MachineState &state)
+{
+    int comment = 0;
+    std::string clean;
+    for (unsigned char c : line) {
+        if (c == '(') { comment++; continue; }
+        if (c == ')' && comment) { comment--; continue; }
+        if (!comment && c == ';') break;
+        if (!comment) clean += static_cast<char>(std::toupper(c));
     }
-
-    return strtof(line.substr(pos + 1, end - pos - 1).c_str(), nullptr);
+    line.swap(clean);
+    if (line.find_first_of("#[]") != std::string::npos) return false;
+    for (const char *p = line.c_str(); *p;) {
+        char letter = *p++;
+        if (letter != 'G' && letter != 'M') continue;
+        char *end;
+        float value = strtof(p, &end);
+        if (p == end) continue;
+        p = end;
+        if (letter == 'M') { if (value == 98 || value == 99) return false; continue; }
+        if (!std::isfinite(value) || value < 0 || value > 1000 || value != std::floor(value)) return false;
+        switch ((int)value) {
+        case 0: case 1: case 2: case 3: state.mode = (int)value; break;
+        case 17: state.plane = 0; break;
+        case 18: state.plane = 1; break;
+        case 19: state.plane = 2; break;
+        case 20: state.mm = false; break;
+        case 21: state.mm = true; break;
+        case 90: state.abs = true; break;
+        case 91: state.abs = false; break;
+        case 4: case 40: case 49: case 54: case 55: case 56: case 57: case 58: case 59:
+        case 61: case 64: case 80: case 93: case 94: case 95: break;
+        default: return false;
+        }
+    }
+    return !(state.mode > 1 && line.find('R') != std::string::npos);
 }
 
 static void report_progress(int progress)
@@ -161,6 +204,18 @@ static void put_pixel(int x, int y, uint16_t color)
 
 static void draw_line(int x0, int y0, int x1, int y1, uint16_t color)
 {
+    // Clip before Bresenham so zooming cannot walk millions of off-screen pixels.
+    float vx = (float)x1 - x0, vy = (float)y1 - y0, start = 0, end = 1;
+    float p[] = {-vx, vx, -vy, vy};
+    float q[] = {(float)x0, (float)s_viewer.width - 1 - x0, (float)y0, (float)s_viewer.height - 1 - y0};
+    for (int i = 0; i < 4; i++) {
+        if (p[i] == 0) { if (q[i] < 0) return; continue; }
+        float t = q[i] / p[i];
+        if (p[i] < 0) start = std::max(start, t); else end = std::min(end, t);
+        if (start > end) return;
+    }
+    x1 = (int)(x0 + end * vx); y1 = (int)(y0 + end * vy);
+    x0 = (int)(x0 + start * vx); y0 = (int)(y0 + start * vy);
     int dx = std::abs(x1 - x0);
     int sx = x0 < x1 ? 1 : -1;
     int dy = -std::abs(y1 - y0);
@@ -190,17 +245,17 @@ static void project_point(float in_x, float in_y, float in_z, int &out_x, int &o
     const float y = in_y - s_viewer.center_y;
     const float z = in_z - s_viewer.center_z;
 
-    const float cos_x = std::cos(s_viewer.cam_rot_x);
-    const float sin_x = std::sin(s_viewer.cam_rot_x);
+    const float cos_x = s_viewer.cos_x;
+    const float sin_x = s_viewer.sin_x;
     const float y1 = y * cos_x - z * sin_x;
     const float z1 = y * sin_x + z * cos_x;
 
-    const float cos_y = std::cos(s_viewer.cam_rot_y);
-    const float sin_y = std::sin(s_viewer.cam_rot_y);
+    const float cos_y = s_viewer.cos_y;
+    const float sin_y = s_viewer.sin_y;
     const float x2 = x * cos_y - z1 * sin_y;
 
-    out_x = static_cast<int>((s_viewer.width / 2.0f) + s_viewer.pan_x + (x2 * s_viewer.model_scale));
-    out_y = static_cast<int>((s_viewer.height / 2.0f) + s_viewer.pan_y - (y1 * s_viewer.model_scale));
+    out_x = static_cast<int>(std::clamp((s_viewer.width / 2.0f) + s_viewer.pan_x + (x2 * s_viewer.model_scale), -10000000.f, 10000000.f));
+    out_y = static_cast<int>(std::clamp((s_viewer.height / 2.0f) + s_viewer.pan_y - (y1 * s_viewer.model_scale), -10000000.f, 10000000.f));
 }
 
 static void update_bounds(float x, float y, float z)
@@ -273,6 +328,7 @@ static void parse_arc(float tx, float ty, float tz, float i, float j, float k, c
     if (segments < 1) {
         segments = 1;
     }
+    segments = std::min(segments, (int)kMaxPoints);
 
     const float angle_step = diff / segments;
     const float linear_step = (lin_e - lin_s) / segments;
@@ -295,6 +351,10 @@ static void parse_arc(float tx, float ty, float tz, float i, float j, float k, c
 
 static void render_model()
 {
+    s_viewer.cos_x = std::cos(s_viewer.cam_rot_x);
+    s_viewer.sin_x = std::sin(s_viewer.cam_rot_x);
+    s_viewer.cos_y = std::cos(s_viewer.cam_rot_y);
+    s_viewer.sin_y = std::sin(s_viewer.cam_rot_y);
     clear_buffer();
 
     if (s_viewer.vertices.size() < 2) {
@@ -444,6 +504,7 @@ extern "C" void gcode_viewer_attach(lv_obj_t *parent, lv_coord_t width, lv_coord
         s_viewer.buffer = static_cast<uint16_t *>(
             heap_caps_malloc(1024 * 600 * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     }
+    if (!s_viewer.buffer) return;
 
     s_viewer.width = width;
     s_viewer.height = height;
@@ -461,6 +522,8 @@ extern "C" void gcode_viewer_attach(lv_obj_t *parent, lv_coord_t width, lv_coord
     lv_obj_add_event_cb(s_viewer.canvas, viewer_input_event_cb, LV_EVENT_GESTURE, nullptr);
     lv_canvas_set_buffer(s_viewer.canvas, s_viewer.buffer, width, height, LV_COLOR_FORMAT_RGB565);
     clear_buffer();
+    reset_view();
+    render_model();
 }
 
 extern "C" void gcode_viewer_detach(void)
@@ -468,13 +531,13 @@ extern "C" void gcode_viewer_detach(void)
     s_viewer.canvas = nullptr;
 }
 
-extern "C" bool gcode_viewer_load_file(const char *path, char *status, size_t status_len)
+static bool parse_stream(FILE *file, const char *path, char *status, size_t status_len)
 {
-    FILE *file = fopen(path, "r");
-    char line_buf[256];
+    char line_buf[768];
     long file_size = 0;
     long bytes_read = 0;
     int last_progress = -1;
+    int blocks = 0;
 
     if (!file) {
         snprintf(status, status_len, "Open failed: %s", path);
@@ -500,39 +563,38 @@ extern "C" bool gcode_viewer_load_file(const char *path, char *status, size_t st
         std::string line(line_buf);
         line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
         line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-        std::transform(line.begin(), line.end(), line.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-
-        if (line.empty() || line[0] == ';') {
-            continue;
+        if (!modal_block(line, state)) {
+            fclose(file);
+            s_viewer.vertices.clear();
+            snprintf(status, status_len, "Unsupported preview code (macros, offsets, cycles or R arcs). SD run is still available.");
+            return false;
         }
-
-        if (line.find("G90") != std::string::npos) state.abs = true;
-        if (line.find("G91") != std::string::npos) state.abs = false;
-        if (line.find("G21") != std::string::npos) state.mm = true;
-        if (line.find("G20") != std::string::npos) state.mm = false;
-        if (line.find("G17") != std::string::npos) state.plane = 0;
-        if (line.find("G18") != std::string::npos) state.plane = 1;
-        if (line.find("G19") != std::string::npos) state.plane = 2;
-        if (line.find("G0") != std::string::npos) state.mode = 0;
-        if (line.find("G1") != std::string::npos) state.mode = 1;
-        if (line.find("G2") != std::string::npos) state.mode = 2;
-        if (line.find("G3") != std::string::npos) state.mode = 3;
+        if (line.empty()) continue;
+        if (++blocks % 256 == 0) vTaskDelay(1);
 
         if (line.find('X') != std::string::npos || line.find('Y') != std::string::npos || line.find('Z') != std::string::npos ||
             (state.mode > 1 && (line.find('I') != std::string::npos || line.find('J') != std::string::npos || line.find('K') != std::string::npos))) {
-            const float tx = parse_axis_value(line, 'X', state.abs ? state.x : 0.0f) + (state.abs ? 0.0f : state.x);
-            const float ty = parse_axis_value(line, 'Y', state.abs ? state.y : 0.0f) + (state.abs ? 0.0f : state.y);
-            const float tz = parse_axis_value(line, 'Z', state.abs ? state.z : 0.0f) + (state.abs ? 0.0f : state.z);
             const float scale = state.mm ? 1.0f : 25.4f;
+            const float tx = axis_target(line, 'X', state.x, state);
+            const float ty = axis_target(line, 'Y', state.y, state);
+            const float tz = axis_target(line, 'Z', state.z, state);
+            if (!std::isfinite(tx) || !std::isfinite(ty) || !std::isfinite(tz) ||
+                std::fabs(tx) > 1000000 || std::fabs(ty) > 1000000 || std::fabs(tz) > 1000000) {
+                fclose(file); s_viewer.vertices.clear();
+                snprintf(status, status_len, "Preview coordinates out of range"); return false;
+            }
 
             if (state.mode <= 1) {
-                add_point(tx * scale, ty * scale, tz * scale, static_cast<uint8_t>(state.mode));
+                add_point(tx, ty, tz, static_cast<uint8_t>(state.mode));
             } else {
                 MachineState scaled = state;
-                scaled.x *= scale;
-                scaled.y *= scale;
-                scaled.z *= scale;
-                parse_arc(tx * scale, ty * scale, tz * scale,
+                for (char axis : {'I', 'J', 'K'}) {
+                    if (std::fabs(parse_axis_value(line, axis, 0) * scale) > 1000000) {
+                        fclose(file); s_viewer.vertices.clear();
+                        snprintf(status, status_len, "Preview arc out of range"); return false;
+                    }
+                }
+                parse_arc(tx, ty, tz,
                           parse_axis_value(line, 'I', 0.0f) * scale,
                           parse_axis_value(line, 'J', 0.0f) * scale,
                           parse_axis_value(line, 'K', 0.0f) * scale,
@@ -558,16 +620,48 @@ extern "C" bool gcode_viewer_load_file(const char *path, char *status, size_t st
 
     fclose(file);
 
+    if (s_viewer.vertices.size() >= kMaxPoints) {
+        s_viewer.vertices.clear();
+        snprintf(status, status_len, "Preview segment limit exceeded; no partial toolpath shown");
+        return false;
+    }
+
     if (s_viewer.vertices.size() < 2) {
         snprintf(status, status_len, "No toolpath in %s", path);
         return false;
     }
 
-    reset_view();
-    render_model();
     report_progress(100);
     snprintf(status, status_len, "Loaded %u segments from %s", static_cast<unsigned>(s_viewer.vertices.size()), strrchr(path, '/') ? strrchr(path, '/') + 1 : path);
     return true;
+}
+extern "C" bool gcode_viewer_load_file(const char *path, char *status, size_t status_len)
+{
+    bool ok = parse_stream(fopen(path, "r"), path, status, status_len);
+    if (ok) { reset_view(); render_model(); }
+    return ok;
+}
+extern "C" bool gcode_viewer_parse_memory(const char *data, size_t size, char *status, size_t status_len)
+{
+    return data && size && parse_stream(fmemopen((void *)data, size, "r"), "controller SD", status, status_len);
+}
+extern "C" bool gcode_viewer_parser_test(void)
+{
+    MachineState state = {0,0,0,true,true,0,0};
+    std::string a = "G21 G90 G17 (G2 X99) ;G3";
+    if (!modal_block(a,state) || state.mode != 0 || a.find('X') != std::string::npos) return false;
+    a = "G1 X+12.5";
+    if (!modal_block(a,state) || state.mode != 1 || parse_axis_value(a,'X',0) != 12.5f) return false;
+    a = "G20 G91 G18";
+    if (!modal_block(a,state) || state.mode != 1 || state.mm || state.abs || state.plane != 1) return false;
+    a = "X1";
+    if (std::fabs(axis_target(a,'X',25.4f,state) - 50.8f) > .001f) return false;
+    a = "G21 G90";
+    if (!modal_block(a,state) || std::fabs(axis_target(a,'X',25.4f,state) - 25.4f) > .001f) return false;
+    a = "G81 X10";
+    if (modal_block(a,state)) return false;
+    a = "G1 X#1";
+    return !modal_block(a,state);
 }
 
 extern "C" void gcode_viewer_set_progress_callback(gcode_viewer_progress_cb_t cb, void *user_data)
@@ -580,15 +674,15 @@ extern "C" void gcode_viewer_set_preset(gcode_view_preset_t preset)
 {
     switch (preset) {
     case GCODE_VIEW_PRESET_TOP:
-        s_viewer.cam_rot_x = -1.57f;
+        s_viewer.cam_rot_x = 0.0f;
         s_viewer.cam_rot_y = 0.0f;
         break;
     case GCODE_VIEW_PRESET_BOTTOM:
-        s_viewer.cam_rot_x = 1.57f;
+        s_viewer.cam_rot_x = 3.14159265f;
         s_viewer.cam_rot_y = 0.0f;
         break;
     case GCODE_VIEW_PRESET_FRONT:
-        s_viewer.cam_rot_x = 0.0f;
+        s_viewer.cam_rot_x = -1.57079633f;
         s_viewer.cam_rot_y = 0.0f;
         break;
     case GCODE_VIEW_PRESET_BACK:
@@ -629,7 +723,8 @@ extern "C" void gcode_viewer_pan(int delta_x, int delta_y)
 
 extern "C" void gcode_viewer_zoom(float factor)
 {
-    s_viewer.model_scale *= factor;
+    if (!std::isfinite(factor) || factor <= 0) return;
+    s_viewer.model_scale = std::clamp(s_viewer.model_scale * factor, .0001f, 10000.f);
     render_model();
 }
 

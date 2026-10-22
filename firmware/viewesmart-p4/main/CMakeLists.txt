@@ -5,6 +5,7 @@ idf_component_register(
         panel_model.cpp
         panel_runtime.cpp
         panel_ui.cpp
+        gcode_viewer.cpp
         tests/panel_model_test.cpp
     INCLUDE_DIRS
         .)

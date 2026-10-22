@@ -8,6 +8,12 @@
 
 namespace panel {
 static void copy(char *to, const char *from, size_t size) { snprintf(to, size, "%s", from); }
+static bool valid_sd_path(const char *path) {
+    if (!path || path[0] != '/' || strlen(path) > 159) return false;
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++)
+        if (*p < 32 || *p >= 127 || strchr("!~?|]", *p)) return false;
+    return true;
+}
 static bool vector3(const char *s, float *v) {
     float a, b, c;
     if (sscanf(s, "%f,%f,%f", &a, &b, &c) != 3 || !isfinite(a) || !isfinite(b) || !isfinite(c))
@@ -65,6 +71,9 @@ static const char *fault_text(bool alarm, int code) {
 }
 Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c) {}
 void Model::cancel(const char *message) {
+    if (state.downloading)
+        state.download_ready = false;
+    state.downloading = false;
     queued_ = cursor_ = 0;
     awaiting_ = need_probe_ = got_probe_ = false;
     state.busy = state.probing = state.listing = false;
@@ -94,6 +103,7 @@ void Model::disconnect() {
     state.online = false;
     state.status = false;
     state.identified = false;
+    state.download_ready = false;
     copy(state.mode, "Disconnected", sizeof state.mode);
 }
 bool Model::idle() const {
@@ -123,17 +133,14 @@ bool Model::list() {
     return append("$F+");
 }
 bool Model::run(const char *path) {
-    if (!idle() || !path || path[0] != '/' || strlen(path) > 159)
+    if (!idle() || !valid_sd_path(path))
         return false;
     bool found = false;
     for (int i = 0; i < state.file_count; i++)
-        if (!state.files[i].directory && !strcmp(path, state.files[i].path))
+        if (!state.files[i].directory && !state.files[i].unusable && !strcmp(path, state.files[i].path))
             found = true;
     if (!found)
         return false;
-    for (const char *p = path; *p; p++)
-        if ((unsigned char)*p < 32 || *p == '|' || *p == ']')
-            return false;
     char cmd[192];
     snprintf(cmd, sizeof cmd, "$F=%s", path);
     copy(state.filename, path, sizeof state.filename);
@@ -145,6 +152,36 @@ bool Model::run(const char *path) {
     if (ok)
         state.sd_active = true;
     return ok;
+}
+bool Model::download(const char *path, Download sink, void *context) {
+    if (!idle() || !valid_sd_path(path) || !sink)
+        return false;
+    const File *file = nullptr;
+    for (int i = 0; i < state.file_count; i++)
+        if (!state.files[i].directory && !state.files[i].unusable && !strcmp(state.files[i].path, path))
+            file = &state.files[i];
+    if (!file)
+        return false;
+    if (file->size > MaxPreviewBytes) {
+        copy(state.message, "Preview limit is 2 MiB. Controller SD run remains available.",
+             sizeof state.message);
+        return false;
+    }
+    char cmd[192];
+    snprintf(cmd, sizeof cmd, "$F<=%s", path);
+    if (!append(cmd))
+        return false;
+    download_sink_ = sink;
+    download_context_ = context;
+    download_failed_ = false;
+    state.downloading = true;
+    state.download_ready = false;
+    state.download_bytes = 0;
+    sent_ = now_;
+    state.download_total = file->size;
+    copy(state.download_path, path, sizeof state.download_path);
+    copy(state.message, "Downloading controller SD preview", sizeof state.message);
+    return true;
 }
 bool Model::jog(char axis, float d, float feed) {
     if (!idle() || !strchr("XYZ", axis) || !axis || !isfinite(d) || !isfinite(feed) || d == 0 ||
@@ -185,21 +222,25 @@ bool Model::jog_vector(const char *directions, float distance, float feed) {
     char cmd[128] = "$J=G91 G21";
     bool moving = false;
     for (int i = 0; i < 3; i++) {
-        if (!strchr("-0+", directions[i])) return false;
-        if (directions[i] == '0') continue;
+        if (!strchr("-0+", directions[i]))
+            return false;
+        if (directions[i] == '0')
+            continue;
         char word[32];
         snprintf(word, sizeof word, " %c%.3f", "XYZ"[i], directions[i] == '+' ? distance : -distance);
         strcat(cmd, word);
         moving = true;
     }
-    if (!moving) return false;
+    if (!moving)
+        return false;
     char word[32];
     snprintf(word, sizeof word, " F%.1f", feed);
     strcat(cmd, word);
     return append(cmd);
 }
 bool Model::home(char axis) {
-    if (axis && !strchr("XYZ", axis)) return false;
+    if (axis && !strchr("XYZ", axis))
+        return false;
     if (!state.online || !state.identified || !state.status || state.busy || state.sd_active ||
         (strcmp(state.mode, "Idle") && strncmp(state.mode, "Alarm", 5)))
         return false;
@@ -229,6 +270,7 @@ bool Model::stop() {
     cancel("Reset sent. Wait for controller identification.");
     state.status = false;
     state.sd_active = false;
+    state.download_ready = false;
     return true;
 }
 bool Model::jog_cancel() {
@@ -437,6 +479,33 @@ void Model::receive(const char *line, uint32_t now) {
         status_report(line);
         return;
     }
+    if (state.downloading && awaiting_ && strncmp(line, "error:", 6) && strncmp(line, "ALARM:", 6)) {
+        size_t n = strlen(line);
+        bool complete = n >= 2 && !strcmp(line + n - 2, "ok");
+        if (complete)
+            n -= 2; // Older controllers can append the acknowledgement to the final line.
+        if (n) {
+            if (state.download_bytes + n + 1 > MaxPreviewBytes ||
+                (!download_failed_ && (!download_sink_(download_context_, line, n) ||
+                                       !download_sink_(download_context_, "\n", 1))))
+                download_failed_ = true;
+            state.download_bytes += n + 1;
+        }
+        sent_ = now;
+        if (complete) {
+            state.downloading = false;
+            state.status = false;
+            identified_at_ = now;
+            state.download_ready = !download_failed_ && state.download_bytes > 0;
+            state.download_revision++;
+            copy(state.message,
+                 state.download_ready ? "Preview downloaded" : "Preview failed or empty; no toolpath loaded",
+                 sizeof state.message);
+            awaiting_ = false;
+            cursor_++;
+        }
+        return;
+    }
     if (!strncmp(line, "[VER:", 5)) {
         const char *p = line;
         while (*p) {
@@ -513,6 +582,7 @@ void Model::receive(const char *line, uint32_t now) {
         const char *size = strstr(line, "SIZE:");
         long bytes = size ? strtol(size + 5, nullptr, 10) : 0;
         f.directory = line[1] == 'D' || bytes < 0;
+        f.unusable = strstr(line, "|UNUSABLE") != nullptr || !valid_sd_path(f.path);
         f.size = bytes > 0 ? bytes : 0;
         state.file_revision++;
     }
@@ -578,7 +648,9 @@ void Model::tick(uint32_t now) {
         append("$#");
         append("$$");
     }
-    if ((state.status && now - state.last_status > 2000) || (!state.status && now - identified_at_ > 5000)) {
+    if ((!state.downloading && ((state.status && now - state.last_status > 2000) ||
+                                (!state.status && now - identified_at_ > 5000))) ||
+        (state.downloading && now - sent_ > 10000)) {
         rt(state.probing ? 0x18 : '!');
         cancel("Status timed out. Controls locked; reconnect the controller.");
         state.status = false;
