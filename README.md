@@ -8,6 +8,11 @@ at 115200 baud, configured and connected from Settings.
 
 Jog has an eight-direction XY pad, separate Z controls, Incremental/Continuous
 modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
+The landscape layout is intended for two-handed use: XY by the left thumb,
+large Z controls by the right, full-width DROs above, and bottom navigation.
+Each DRO has an axis-zero button. Individual homing is on Zero / Home.
+STOP stays visible on every page and immediately sends Ctrl-X without confirmation;
+this resets the controller, so position may need checking or re-homing afterward.
 Incremental sends one move for the entered distance. Continuous sends one long
 jog and raw `0x85` on release or loss of touch. Distance and feed use numeric inputs.
 

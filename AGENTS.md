@@ -112,6 +112,12 @@ little-endian RGB565 image.
 - `main/tests/panel_model_test.cpp`: embedded protocol tests (`UG TEST`).
 - `tools/check-jog.py`: physical display checks using preview feedback and injected touches.
 
+Design for landscape, two-handed pendant use. Keep large XY targets at the left,
+Z at the right, DROs above the hands, and bottom navigation. STOP must stay visible
+on all pages and above dialogs, and send Ctrl-X on touch-down without confirmation. Keep confirmations
+for homing, zeroing, probing and starting jobs. Per-axis zero is on each DRO;
+individual homing is on Zero / Home. Update injected-touch coordinates when moving controls.
+
 The inherited wizard/link files remain as reference but are not compiled by
 `main/CMakeLists.txt`. `main.c` creates the panel UI.
 

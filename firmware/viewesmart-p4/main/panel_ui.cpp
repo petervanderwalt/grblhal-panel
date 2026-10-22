@@ -23,6 +23,7 @@ static int page = 0;
 static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[5];
 static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
+static lv_obj_t *axis_zero[3];
 static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *line_text, *start_btn,
     *refresh_btn, *probe_start, *probe_status, *contact_btn, *wcs_label;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
@@ -43,6 +44,7 @@ struct Edit {
 static Edit editing;
 static bool (*confirmation)() = nullptr;
 static void build_page();
+static void release_jog();
 static void refresh(lv_timer_t *);
 static uint32_t now() { return lv_tick_get(); }
 static void save() {
@@ -177,6 +179,7 @@ static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320
     lv_obj_set_style_radius(modal, 0, 0);
     lv_obj_t *card = box(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
     label(card, title, 24, 22, width - 48, 22);
+    lv_obj_move_foreground(stop_btn);
     return card;
 }
 static void confirmed(lv_event_t *) {
@@ -301,10 +304,9 @@ static void home_click(lv_event_t *e) {
     confirm(title, "Clear the machine travel before homing.", home);
 }
 static void stop_click(lv_event_t *) {
-    confirm("Stop and reset?",
-            "Sends Ctrl-X. Motion and the SD job stop.\nPosition may be lost; check or re-home before "
-            "continuing.",
-            stop);
+    close_modal();
+    release_jog();
+    result(stop());
 }
 static void pause_click(lv_event_t *) { result(runtime_action(Action::Pause)); }
 static void resume_click(lv_event_t *) { result(runtime_action(Action::Resume)); }
@@ -417,40 +419,40 @@ static void build_page() {
     release_jog();
     jog_count = 0;
     gate_count = 0;
+    home_btn = nullptr;
     file_box = file_title = progress = progress_text = time_text = line_text = start_btn = refresh_btn =
         probe_start = probe_status = contact_btn = wcs_label = nullptr;
     lv_obj_clean(body);
+    lv_obj_set_pos(body, page == 0 ? 16 : 90, 176);
+    lv_obj_set_width(body, page == 0 ? 992 : 844);
     runtime_snapshot(state);
     for (int i = 0; i < 5; i++)
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(i == page ? 0x25445B : BG), 0);
     if (page == 0) {
-        button(body, "Incremental", 0, 0, 154, 48, jog_mode, 0, !continuous ? BLUE : EDGE);
-        button(body, "Continuous", 164, 0, 154, 48, jog_mode, 1, continuous ? BLUE : EDGE);
+        label(body, "XY JOG", 8, 4, 310, 16, MUTED);
+        label(body, "Z JOG", 844, 4, 148, 16, MUTED);
+        button(body, "Incremental", 370, 0, 208, 64, jog_mode, 0, !continuous ? BLUE : EDGE);
+        button(body, "Continuous", 594, 0, 208, 64, jog_mode, 1, continuous ? BLUE : EDGE);
         char s[40];
         snprintf(s, sizeof s, "Step %.2f mm", prefs.step);
-        enable(button(body, s, 332, 0, 216, 48, edit_value, 0), !continuous);
+        enable(button(body, s, 370, 76, 208, 64, edit_value, 0), !continuous);
         snprintf(s, sizeof s, "Feed %.0f mm/min", prefs.jog_feed);
-        button(body, s, 562, 0, 282, 48, edit_value, 1);
+        button(body, s, 594, 76, 208, 64, edit_value, 1);
         const char *names[] = {LV_SYMBOL_LEFT " " LV_SYMBOL_UP, "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,
                               "X-", "X+", LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
         const int cells[] = {0,1,2,3,5,6,7,8};
         for (int i = 0; i < 10; i++) {
-            int x = i < 8 ? (cells[i] % 3) * 110 : 344;
-            int y = i < 8 ? 64 + (cells[i] / 3) * 80 : (i == 8 ? 64 : 224);
-            lv_obj_t *b = button(body, names[i], x, y, 100, 72, nullptr);
+            int x = i < 8 ? (cells[i] % 3) * 114 : 844;
+            int y = i < 8 ? 36 + (cells[i] / 3) * 96 : (i == 8 ? 36 : 188);
+            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 104 : 148, i < 8 ? 88 : 128, nullptr);
+            lv_obj_set_style_text_font(lv_obj_get_child(b, 0), font(28), 0);
             lv_obj_add_event_cb(b, jog_event, LV_EVENT_ALL, (void *)(uintptr_t)i);
             jog_buttons[jog_count++] = b;
         }
-        gate(button(body, LV_SYMBOL_HOME "\nHome all", 110, 144, 100, 72, home_click));
-        label(body, "Z", 379, 168, 40, 20, MUTED);
-        gate(button(body, "Home all axes", 474, 64, 370, 50, home_click));
-        gate(button(body, "Zero XYZ", 474, 184, 370, 50, zero_click, 7));
-        for (int i = 0; i < 3; i++) {
-            snprintf(s, sizeof s, "Home %c", "XYZ"[i]);
-            gate(button(body, s, 474 + i * 126, 124, 118, 50, home_click, "XYZ"[i]));
-            snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
-            gate(button(body, s, 474 + i * 126, 244, 118, 50, zero_click, 1 << i));
-        }
+        label(body, "XY", 146, 162, 70, 22, MUTED);
+        home_btn = button(body, LV_SYMBOL_HOME "  Home all", 370, 152, 208, 64, home_click);
+        gate(button(body, "Zero XYZ", 594, 152, 208, 64, zero_click, 7));
+        label(body, continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance", 370, 244, 432, 20, MUTED);
     } else if (page == 1) {
         label(body, "Controller SD", 0, 0, 280, 22);
         refresh_btn = button(body, "Refresh", 316, 0, 128, 40, list_click, 0);
@@ -502,8 +504,11 @@ static void build_page() {
         gate(button(body, "Zero Y", 214, 164, 198, 72, zero_click, 2));
         gate(button(body, "Zero Z", 428, 164, 198, 72, zero_click, 4));
         gate(button(body, "Zero XYZ", 642, 164, 198, 72, zero_click, 7, 0x28516A));
-        label(body, "Zeroing changes the active work offset. It does not home the machine.", 0, 270, 844, 14,
-              MUTED);
+        for (int i = 0; i < 4; i++) {
+            char s[20];
+            snprintf(s, sizeof s, i == 3 ? "Home all" : "Home %c", "XYZ"[i < 3 ? i : 0]);
+            gate(button(body, s, i * 214, 248, 198, 64, home_click, i == 3 ? 0 : "XYZ"[i]));
+        }
     } else {
         label(body, "Probe defaults", 0, 0, 420, 22);
         value_button(body, "Plate X / mm", prefs.probe.x, 0, 48, 132, 3);
@@ -563,6 +568,8 @@ static void refresh(lv_timer_t *) {
     lv_obj_set_style_text_color(status_text, lv_color_hex(state.alarm || state.error ? RED : MUTED), 0);
     for (int i = 0; i < gate_count; i++)
         enable(gated[i], on);
+    for (int i = 0; i < 3; i++)
+        enable(axis_zero[i], on);
     for (int i = 0; i < jog_count; i++)
         enable(jog_buttons[i], on || jog_held);
     enable(home_btn, on || (state.online && state.identified && state.status && !state.busy &&
@@ -617,33 +624,38 @@ extern "C" void panel_ui_create() {
     root = lv_screen_active();
     lv_obj_set_style_bg_color(root, lv_color_hex(BG), 0);
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-    label(root, "grblHAL", 20, 18, 150, 22);
-    label(root, "CONTROL PANEL", 168, 24, 200, 12, MUTED);
-    state_label = label(root, "Disconnected", 670, 20, 334, 20, MUTED);
-    lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_RIGHT, 0);
-    protocol_label = label(root, "UART offline", 18, 492, 122, 12, MUTED);
-    const char *tabs[] = {"Jog & DRO", "SD jobs", "Probe", "Zero / WCS", "Settings"};
+    label(root, "grblHAL", 16, 20, 148, 22);
+    state_label = label(root, "Disconnected", 174, 22, 352, 20, MUTED);
+    protocol_label = label(root, "UART offline", 690, 504, 318, 12, MUTED);
+    lv_obj_set_style_text_align(protocol_label, LV_TEXT_ALIGN_RIGHT, 0);
+    const char *tabs[] = {"Jog", "Files", "Probe", "Zero / Home", "Settings"};
     for (int i = 0; i < 5; i++)
-        nav[i] = button(root, tabs[i], 12, 76 + i * 76, 126, 60, navigate, i, BG);
+        nav[i] = button(root, tabs[i], 16 + i * 154, 528, 144, 64, navigate, i, EDGE);
     const char *axes[] = {"X", "Y", "Z"};
     uint32_t colors[] = {RED, GREEN, BLUE};
     for (int i = 0; i < 3; i++) {
-        lv_obj_t *c = box(root, 156 + i * 286, 72, 272, 104);
+        lv_obj_t *c = box(root, 16 + i * 336, 66, 320, 98);
         axis_card[i] = c;
         label(c, axes[i], 16, 16, 30, 20, colors[i]);
-        axis_work[i] = label(c, "--.---", 54, 10, 204, 32);
+        axis_work[i] = label(c, "--.---", 66, 10, 238, 32);
         lv_obj_set_style_text_align(axis_work[i], LV_TEXT_ALIGN_RIGHT, 0);
-        axis_machine[i] = label(c, "M  --.---", 54, 64, 204, 14, MUTED);
+        axis_machine[i] = label(c, "M  --.---", 16, 65, 188, 14, MUTED);
         lv_obj_set_style_text_align(axis_machine[i], LV_TEXT_ALIGN_RIGHT, 0);
+        char s[16];
+        snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
+        axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i);
     }
-    body = box(root, 156, 192, 844, 302, BG);
+    body = box(root, 16, 176, 992, 328, BG);
     lv_obj_set_style_border_width(body, 0, 0);
-    status_text = label(root, "Connect controller in Settings", 156, 504, 844, 14, MUTED);
-    home_btn = button(root, "Home", 156, 540, 112, 48, home_click);
-    pause_btn = button(root, "Pause", 280, 540, 136, 48, pause_click, 0, 0x6B542D);
-    resume_btn = button(root, "Resume", 428, 540, 136, 48, resume_click, 0, 0x225B4A);
-    stop_btn = button(root, "Stop / Reset", 576, 540, 218, 48, stop_click, 0, 0x8A353F);
-    recover_btn = button(root, "Recover", 806, 540, 194, 48, recover);
+    status_text = label(root, "Connect controller in Settings", 16, 504, 654, 14, MUTED);
+    lv_obj_set_height(status_text, 20);
+    lv_label_set_long_mode(status_text, LV_LABEL_LONG_DOT);
+    pause_btn = button(root, "Pause", 692, 8, 150, 48, pause_click, 0, 0x6B542D);
+    resume_btn = button(root, "Resume", 858, 8, 150, 48, resume_click, 0, 0x225B4A);
+    stop_btn = button(lv_layer_top(), "STOP", 790, 528, 218, 64, nullptr, 0, 0x8A353F);
+    lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_PRESSED, nullptr);
+    lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
+    recover_btn = button(root, "Recover", 546, 8, 130, 48, recover);
     build_page();
     lv_timer_create(refresh, 100, nullptr);
 }

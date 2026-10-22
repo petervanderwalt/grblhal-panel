@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 import serial
 import sys
+import json
 
 spec = importlib.util.spec_from_file_location("remote", Path(__file__).with_name("ui-remote.py"))
 remote = importlib.util.module_from_spec(spec)
@@ -38,34 +39,57 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        tap(70, 106)
-        tap(225, 215)  # Incremental
+        tap(88, 560)
+        tap(490, 208)  # Incremental
         idle()
-        tap(205, 290)  # X- Y+
+        tap(68, 256)  # X- Y+
         last = command("LAST")
         assert "$J=G91 G21 X-" in last and " Y" in last and "0x85" not in last, last
         command("RX ok")
         idle()
-        tap(390, 215)  # Continuous
-        command("HOLD 205 290 700")
+        tap(714, 208)  # Continuous
+        command("HOLD 68 256 700")
         assert "0x85" in command("LAST")
         time.sleep(.5)
         assert "0x85" in command("LAST"), "Jog queued after release"
         idle()
         shot("jog-continuous.png")
-        tap(225, 215)
+        tap(490, 208)
         shot("jog-incremental.png")
-        tap(680, 342)  # Home X
+        tap(550, 560)  # Zero / Home
+        tap(189, 456)  # Home X
         shot("home-x-confirm.png")
         tap(630, 409)
         assert "$HX" in command("LAST")
         command("RX ok")
         idle()
-        tap(680, 460)  # Zero X
+        tap(88, 560)  # Return to Jog
+        tap(282, 136)  # Zero X on DRO
         tap(630, 409)
         assert "G10 L20 P0 X0" in command("LAST")
         command("RX ok")
         idle()
-        print("PASS: diagonal incremental, continuous release, Home X, Zero X", flush=True)
+        command("RX <Run|SD:42.5,/test.nc|FS:800,12000>")
+        time.sleep(.3)
+        tap(767, 32)  # Pause stays available above every page
+        assert "0x21" in command("LAST")
+        tap(933, 32)
+        assert "0x7E" in command("LAST")
+        tap(242, 560)  # Files
+        tap(899, 560)  # Stop immediately, without confirming
+        data = json.loads(command("STATE").removeprefix("@UGDATA "))
+        assert not data["job"], "Stop opened a dialog or left the job running"
+        tap(88, 560)
+        # Stop also stays reachable above a confirmation dialog.
+        idle()
+        tap(490, 360)  # Home all confirmation
+        tap(899, 560)  # Stop closes it, without homing
+        time.sleep(.5)
+        idle()
+        tap(68, 256)
+        assert "$J=G91 G21 X-" in command("LAST"), "Dialog remained over jog controls"
+        command("RX ok")
+        idle()
+        print("PASS: jog, navigation, Home X, Zero X, pause/resume, immediate Stop and dialog Stop", flush=True)
     finally:
         command("TOUCH ON")
