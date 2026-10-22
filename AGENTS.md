@@ -148,7 +148,10 @@ duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
 Jog / Files / Settings tab accents are purple / green / orange, with opaque
 backgrounds and a solid selected fill; no top selection line. Tab taps slide the
 shared page_layer horizontally for 220 ms; keep the header and tab bar stationary.
-Page rebuilds cancel any active slide and restore x=0. Use subtle button
+The animation layer holds controls only during the slide; restore their root
+parent afterward. Page rebuilds cancel slides and restore x=0. Mode and speed
+selection update in place; only change matrix disabled flags when readiness changes.
+Use subtle button
 gradients and card shadows. Fault dialogs have square edges and red title bands; successful
 completion uses green. Include simulated alarms and errors in workflow checks.
 Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero

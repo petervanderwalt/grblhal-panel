@@ -84,6 +84,13 @@ static bool (*confirmation)() = nullptr;
 static void build_page();
 static void release_jog();
 static void refresh(lv_timer_t *);
+static void parent_page_content(lv_obj_t *parent) {
+    lv_obj_t *objects[] = {left_surface, right_surface, axis_card[0], axis_card[1], axis_card[2],
+                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn};
+    for (auto obj : objects)
+        if (obj && lv_obj_get_parent(obj) != parent)
+            lv_obj_set_parent(obj, parent);
+}
 static void show_page(int target) {
     page = target;
     build_page();
@@ -285,7 +292,7 @@ static lv_obj_t *choices(lv_obj_t *parent, const char *const *map, int selected,
     return m;
 }
 static void enable_choices(lv_obj_t *m, bool on) {
-    if (!m)
+    if (!m || lv_obj_has_state(m, LV_STATE_DISABLED) == !on)
         return;
     enable(m, on);
     if (on)
@@ -526,13 +533,13 @@ static void jog_event(lv_event_t *e) {
 static void jog_mode(lv_event_t *e) {
     release_jog();
     continuous = lv_buttonmatrix_get_selected_button((lv_obj_t *)lv_event_get_target(e)) == 1;
-    build_page();
+    refresh(nullptr);
 }
 static void speed_click(lv_event_t *e) {
     release_jog();
     jog_speed = lv_buttonmatrix_get_selected_button((lv_obj_t *)lv_event_get_target(e));
     save();
-    build_page();
+    refresh(nullptr);
 }
 static void list_click(lv_event_t *) { result(runtime_action(Action::List)); }
 static void start_click(lv_event_t *) {
@@ -743,6 +750,7 @@ static void navigate(lv_event_t *e) {
     close_modal();
     preview_show = false;
     show_page(target);
+    parent_page_content(page_layer);
     lv_anim_t slide;
     lv_anim_init(&slide);
     lv_anim_set_var(&slide, page_layer);
@@ -750,6 +758,7 @@ static void navigate(lv_event_t *e) {
     lv_anim_set_values(&slide, direction * 1024, 0);
     lv_anim_set_duration(&slide, 220);
     lv_anim_set_path_cb(&slide, lv_anim_path_ease_out);
+    lv_anim_set_completed_cb(&slide, [](lv_anim_t *) { parent_page_content(root); });
     lv_anim_start(&slide);
 }
 static void visibility(lv_obj_t *o, bool visible) {
@@ -975,6 +984,7 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
 static void build_page() {
     lv_anim_delete(page_layer, nullptr);
     lv_obj_set_x(page_layer, 0);
+    parent_page_content(root);
     release_jog();
     jog_count = 0;
     wifi_row_status = nullptr;
@@ -1282,8 +1292,9 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_bg_opa(page_layer, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(page_layer, 0, 0);
     lv_obj_set_style_radius(page_layer, 0, 0);
-    left_surface = surface(page_layer, 8, 64, 488, 440);
-    right_surface = surface(page_layer, 500, 64, 516, 440);
+    lv_obj_remove_flag(page_layer, LV_OBJ_FLAG_CLICKABLE);
+    left_surface = surface(root, 8, 64, 488, 440);
+    right_surface = surface(root, 500, 64, 516, 440);
     label(root, "grblHAL", 16, 20, 148, 22, WHITE);
     wifi_header = button(root, "", 548, 4, 460, 52, show_wifi);
     lv_obj_set_style_bg_color(wifi_header, lv_color_hex(EDGE), 0);
@@ -1333,7 +1344,7 @@ extern "C" void panel_ui_create() {
     lv_obj_add_event_cb(tabview, navigate, LV_EVENT_VALUE_CHANGED, nullptr);
     const char *axes[] = {"X", "Y", "Z"};
     for (int i = 0; i < 3; i++) {
-        lv_obj_t *c = box(page_layer, 16 + i * 336, 66, 320, 98);
+        lv_obj_t *c = box(root, 16 + i * 336, 66, 320, 98);
         axis_card[i] = c;
         lv_obj_set_style_border_width(c, 0, 0);
         axis_name[i] = label(c, axes[i], 16, 16, 30, 20, AXIS_COLORS[i]);
@@ -1349,12 +1360,12 @@ extern "C" void panel_ui_create() {
         soften(axis_home[i], AXIS_COLORS[i]);
         soften(axis_zero[i], AXIS_COLORS[i]);
     }
-    machine_heading = label(page_layer, "MACHINE", 136, 70, 104, 12, MUTED);
-    work_heading = label(page_layer, "WORK", 246, 70, 148, 12, MUTED);
+    machine_heading = label(root, "MACHINE", 136, 70, 104, 12, MUTED);
+    work_heading = label(root, "WORK", 246, 70, 148, 12, MUTED);
     lv_obj_set_style_text_align(machine_heading, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_text_align(work_heading, LV_TEXT_ALIGN_RIGHT, 0);
 
-    dro_actions = box(page_layer, 16, 314, 472, 64, BG);
+    dro_actions = box(root, 16, 314, 472, 64, BG);
     lv_obj_set_style_border_width(dro_actions, 0, 0);
     lv_obj_set_style_bg_opa(dro_actions, LV_OPA_TRANSP, 0);
     home_btn = button(dro_actions, "Home all", 0, 0, 112, 64, home_click);
@@ -1365,20 +1376,20 @@ extern "C" void panel_ui_create() {
     soften(goto_buttons[0]);
     soften(goto_buttons[1]);
     soften(zero_all_btn);
-    jog_tools = box(page_layer, 16, 400, 472, 80, BG);
+    jog_tools = box(root, 16, 400, 472, 80, BG);
     lv_obj_set_style_border_width(jog_tools, 0, 0);
     lv_obj_set_style_bg_opa(jog_tools, LV_OPA_TRANSP, 0);
     probe_btn = button(jog_tools, "Probe", 0, 0, 228, 64, show_probe, 0, 0xA95B12);
     wcs_dropdown = dropdown(jog_tools, "G54\nG55\nG56\nG57\nG58\nG59", 0, 244, 8, 228, wcs);
-    job_controls = box(page_layer, 16, 330, 228, 80, BG);
+    job_controls = box(root, 16, 330, 228, 80, BG);
     lv_obj_set_style_border_width(job_controls, 0, 0);
     lv_obj_set_style_bg_opa(job_controls, LV_OPA_TRANSP, 0);
     job_pause = button(job_controls, "Pause", 0, 0, 228, 80, job_pause_click, 0, AMBER);
     lv_obj_set_style_text_font(lv_obj_get_child(job_pause, 0), font(22), 0);
-    body = surface(page_layer, 16, 240, 992, 264);
+    body = surface(root, 16, 240, 992, 264);
     lv_obj_set_style_border_width(body, 0, 0);
 
-    stop_btn = button(page_layer, "Stop", 260, 330, 228, 80, nullptr, 0, RED);
+    stop_btn = button(root, "Stop", 260, 330, 228, 80, nullptr, 0, RED);
     lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_PRESSED, nullptr);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
     lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
