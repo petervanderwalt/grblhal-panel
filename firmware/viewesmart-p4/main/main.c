@@ -5,7 +5,7 @@
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
-#include "cnc_wizard.h"
+#include "panel_ui.h"
 #include "ui_remote.h"
 
 void app_main(void)
@@ -31,7 +31,7 @@ void app_main(void)
     bsp_display_backlight_on();
 
     bsp_display_lock(0);
-    cnc_wizard_create(lv_display_get_default());
+    panel_ui_create();
     bsp_display_unlock();
     ui_remote_start();
 }

@@ -13,12 +13,16 @@
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "lvgl.h"
+#include "panel_debug.h"
+#include "panel_ui.h"
 
 static lv_indev_t *remote_input;
 static lv_point_t touch_point;
 static bool pressed;
 static SemaphoreHandle_t tap_done;
 static bool tap_pending;
+static bool release_phase;
+static int hold_ms;
 
 static void input_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -83,10 +87,13 @@ static void screenshot(void)
 /* UI callbacks run on the LVGL task, including screen creation and deletion. */
 static void tap_tick(lv_timer_t *timer)
 {
-    lv_indev_read(remote_input);
-    if (pressed) {
-        pressed = false;
+    if (!release_phase) {
+        lv_indev_read(remote_input);
+        release_phase = true;
+        lv_timer_set_period(timer, hold_ms);
     } else {
+        pressed = false;
+        lv_indev_read(remote_input);
         lv_timer_delete(timer);
         tap_pending = false;
         xSemaphoreGive(tap_done);
@@ -95,12 +102,32 @@ static void tap_tick(lv_timer_t *timer)
 
 static void command(const char *line)
 {
-    int x, y, consumed = 0;
-    if (!strcmp(line, "UG SHOT")) {
+    int x, y, consumed = 0, duration = 100;
+    if (!strcmp(line,"UG TOUCH ON") || !strcmp(line,"UG TOUCH OFF")) {
+        bsp_display_lock(0);
+        lv_indev_t *physical = bsp_display_get_input_dev();
+        if (physical) lv_indev_enable(physical,!strcmp(line,"UG TOUCH ON"));
+        bsp_display_unlock();
+        reply("@UGOK TOUCH\n");
+    } else if (!strcmp(line, "UG TEST")) {
+        reply(panel_debug_test() ? "@UGOK TEST\n" : "@UGERR tests_failed\n");
+    } else if (!strcmp(line, "UG DEMO ON") || !strcmp(line, "UG DEMO OFF")) {
+        panel_debug_demo(!strcmp(line, "UG DEMO ON"));
+        reply("@UGOK DEMO\n");
+    } else if (!strncmp(line, "UG RX ", 6)) {
+        reply(panel_debug_receive(line + 6) ? "@UGOK RX\n" : "@UGERR preview_required\n");
+    } else if (!strcmp(line, "UG STATE") || !strcmp(line, "UG LAST") || !strcmp(line,"UG PREFS")) {
+        char out[512],payload[448];
+        if (!strcmp(line, "UG STATE")) panel_debug_state(payload,sizeof payload);
+        else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
+        else panel_debug_last(payload,sizeof payload);
+        snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strcmp(line, "UG SHOT")) {
         screenshot();
-    } else if (sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 &&
+    } else if (((sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 && line[consumed] == 0) ||
+                (sscanf(line, "UG HOLD %d %d %d%n", &x, &y, &duration, &consumed) == 3 && line[consumed] == 0)) &&
                line[consumed] == 0 && x >= 0 && x < BSP_LCD_H_RES &&
-               y >= 0 && y < BSP_LCD_V_RES) {
+               y >= 0 && y < BSP_LCD_V_RES && duration >= 50 && duration <= 2000) {
         if (!bsp_display_lock(2000)) {
             reply("@UGERR display_busy\n");
             return;
@@ -113,6 +140,8 @@ static void command(const char *line)
         xSemaphoreTake(tap_done, 0);
         touch_point = (lv_point_t){x, y};
         pressed = true;
+        release_phase = false;
+        hold_ms = duration;
         tap_pending = true;
         lv_timer_t *timer = lv_timer_create(tap_tick, 100, NULL);
         if (!timer) {
@@ -136,7 +165,7 @@ static void command(const char *line)
 static void console_task(void *arg)
 {
     (void)arg;
-    char line[96];
+    char line[768];
     size_t used = 0;
     bool overflow = false;
     for (;;) {

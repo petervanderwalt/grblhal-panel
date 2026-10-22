@@ -102,13 +102,38 @@ Wire protocol: newline-delimited `UG SHOT` and `UG TAP x y`. Responses:
 of count followed by four of RGB565 pixel value. CRC32 covers the complete
 little-endian RGB565 image.
 
-## Controller work next
+## Current controller and UI code
+
+- `main/panel_model.cpp/.h`: portable protocol parser, command queue, jog/zero/home,
+  SD jobs, faults and acknowledged corner-probe sequence.
+- `main/panel_runtime.cpp/.h`: UART1 worker, mutex and explicit UART-off preview.
+- `main/panel_ui.cpp/.h`: LVGL pages, jog press/release handling, numeric inputs,
+  NVS preferences and confirmations.
+- `main/tests/panel_model_test.cpp`: embedded protocol tests (`UG TEST`).
+- `tools/check-jog.py`: physical display checks using preview feedback and injected touches.
+
+The inherited wizard/link files remain as reference but are not compiled by
+`main/CMakeLists.txt`. `main.c` creates the panel UI.
+
+Continuous jog starts on `LV_EVENT_PRESSED` and cancels with raw `0x85` on
+`LV_EVENT_RELEASED`/`LV_EVENT_PRESS_LOST` and page rebuild. Incremental sends once
+on press and is not cancelled on release. Cancel clears an unsent queued jog;
+manual motion waits for fresh Idle feedback before another command.
+
+Protocol reference: Ooznest Control source at commit
+`7ce3f90206f1428ae1959136ba5bbdb439f00d1c`, especially
+`js/machine/jogging.js`, `js/machine/dro.js`, `js/ui/ui.js`,
+`js/features/sdcard.js` and `js/machine/probe.js`.
+For builds newer than 20261013, use one startup `0x87`, then poll `0x80`.
+Do not change `$10` automatically. SD jobs use `$F+` and `$F=/path` on the controller.
+
+## Controller transport
 
 Keep full grblHAL serial support as a first-class option. The user has UART pins
 on the controller and proposed display IO37 TX / IO38 RX. Cross TX to controller
 RX and RX to controller TX, with common ground and verified 3.3V UART levels.
 
-The inherited defaults currently use UART1 TX27/RX26 with RS485 supply enabled.
+The active panel defaults use UART1 TX37/RX38. The inherited link used TX27/RX26.
 The manufacturer's RS485 example uses those pins and LDO4 at 3300mV. Do not claim
 that the proposed IO37/38 path or RS485 bus has been hardware-tested yet.
 Verify board revision, pin availability and wiring before changing the default.

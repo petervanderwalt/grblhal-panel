@@ -64,3 +64,16 @@ The same lines can be piped to session from a PowerShell here-string or a text
 file. Closing/reopening COM12 may reset CH340-connected boards, so use session
 for multi-step workflows. Allow the normal LVGL task to render between taps
 and captures; capture does not force a render from the console task.
+
+Additional debug commands:
+
+- `UG HOLD x y milliseconds` (50–2000): hold and release through LVGL; replies `@UGOK TAP`.
+- `UG TOUCH OFF` / `UG TOUCH ON`: temporarily disable/restore physical touch for deterministic checks.
+  Always restore ON in cleanup. Reset also restores touch.
+- `UG TEST`: run embedded model tests with captured fake transmissions.
+- `UG DEMO ON` / `UG DEMO OFF`: explicit preview mode; actual controller UART is disconnected.
+- `UG RX line`: inject controller feedback in preview only.
+- `UG STATE`, `UG LAST`, `UG PREFS`: inspect state, last non-poll transmission and settings.
+
+The Python session supports `demo on`, `rx <Idle|...>`, `test`, `state`, `last`,
+`prefs`, and `touch off/on`. `tools/check-jog.py` exercises held touches directly.

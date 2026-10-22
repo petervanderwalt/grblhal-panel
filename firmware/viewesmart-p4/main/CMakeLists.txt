@@ -2,10 +2,9 @@ idf_component_register(
     SRCS
         main.c
         ui_remote.c
-        cnc_wizard.c
-        cnc_wizard_theme.c
-        cnc_link.cpp
-        gcode_viewer.cpp
-        wifi_bridge.c
+        panel_model.cpp
+        panel_runtime.cpp
+        panel_ui.cpp
+        tests/panel_model_test.cpp
     INCLUDE_DIRS
         .)

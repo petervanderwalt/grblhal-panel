@@ -103,11 +103,34 @@ def exchange(port, command, output=None, point=None):
             return
     raise TimeoutError("No complete response from UI remote firmware")
 
+def debug(port, command):
+    port.write(("\nUG " + command + "\n").encode("ascii"))
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        line = port.readline().strip()
+        if line.startswith(b"ESP-ROM:"):
+            raise RuntimeError("Device reset during command")
+        if line.startswith(b"@UGTEST"):
+            print(line.decode(), flush=True)
+        if line.startswith(b"@UGERR"):
+            raise RuntimeError(line.decode())
+        if line.startswith((b"@UGOK", b"@UGDATA")):
+            result = line.decode()
+            print(result, flush=True)
+            return result
+    raise TimeoutError(command)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="COM12")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("self-test")
+    for name in ("test", "state", "last", "prefs"):
+        sub.add_parser(name)
+    demo = sub.add_parser("demo")
+    demo.add_argument("mode", choices=("on", "off"))
+    rx = sub.add_parser("rx")
+    rx.add_argument("line")
     sub.add_parser("session", help="Keep the serial connection open; accept shot PATH, tap X Y, quit")
     shot = sub.add_parser("shot")
     shot.add_argument("output", type=Path)
@@ -155,12 +178,22 @@ def main():
                         raise ValueError("Expected tap X Y")
                     exchange(port, "tap", point=point)
                     time.sleep(0.2)
+                elif parts[0] in ("demo", "touch", "rx", "test", "state", "last", "prefs"):
+                    verb = parts[0].upper()
+                    payload = parts[1] if len(parts) == 2 else ""
+                    if verb in ("DEMO", "TOUCH"):
+                        payload = payload.upper()
+                    debug(port, (verb + " " + payload).strip())
+                    time.sleep(0.2)
                 else:
-                    raise ValueError("Expected shot PATH, tap X Y, or quit")
+                    raise ValueError("Expected shot PATH, tap X Y, demo on/off, rx LINE, test, state, last or quit")
         elif args.command == "shot":
             exchange(port, "shot", args.output)
-        else:
+        elif args.command == "tap":
             exchange(port, "tap", point=(args.x, args.y))
+        else:
+            suffix = args.mode.upper() if args.command == "demo" else args.line if args.command == "rx" else ""
+            debug(port, (args.command.upper() + " " + suffix).strip())
 
 if __name__ == "__main__":
     main()
