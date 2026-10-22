@@ -8,9 +8,10 @@ at 115200 baud, configured and connected from Settings.
 
 Jog has an eight-direction XY pad, separate Z controls, Incremental/Continuous
 modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
-The landscape layout is intended for two-handed use: XY by the left thumb,
-large Z controls by the right, full-width DROs above, and bottom navigation.
-Each DRO has Home and Zero buttons for that axis. Individual homing is also on Zero / Home.
+The landscape Jog screen uses compact vertical DRO rows on the left and a grouped
+XYZ jog pad on the right, with Z directly beside XY and an empty centre. Other
+pages keep the DRO summary above their content. Each axis has Home and Zero;
+individual homing is also on Zero / Home.
 On Jog, Home all, Go to XY zero, Go to Z zero and Set zero all sit directly below
 the DRO. Go to zero moves the machine; Set zero changes the active work offset.
 Both require confirmation. Go to XY zero follows Ooznest Control: rapid via machine
@@ -19,7 +20,10 @@ Both routines establish mm/absolute mode and restore the original units/distance
 STOP stays visible on every page and immediately sends Ctrl-X without confirmation;
 this resets the controller, so position may need checking or re-homing afterward.
 Incremental sends one move for the entered distance. Continuous sends one long
-jog and raw `0x85` on release or loss of touch. Distance and feed use numeric inputs.
+jog and raw `0x85` on release or loss of touch. Distance uses a numeric input.
+Fast / Med / Slow use 100% / 50% / 25% of the lowest `$110`–`$112` maximum rate
+among the moving axes, matching Ooznest Control. The fallback before settings are
+available is 1000 mm/min. The selected preset is saved on the display.
 
 Controller SD listing/run/progress, pause/resume/reset, alarm recovery and XYZ
 corner probing are included. Plate defaults are X10/Y10/Z5 mm; enter tool diameter

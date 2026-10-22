@@ -26,6 +26,7 @@ struct State {
     int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0;
     uint32_t build = 0, last_status = 0, job_started = 0, elapsed = 0, file_revision = 0;
     float machine[3] = {}, work[3] = {}, wco[3] = {}, feed = 0, spindle = 0, percent = 0;
+    float axis_max_rate[3] = {};
     char mode[20] = "Disconnected", message[192] = "Connect a grblHAL controller", filename[160] = "";
     File files[MaxFiles] = {};
 };
@@ -46,6 +47,7 @@ class Model {
     bool download(const char *path, Download sink, void *context);
     bool jog(char axis, float distance, float feed);
     bool jog_vector(const char *directions, float distance, float feed);
+    bool jog_preset(const char *directions, float distance, int speed);
     bool zero(int axes);
     bool goto_zero(int axes);
     bool select_wcs(int wcs);

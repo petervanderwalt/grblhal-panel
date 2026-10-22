@@ -266,7 +266,7 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         }
         break;
     case Action::Jog:
-        ok = text && (strlen(text) == 3 ? model.jog_vector(text, x, y) : model.jog(text[0], x, y));
+        ok = model.jog_preset(text, x, (int)y);
         break;
     case Action::Zero:
         ok = model.zero((int)x);

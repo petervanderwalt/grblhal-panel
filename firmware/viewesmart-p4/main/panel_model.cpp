@@ -242,7 +242,7 @@ bool Model::goto_zero(int axes) {
 }
 bool Model::jog_vector(const char *directions, float distance, float feed) {
     if (!idle() || !directions || strlen(directions) != 3 || !isfinite(distance) || distance <= 0 ||
-        distance > 10000 || !isfinite(feed) || feed < 1 || feed > 10000)
+        distance > 10000 || !isfinite(feed) || feed < .1f || feed > 1000000)
         return false;
     char cmd[128] = "$J=G91 G21";
     bool moving = false;
@@ -262,6 +262,21 @@ bool Model::jog_vector(const char *directions, float distance, float feed) {
     snprintf(word, sizeof word, " F%.1f", feed);
     strcat(cmd, word);
     return append(cmd);
+}
+bool Model::jog_preset(const char *directions, float distance, int speed) {
+    if (!directions || strlen(directions) != 3 || speed < 0 || speed > 2)
+        return false;
+    float rate = 0;
+    for (int i = 0; i < 3; i++) {
+        if (directions[i] == '0' || state.axis_max_rate[i] <= 0)
+            continue;
+        if (!rate || state.axis_max_rate[i] < rate)
+            rate = state.axis_max_rate[i];
+    }
+    if (!rate)
+        rate = 1000; // Same fallback as Ooznest Control before settings arrive.
+    const float factor[] = {1, .5f, .25f};
+    return jog_vector(directions, distance, fmaxf(.1f, rate * factor[speed]));
 }
 bool Model::home(char axis) {
     if (axis && !strchr("XYZ", axis))
@@ -585,6 +600,16 @@ void Model::receive(const char *line, uint32_t now) {
             }
         }
         state.report_inches = inches;
+    }
+    for (int i = 0; i < 3; i++) {
+        char setting[8];
+        snprintf(setting, sizeof setting, "$%d=", 110 + i);
+        if (!strncmp(line, setting, strlen(setting))) {
+            char *end;
+            float rate = strtof(line + strlen(setting), &end);
+            if (*end == 0 && isfinite(rate) && rate > 0 && rate <= 1000000)
+                state.axis_max_rate[i] = rate;
+        }
     }
     if (!strncmp(line, "[FILE:", 6) || !strncmp(line, "[DIR:", 5)) {
         if (!state.listing)

@@ -263,6 +263,33 @@ static bool goto_work_zero() {
     CHECK(capture->n == 0);
     return true;
 }
+static bool jog_speed_presets() {
+    ready();
+    CHECK(!model->jog_preset("0+0", 1, 3));
+    CHECK(model->jog_preset("0+0", 1, 0));
+    model->tick(500);
+    CHECK(!strcmp(capture->lines[0], "$J=G91 G21 Y1.000 F1000.0"));
+    ready();
+    model->receive("$110=6000", 400);
+    model->receive("$111=3000", 401);
+    model->receive("$112=1200", 402);
+    model->receive("$110=nan", 403);
+    CHECK(model->state.axis_max_rate[0] == 6000);
+    CHECK(model->jog_preset("++0", 1, 0));
+    model->tick(500);
+    CHECK(!strcmp(capture->lines[0], "$J=G91 G21 X1.000 Y1.000 F3000.0"));
+    model->receive("ok", 501);
+    model->tick(502);
+    CHECK(model->jog_preset("++0", 1, 1));
+    model->tick(503);
+    CHECK(strstr(capture->lines[1], "F1500.0"));
+    model->receive("ok", 504);
+    model->tick(505);
+    CHECK(model->jog_preset("00+", 1, 2));
+    model->tick(506);
+    CHECK(!strcmp(capture->lines[2], "$J=G91 G21 Z1.000 F300.0"));
+    return true;
+}
 static bool corner_sequence() {
     ready();
     ProbeSettings p;
@@ -344,6 +371,7 @@ bool model_self_test() {
                           {"sd_and_progress", sd_and_progress},
                           {"sd_download", sd_download},
                           {"goto_work_zero", goto_work_zero},
+                          {"jog_speed_presets", jog_speed_presets},
                           {"commands_and_faults", commands_and_faults},
                           {"corner_sequence", corner_sequence},
                           {"feedback_and_write_failure", lost_feedback_and_write_failure}};

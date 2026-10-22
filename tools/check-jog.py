@@ -40,43 +40,61 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("DEMO ON")
         time.sleep(1)
         tap(88, 560)
-        tap(490, 272)  # Incremental
+        tap(631, 184)  # Incremental
+        command("RX $110=6000")
+        command("RX $111=3000")
+        command("RX $112=1200")
+        tap(548, 120)  # Fast
         idle()
-        tap(68, 297)  # X- Y+
+        tap(562, 268)  # X- Y+
         last = command("LAST")
         assert "$J=G91 G21 X-" in last and " Y" in last and "0x85" not in last, last
+        assert "F3000.0" in last, last
         command("RX ok")
         idle()
-        tap(714, 272)  # Continuous
-        command("HOLD 68 297 700")
+        tap(678, 358)  # Empty centre must not send a command
+        assert command("LAST") == last
+        for x, rate in ((638, "F1500.0"), (728, "F750.0")):
+            tap(x, 120)
+            tap(562, 268)
+            assert rate in command("LAST")
+            command("RX ok")
+            idle()
+        tap(938, 290)  # Slow Z uses the Z axis rate, beside XY
+        assert "Z" in command("LAST") and "F300.0" in command("LAST")
+        command("RX ok")
+        idle()
+        tap(548, 120)
+        tap(885, 184)  # Continuous
+        command("HOLD 562 268 700")
         assert "0x85" in command("LAST")
         time.sleep(.5)
         assert "0x85" in command("LAST"), "Jog queued after release"
         idle()
         shot("jog-continuous.png")
-        tap(490, 272)
+        tap(631, 184)
         shot("jog-incremental.png")
-        tap(70, 136)  # Home X beside the DRO
+        tap(62, 122)  # Home X beside the DRO
         shot("home-x-confirm.png")
         tap(630, 409)
         assert "$HX" in command("LAST")
         command("RX ok")
         idle()
         tap(88, 560)  # Return to Jog and its DRO actions
-        tap(386, 202)  # Go to XY work zero, beside the DRO
+        tap(192, 346)  # Go to XY work zero, below the DRO
         tap(630, 409)
         assert "$G" in command("LAST")
         idle()
-        tap(638, 202)  # Go to Z work zero
+        tap(312, 346)  # Go to Z work zero
         tap(630, 409)
         assert "$G" in command("LAST")
         idle()
-        tap(890, 202)  # Set zero all, separate from go-to-zero motion
+        tap(432, 346)  # Set zero all, separate from go-to-zero motion
         tap(630, 409)
         assert "G10 L20 P0 X0 Y0 Z0" in command("LAST")
         command("RX ok")
         idle()
-        tap(282, 136)  # Zero X on DRO
+        tap(441, 122)  # Zero X on DRO
         tap(630, 409)
         assert "G10 L20 P0 X0" in command("LAST")
         command("RX ok")
@@ -94,11 +112,11 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(88, 560)
         # Stop also stays reachable above a confirmation dialog.
         idle()
-        tap(134, 202)  # Home all confirmation beside the DRO
+        tap(72, 346)  # Home all confirmation below the DRO
         tap(899, 560)  # Stop closes it, without homing
         time.sleep(.5)
         idle()
-        tap(68, 297)
+        tap(562, 268)
         assert "$J=G91 G21 X-" in command("LAST"), "Dialog remained over jog controls"
         command("RX ok")
         idle()

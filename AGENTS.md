@@ -123,8 +123,10 @@ Background parsing holds the RAM cache against replacement. Never attach or rend
 the canvas while the parser task is editing its vertices. Preview rejects unsupported
 codes rather than displaying truncated geometry. Preserve responsive Stop during parsing.
 
-Design for landscape, two-handed pendant use. Keep large XY targets at the left,
-Z at the right, DROs above the hands, and bottom navigation. STOP must stay visible
+Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
+rows on the left and group the entire XYZ pad on the right, with Z immediately
+beside XY and a blank centre. Other pages retain their wide DRO summary for content
+space. Keep bottom navigation. STOP must stay visible
 on all pages and above dialogs, and send Ctrl-X on touch-down without confirmation. Keep confirmations
 for homing, zeroing, probing and starting jobs. Per-axis Home and Zero are on each DRO;
 individual homing is also on Zero / Home. Update injected-touch coordinates when moving controls.
@@ -134,6 +136,11 @@ Go XY follows `DROHandler.goXY0()`: machine Z−5 mm, X0, Y0, restore machine Z.
 Preserve units and distance mode, and wait for fresh Idle before more manual motion.
 Use actual directional arrows for all eight XY directions. Continuous cancels on
 release/lost press; incremental must finish its commanded distance without release cancellation.
+Use Fast / Med / Slow rather than numeric jog-feed entry. Match Ooznest Control:
+100% / 50% / 25% of the minimum maximum rate among moving axes (`$110`–`$112`),
+with a 1000 mm/min fallback if none are known. Keep numeric distance entry.
+The legacy `Preferences.jog_feed` field remains only to preserve existing NVS blobs;
+the chosen preset is stored separately as `jogspeed`.
 
 The inherited wizard/link files remain as reference but are not compiled by
 `main/CMakeLists.txt`. `main.c` creates the panel UI.

@@ -28,6 +28,8 @@ static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis
     *axis_card[3], *nav[5];
 static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
 static lv_obj_t *axis_zero[3], *axis_home[3];
+static lv_obj_t *axis_name[3], *machine_heading, *work_heading, *jog_hint;
+static uint8_t jog_speed = 0;
 static lv_obj_t *dro_actions, *goto_buttons[2], *zero_all_btn;
 static lv_obj_t *preview_btn;
 static bool preview_pending = false, preview_show = false;
@@ -62,6 +64,7 @@ static void save() {
     nvs_handle_t h;
     if (nvs_open("panel", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_blob(h, "prefs", &prefs, sizeof prefs);
+        nvs_set_u8(h, "jogspeed", jog_speed);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -84,6 +87,9 @@ static void load() {
                 p.jog_feed <= 10000 && p.probe.corner >= 0 && p.probe.corner <= 3)
                 prefs = p;
         }
+        uint8_t speed;
+        if (nvs_get_u8(h, "jogspeed", &speed) == ESP_OK && speed <= 2)
+            jog_speed = speed;
         nvs_close(h);
     }
 }
@@ -336,7 +342,7 @@ static void jog_event(lv_event_t *e) {
             return;
         const char *directions[] = {"-+0", "0+0", "++0", "-00", "+00", "--0", "0-0", "+-0", "00+", "00-"};
         bool ok = runtime_action(Action::Jog, directions[(uintptr_t)lv_event_get_user_data(e)],
-                                 continuous ? 10000 : prefs.step, prefs.jog_feed);
+                                 continuous ? 10000 : prefs.step, jog_speed);
         jog_held = ok && continuous;
         result(ok);
     } else if (lv_event_get_code(e) == LV_EVENT_RELEASED || lv_event_get_code(e) == LV_EVENT_PRESS_LOST) {
@@ -346,6 +352,12 @@ static void jog_event(lv_event_t *e) {
 static void jog_mode(lv_event_t *e) {
     release_jog();
     continuous = (uintptr_t)lv_event_get_user_data(e);
+    build_page();
+}
+static void speed_click(lv_event_t *e) {
+    release_jog();
+    jog_speed = (uintptr_t)lv_event_get_user_data(e);
+    save();
     build_page();
 }
 static void list_click(lv_event_t *) { result(runtime_action(Action::List)); }
@@ -509,6 +521,33 @@ static void navigate(lv_event_t *e) {
     page = (uintptr_t)lv_event_get_user_data(e);
     build_page();
 }
+static void layout_dro(bool compact) {
+    for (int i = 0; i < 3; i++) {
+        lv_obj_set_pos(axis_card[i], compact ? 16 : 16 + i * 336, compact ? 90 + i * 72 : 66);
+        lv_obj_set_size(axis_card[i], compact ? 472 : 320, compact ? 64 : 98);
+        lv_obj_set_pos(axis_name[i], compact ? 94 : 16, compact ? 21 : 16);
+        lv_obj_set_pos(axis_home[i], compact ? 8 : 12, compact ? 6 : 48);
+        lv_obj_set_size(axis_home[i], compact ? 76 : 84, compact ? 52 : 44);
+        lv_obj_set_pos(axis_zero[i], compact ? 386 : 224, compact ? 6 : 48);
+        lv_obj_set_size(axis_zero[i], compact ? 78 : 84, compact ? 52 : 44);
+        lv_obj_set_pos(axis_machine[i], compact ? 120 : 104, compact ? 24 : 65);
+        lv_obj_set_width(axis_machine[i], compact ? 104 : 110);
+        lv_obj_set_pos(axis_work[i], compact ? 230 : 66, compact ? 18 : 10);
+        lv_obj_set_width(axis_work[i], compact ? 148 : 238);
+        lv_obj_set_style_text_font(axis_work[i], font(compact ? 22 : 32), 0);
+    }
+    if (compact) {
+        lv_obj_remove_flag(machine_heading, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(work_heading, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(jog_hint, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(jog_hint,
+                          continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance");
+    } else {
+        lv_obj_add_flag(machine_heading, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(work_heading, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(jog_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 static void build_page() {
     release_jog();
     jog_count = 0;
@@ -518,43 +557,42 @@ static void build_page() {
         probe_start = probe_status = contact_btn = wcs_label = nullptr;
     gcode_viewer_detach();
     lv_obj_clean(body);
+    layout_dro(page == 0);
     if (page == 0)
         lv_obj_remove_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
     else
         lv_obj_add_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(body, page == 0 ? 16 : 90, page == 0 ? 240 : 176);
-    lv_obj_set_width(body, page == 0 ? 992 : 844);
-    lv_obj_set_height(body, page == 0 ? 264 : 328);
+    lv_obj_set_pos(body, page == 0 ? 508 : 90, page == 0 ? 76 : 176);
+    lv_obj_set_width(body, page == 0 ? 500 : 844);
+    lv_obj_set_height(body, page == 0 ? 424 : 328);
     runtime_snapshot(state);
     for (int i = 0; i < 5; i++)
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(i == page ? 0x25445B : BG), 0);
     if (page == 0) {
-        label(body, "XY JOG", 8, 4, 310, 16, MUTED);
-        label(body, "Z JOG", 844, 4, 148, 16, MUTED);
-        button(body, "Incremental", 370, 0, 208, 64, jog_mode, 0, !continuous ? BLUE : EDGE);
-        button(body, "Continuous", 594, 0, 208, 64, jog_mode, 1, continuous ? BLUE : EDGE);
+        label(body, "JOG FEEDRATE", 0, 0, 270, 12, MUTED);
+        label(body, "JOG DISTANCE", 282, 0, 218, 12, MUTED);
+        const char *speeds[] = {"Fast", "Med", "Slow"};
+        for (int i = 0; i < 3; i++)
+            button(body, speeds[i], i * 90, 20, 80, 48, speed_click, i, jog_speed == i ? BLUE : EDGE);
+        button(body, "Incremental", 0, 80, 246, 56, jog_mode, 0, !continuous ? BLUE : EDGE);
+        button(body, "Continuous", 254, 80, 246, 56, jog_mode, 1, continuous ? BLUE : EDGE);
         char s[40];
         snprintf(s, sizeof s, "Step %.2f mm", prefs.step);
-        enable(button(body, s, 370, 76, 208, 64, edit_value, 0), !continuous);
-        snprintf(s, sizeof s, "Feed %.0f mm/min", prefs.jog_feed);
-        button(body, s, 594, 76, 208, 64, edit_value, 1);
+        enable(button(body, s, 282, 20, 218, 48, edit_value, 0), !continuous);
         const char *names[] = {
             LV_SYMBOL_LEFT " " LV_SYMBOL_UP,   "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,   "X-", "X+",
             LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
         const int cells[] = {0, 1, 2, 3, 5, 6, 7, 8};
         for (int i = 0; i < 10; i++) {
-            int x = i < 8 ? (cells[i] % 3) * 114 : 844;
-            int y = i < 8 ? 20 + (cells[i] / 3) * 80 : (i == 8 ? 20 : 148);
-            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 104 : 148, i < 8 ? 74 : 104, nullptr);
+            int x = i < 8 ? (cells[i] % 3) * 116 : 360;
+            int y = i < 8 ? 152 + (cells[i] / 3) * 90 : (i == 8 ? 152 : 288);
+            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 108 : 140, i < 8 ? 80 : 124, nullptr);
             lv_obj_set_style_text_font(lv_obj_get_child(b, 0), font(28), 0);
             if (i < 8)
                 jog_arrow(b, i);
             lv_obj_add_event_cb(b, jog_event, LV_EVENT_ALL, (void *)(uintptr_t)i);
             jog_buttons[jog_count++] = b;
         }
-        label(body, "XY", 146, 127, 70, 22, MUTED);
-        label(body, continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance", 370,
-              172, 432, 20, MUTED);
     } else if (page == 1 && preview_show && state.download_ready) {
         label(body, preview_path, 0, 0, 620, 18);
         button(body, "Back to files", 636, 0, 208, 48, preview_back);
@@ -692,7 +730,7 @@ static void refresh(lv_timer_t *) {
         if (state.coordinates && state.wco_known) {
             snprintf(s, sizeof s, "% .3f", state.work[i]);
             lv_label_set_text(axis_work[i], s);
-            snprintf(s, sizeof s, "M  % .3f", state.machine[i]);
+            snprintf(s, sizeof s, page == 0 ? "% .3f" : "M  % .3f", state.machine[i]);
             lv_label_set_text(axis_machine[i], s);
         } else {
             lv_label_set_text(axis_work[i], "--.---");
@@ -721,7 +759,8 @@ static void refresh(lv_timer_t *) {
     bool can_home = on || (state.online && state.identified && state.status && !state.busy &&
                            !state.sd_active && !strncmp(state.mode, "Alarm", 5));
     enable(home_btn, can_home);
-    for (int i = 0; i < 3; i++) enable(axis_home[i], can_home);
+    for (int i = 0; i < 3; i++)
+        enable(axis_home[i], can_home);
     enable(pause_btn, state.online && state.status && !strncmp(state.mode, "Run", 3));
     enable(resume_btn, state.online && state.status && !strcmp(state.mode, "Hold:0"));
     enable(stop_btn, state.online || state.identified);
@@ -791,7 +830,7 @@ extern "C" void panel_ui_create() {
     for (int i = 0; i < 3; i++) {
         lv_obj_t *c = box(root, 16 + i * 336, 66, 320, 98);
         axis_card[i] = c;
-        label(c, axes[i], 16, 16, 30, 20, colors[i]);
+        axis_name[i] = label(c, axes[i], 16, 16, 30, 20, colors[i]);
         axis_work[i] = label(c, "--.---", 66, 10, 238, 32);
         lv_obj_set_style_text_align(axis_work[i], LV_TEXT_ALIGN_RIGHT, 0);
         axis_machine[i] = label(c, "M  --.---", 104, 65, 110, 14, MUTED);
@@ -802,12 +841,17 @@ extern "C" void panel_ui_create() {
         snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
         axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i);
     }
-    dro_actions = box(root, 16, 176, 992, 52, BG);
+    machine_heading = label(root, "MACHINE", 136, 70, 104, 12, MUTED);
+    work_heading = label(root, "WORK", 246, 70, 148, 12, MUTED);
+    lv_obj_set_style_text_align(machine_heading, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_align(work_heading, LV_TEXT_ALIGN_RIGHT, 0);
+    jog_hint = label(root, "", 16, 408, 472, 20, MUTED);
+    dro_actions = box(root, 16, 314, 472, 64, BG);
     lv_obj_set_style_border_width(dro_actions, 0, 0);
-    home_btn = button(dro_actions, "Home all", 0, 0, 236, 52, home_click);
-    goto_buttons[0] = button(dro_actions, "Go to XY zero", 252, 0, 236, 52, goto_click, 3);
-    goto_buttons[1] = button(dro_actions, "Go to Z zero", 504, 0, 236, 52, goto_click, 4);
-    zero_all_btn = button(dro_actions, "Set zero all", 756, 0, 236, 52, zero_click, 7);
+    home_btn = button(dro_actions, "Home all", 0, 0, 112, 64, home_click);
+    goto_buttons[0] = button(dro_actions, "Go to XY\nzero", 120, 0, 112, 64, goto_click, 3);
+    goto_buttons[1] = button(dro_actions, "Go to Z\nzero", 240, 0, 112, 64, goto_click, 4);
+    zero_all_btn = button(dro_actions, "Set zero\nall", 360, 0, 112, 64, zero_click, 7);
     body = box(root, 16, 240, 992, 264, BG);
     lv_obj_set_style_border_width(body, 0, 0);
     status_text = label(root, "Connect controller in Settings", 16, 504, 654, 14, MUTED);
