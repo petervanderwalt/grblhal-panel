@@ -146,7 +146,9 @@ Do not show protocol command bytes or a redundant units/WCS footer to end users.
 The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
 duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
 Jog / Files / Settings tab accents are purple / green / orange, with opaque
-backgrounds and a solid selected fill; no top selection line. Use subtle button
+backgrounds and a solid selected fill; no top selection line. Tab taps slide the
+shared page_layer horizontally for 220 ms; keep the header and tab bar stationary.
+Page rebuilds cancel any active slide and restore x=0. Use subtle button
 gradients and card shadows. Fault dialogs have square edges and red title bands; successful
 completion uses green. Include simulated alarms and errors in workflow checks.
 Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero

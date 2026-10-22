@@ -94,6 +94,9 @@ The Python session supports `demo on`, `rx <Idle|...>`, `test`, `state`, `last`,
 row actions, job navigation lock, overrides, completion and Stop. It restores touch
 in cleanup. Add `--no-captures` for assertions only.
 
+`tools/check-tabs.py` checks both tab directions and interrupted transitions in
+UART-disconnected demonstration mode, restoring physical touch afterward.
+
 ## Refresh the README gallery
 
 From the repository root, using Python with pyserial:

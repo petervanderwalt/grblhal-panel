@@ -6,7 +6,8 @@ from the controller’s SD card and follow the job from a dedicated run screen.
 
 The landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
-screens keep the common machine operations within reach.
+screens keep the common machine operations within reach. Bottom tabs switch
+between Jog, Files and Settings with a short sliding transition.
 
 ## Machine setup
 
