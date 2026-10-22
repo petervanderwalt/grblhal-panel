@@ -1,0 +1,7 @@
+**/build/
+**/managed_components/
+**/.cache/
+**/__pycache__/
+**/sdkconfig.old
+captures/
+*.log
