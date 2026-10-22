@@ -761,7 +761,8 @@ static lv_obj_t *override_control(const char *title, int y, bool spindle, lv_obj
     lv_obj_set_size(slider, 452, 18);
     lv_slider_set_range(slider, 10, 200);
     lv_slider_set_value(slider, 100, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(LINE), 0);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0xA5B2C8), 0);
+    lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_KNOB);
     lv_obj_set_style_pad_all(slider, 12, LV_PART_KNOB);
@@ -993,12 +994,15 @@ static void build_page() {
                demo_click);
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
+        lv_obj_set_style_text_align(file_title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_height(file_title, 26);
         lv_label_set_long_mode(file_title, LV_LABEL_LONG_DOT);
-        progress_text = label(body, "", 128, 48, 350, 32, BLUE);
-        time_text = label(body, "", 128, 96, 300, 20);
+        progress_text = label(body, "", 238, 48, 160, 32, BLUE);
+        time_text = label(body, "", 238, 96, 160, 20);
+        lv_obj_set_style_text_align(progress_text, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_align(time_text, LV_TEXT_ALIGN_CENTER, 0);
         progress = lv_arc_create(body);
-        lv_obj_set_pos(progress, 0, 36);
+        lv_obj_set_pos(progress, 106, 36);
         lv_obj_set_size(progress, 100, 100);
         lv_arc_set_rotation(progress, 270);
         lv_arc_set_bg_angles(progress, 0, 360);
@@ -1009,8 +1013,8 @@ static void build_page() {
         lv_obj_set_style_arc_width(progress, 7, LV_PART_INDICATOR);
         lv_obj_set_style_arc_color(progress, lv_color_hex(LINE), 0);
         lv_obj_set_style_arc_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
-        feed_slider = override_control("Feed override", 148, false, &feed_text);
-        spindle_slider = override_control("Speed override", 258, true, &spindle_text);
+        feed_slider = override_control("Feed override", 176, false, &feed_text);
+        spindle_slider = override_control("Speed override", 286, true, &spindle_text);
 
     } else if (page == CompletePage) {
         lv_obj_set_style_bg_color(body, lv_color_hex(GREEN), 0);
@@ -1103,6 +1107,7 @@ static void refresh(lv_timer_t *) {
     bool held = !strncmp(state.mode, "Hold", 4);
     lv_label_set_text(lv_obj_get_child(job_pause, 0), held ? "Resume" : "Pause");
     lv_obj_set_style_bg_color(job_pause, lv_color_hex(held ? GREEN : AMBER), 0);
+    lv_obj_set_style_bg_grad_dir(job_pause, held ? LV_GRAD_DIR_NONE : LV_GRAD_DIR_VER, 0);
     enable(job_pause,
            state.online && state.status && (!strncmp(state.mode, "Run", 3) || !strcmp(state.mode, "Hold:0")));
     enable(stop_btn, state.online || state.identified);

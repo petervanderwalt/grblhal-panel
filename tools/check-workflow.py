@@ -122,10 +122,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert "0x21" in command("LAST")
         tap(130, 370)
         assert "0x7E" in command("LAST")
-        command("SWIPE 742 291 790 291")  # Feed override, commit on release
+        command("SWIPE 742 319 790 319")  # Feed override, commit on release
         assert command("LAST").endswith(("0x91", "0x93"))
         time.sleep(.7)
-        command("SWIPE 742 401 698 401")  # Spindle override
+        command("SWIPE 742 429 698 429")  # Spindle override
         assert command("LAST").endswith(("0x9B", "0x9D"))
         shot("panel-job")
         command("RX [MSG:Program End]")
