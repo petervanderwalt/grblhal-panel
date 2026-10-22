@@ -1280,7 +1280,7 @@ extern "C" void panel_ui_create() {
     jog_tools = box(root, 16, 400, 472, 80, BG);
     lv_obj_set_style_border_width(jog_tools, 0, 0);
     lv_obj_set_style_bg_opa(jog_tools, LV_OPA_TRANSP, 0);
-    button(jog_tools, "Probe", 0, 0, 228, 64, show_probe);
+    button(jog_tools, "Probe", 0, 0, 228, 64, show_probe, 0, 0xA95B12);
     wcs_dropdown = dropdown(jog_tools, "G54\nG55\nG56\nG57\nG58\nG59", 0, 244, 8, 228, wcs);
     job_controls = box(root, 16, 330, 228, 80, BG);
     lv_obj_set_style_border_width(job_controls, 0, 0);
