@@ -233,7 +233,7 @@ static bool goto_work_zero() {
     CHECK(model->goto_zero(3));
     CHECK(!model->jog('X', 1, 600));
     const char *commands[] = {"G21 G90",          "G53 G0 Z-5", "G0 X0", "G0 Y0",
-                              "G53 G0 Z-12.0000", "G20",        "G91",   "$G"};
+                              "G53 G0 Z-12.0000", "G21",        "G91",   "$G"};
     for (int i = 0; i < 8; i++) {
         model->tick(500 + i);
         CHECK(!strcmp(capture->lines[i], commands[i]));
@@ -334,6 +334,50 @@ static bool corner_sequence() {
     CHECK(!model->state.busy && model->state.error && !model->state.probing);
     return true;
 }
+static bool units_overrides_and_completion() {
+    const float metric[] = {.1f, 1, 10, 100}, imperial[] = {.254f, 2.54f, 25.4f, 254};
+    for (unsigned i = 0; i < 4; i++) {
+        CHECK(fabsf(jog_step_mm(false, i) - metric[i]) < .001f);
+        CHECK(fabsf(jog_step_mm(true, i) - imperial[i]) < .001f);
+        CHECK(fabsf(imperial[i] / display_scale(true) - metric[i] / 10) < .001f);
+    }
+    CHECK(jog_step_mm(true, 4) == 0);
+    ready();
+    CHECK(!model->override_target(false, 120));
+    model->receive("<Run|SD:42,/test.nc|Ov:100,100,100>", 500);
+    CHECK(model->state.overrides_known && model->state.sd_active);
+    CHECK(model->override_target(false, 123));
+    CHECK(capture->b == 5 && capture->bytes[0] == 0x91 && capture->bytes[2] == 0x93);
+    CHECK(!model->override_target(false, 130)); // Wait for actual feedback before another target.
+    model->receive("<Run|Ov:123,100,100>", 501);
+    CHECK(model->state.feed_override == 123 && model->state.overrides_known);
+    capture->b = 0;
+    CHECK(model->override_target(true, 89));
+    CHECK(capture->b == 2 && capture->bytes[0] == 0x9B && capture->bytes[1] == 0x9D);
+    model->receive("<Run|Ov:123,100,89>", 502);
+    CHECK(!model->override_target(false, 201) && !model->override_target(true, 9));
+    model->receive("[MSG:Program End]", 503);
+    CHECK(model->state.sd_active && !model->state.job_complete);
+    model->receive("<Idle>", 504);
+    CHECK(!model->state.sd_active && model->state.job_complete);
+    ready();
+    model->receive("<Run|SD:42,/test.nc>", 500);
+    CHECK(model->stop());
+    model->receive("<Idle>", 501);
+    CHECK(!model->state.job_complete);
+    ready();
+    model->receive("<Run|SD:42,/test.nc>", 500);
+    model->receive("error:20", 501);
+    model->receive("<Idle>", 502);
+    CHECK(!model->state.job_complete && model->state.job_failed);
+    ready();
+    model->receive("<Run|SD:42,/test.nc>", 500);
+    model->receive("<Alarm:1>", 501);
+    CHECK(model->state.job_failed && model->unlock());
+    model->receive("<Idle>", 502);
+    CHECK(!model->state.job_complete);
+    return true;
+}
 static bool lost_feedback_and_write_failure() {
     ready();
     model->tick(2500);
@@ -374,6 +418,7 @@ bool model_self_test() {
                           {"jog_speed_presets", jog_speed_presets},
                           {"commands_and_faults", commands_and_faults},
                           {"corner_sequence", corner_sequence},
+                          {"units_overrides_and_completion", units_overrides_and_completion},
                           {"feedback_and_write_failure", lost_feedback_and_write_failure}};
     for (const auto &t : tests) {
         if (!t.fn())

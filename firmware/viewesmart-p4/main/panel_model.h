@@ -5,6 +5,11 @@
 namespace panel {
 constexpr int MaxFiles = 64;
 constexpr size_t MaxPreviewBytes = 2 * 1024 * 1024;
+inline float display_scale(bool inches) { return inches ? 25.4f : 1.f; }
+inline float jog_step_mm(bool inches, unsigned index) {
+    const float steps[] = {.1f, 1.f, 10.f, 100.f};
+    return index < 4 ? steps[index] * (inches ? 2.54f : 1.f) : 0;
+}
 struct File {
     char path[160];
     uint32_t size;
@@ -21,6 +26,8 @@ struct State {
     bool report_inches = false, probe = false, probe_known = false, contact_ready = false;
     bool busy = false, probing = false, listing = false, sd_active = false, job_seen_run = false;
     bool downloading = false, download_ready = false;
+    bool job_complete = false, job_end = false, job_failed = false, overrides_known = false;
+    int feed_override = 100, spindle_override = 100;
     uint32_t download_bytes = 0, download_total = 0, download_revision = 0;
     char download_path[160] = "";
     int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0;
@@ -60,6 +67,7 @@ class Model {
     bool contact_test(uint32_t now);
     bool probe_corner(const ProbeSettings &settings);
     bool acknowledge_error();
+    bool override_target(bool spindle, int percent);
 
   private:
     Line line_;

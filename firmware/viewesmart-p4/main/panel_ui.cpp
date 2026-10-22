@@ -23,27 +23,31 @@ struct Preferences {
 };
 static Preferences prefs;
 static State state;
-static int page = 0;
+enum { JogPage, FilesPage, SettingsPage, JobPage, CompletePage };
+static int page = JogPage;
+static bool inches = false, probe_return = false;
+static uint8_t step_index = 1;
+static lv_obj_t *jog_tools, *wcs_dropdown, *feed_slider, *spindle_slider, *feed_text, *spindle_text;
+static int fault_seen = 0;
+static uint32_t override_sent = 0;
+static void show_probe(lv_event_t * = nullptr);
 static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis_work[3], *axis_machine[3],
-    *axis_card[3], *nav[5];
-static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
+    *axis_card[3], *nav[3];
+static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause;
 static lv_obj_t *axis_zero[3], *axis_home[3];
-static lv_obj_t *axis_name[3], *machine_heading, *work_heading, *jog_hint;
+static lv_obj_t *axis_name[3], *machine_heading, *work_heading;
 static uint8_t jog_speed = 0;
 static lv_obj_t *dro_actions, *goto_buttons[2], *zero_all_btn;
-static lv_obj_t *preview_btn;
 static bool preview_pending = false, preview_show = false;
 static std::atomic<int> preview_parsing{0};
 static const char *preview_data;
 static size_t preview_size;
 static char preview_path[160], preview_message[192];
-static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *line_text, *start_btn,
-    *refresh_btn, *probe_start, *probe_status, *contact_btn, *wcs_label;
+static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *start_btn, *refresh_btn,
+    *probe_start, *probe_status, *contact_btn;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
 static char selected[160] = "", notice[192] = "";
 static uint32_t revision = 0, notice_until = 0;
-static lv_obj_t *gated[24];
-static int gate_count;
 static bool continuous = false, jog_held = false;
 static lv_obj_t *jog_buttons[10];
 static int jog_count;
@@ -53,18 +57,32 @@ struct Edit {
     float min, max;
     const char *title;
     bool integer = false;
+    bool converted = false;
 };
 static Edit editing;
 static bool (*confirmation)() = nullptr;
 static void build_page();
 static void release_jog();
 static void refresh(lv_timer_t *);
+static void show_page(int target) {
+    page = target;
+    build_page();
+}
 static uint32_t now() { return lv_tick_get(); }
+static void layout_stop() {
+    if (!stop_btn)
+        return;
+    bool job = page == JobPage && !modal;
+    lv_obj_set_pos(stop_btn, job ? 260 : 790, job ? 330 : 528);
+    lv_obj_set_size(stop_btn, job ? 228 : 218, job ? 80 : 64);
+}
 static void save() {
     nvs_handle_t h;
     if (nvs_open("panel", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_blob(h, "prefs", &prefs, sizeof prefs);
         nvs_set_u8(h, "jogspeed", jog_speed);
+        nvs_set_u8(h, "inches", inches);
+        nvs_set_u8(h, "stepidx", step_index);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -90,6 +108,11 @@ static void load() {
         uint8_t speed;
         if (nvs_get_u8(h, "jogspeed", &speed) == ESP_OK && speed <= 2)
             jog_speed = speed;
+        uint8_t unit, step;
+        if (nvs_get_u8(h, "inches", &unit) == ESP_OK)
+            inches = unit == 1;
+        if (nvs_get_u8(h, "stepidx", &step) == ESP_OK && step < 4)
+            step_index = step;
         nvs_close(h);
     }
 }
@@ -163,11 +186,21 @@ static void enable(lv_obj_t *b, bool on) {
         lv_obj_remove_state(b, LV_STATE_DISABLED);
     else
         lv_obj_add_state(b, LV_STATE_DISABLED);
-    lv_obj_set_style_opa(b, on ? LV_OPA_COVER : LV_OPA_40, 0);
-}
-static void gate(lv_obj_t *b) {
-    if (gate_count < 24)
-        gated[gate_count++] = b;
+    lv_obj_set_style_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(EDGE), LV_STATE_DISABLED);
+    lv_obj_set_style_color_filter_opa(b, LV_OPA_TRANSP, LV_STATE_DISABLED);
+    if (lv_obj_check_type(b, &lv_button_class) && lv_obj_get_child_count(b)) {
+        lv_obj_t *text = lv_obj_get_child(b, 0);
+        if (lv_obj_check_type(text, &lv_label_class)) {
+            uint32_t color = lv_color_to_u32(lv_obj_get_style_bg_color(b, 0)) & 0xFFFFFF;
+            lv_obj_set_style_text_color(text,
+                                        lv_color_hex(!on ? MUTED
+                                                     : (color == BLUE || color == GREEN || color == AMBER)
+                                                         ? BG
+                                                         : TEXT),
+                                        0);
+        }
+    }
 }
 static bool ready() {
     return state.online && state.status && state.identified && !state.busy && !state.alarm && !state.error &&
@@ -188,6 +221,8 @@ static void close_modal() {
     number = nullptr;
     number_error = nullptr;
     confirmation = nullptr;
+    probe_start = probe_status = contact_btn = nullptr;
+    layout_stop();
 }
 static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320) {
     close_modal();
@@ -196,6 +231,7 @@ static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320
     lv_obj_set_style_radius(modal, 0, 0);
     lv_obj_t *card = box(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
     label(card, title, 24, 22, width - 48, 22);
+    layout_stop();
     lv_obj_move_foreground(stop_btn);
     return card;
 }
@@ -204,8 +240,18 @@ static void confirmed(lv_event_t *) {
     close_modal();
     if (fn)
         result(fn());
+    if (probe_return) {
+        probe_return = false;
+        show_probe();
+    }
 }
-static void cancelled(lv_event_t *) { close_modal(); }
+static void cancelled(lv_event_t *) {
+    close_modal();
+    if (probe_return) {
+        probe_return = false;
+        show_probe();
+    }
+}
 static void confirm(const char *title, const char *text, bool (*fn)()) {
     lv_obj_t *c = open_modal(title);
     label(c, text, 24, 78, 552, 18, MUTED);
@@ -226,6 +272,8 @@ static void apply_number(lv_event_t *) {
     char *end;
     const char *s = lv_textarea_get_text(number);
     float f = strtof(s, &end);
+    if (editing.converted)
+        f *= display_scale(inches);
     if (!*s || *end || !isfinite(f) || f < editing.min || f > editing.max ||
         (editing.integer && floorf(f) != f)) {
         lv_label_set_text(number_error, "Outside range / check the number");
@@ -235,8 +283,13 @@ static void apply_number(lv_event_t *) {
     save();
     close_modal();
     build_page();
+    if (probe_return) {
+        probe_return = false;
+        show_probe();
+    }
 }
 static void edit(Edit e) {
+    e.converted = !e.integer;
     editing = e;
     lv_obj_t *c = open_modal(e.title, 430, 540);
     number = lv_textarea_create(c);
@@ -246,7 +299,8 @@ static void edit(Edit e) {
     lv_textarea_set_max_length(number, 10);
     lv_textarea_set_accepted_chars(number, "0123456789.");
     char value[24];
-    snprintf(value, sizeof value, e.integer ? "%.0f" : "%.3f", *e.value);
+    snprintf(value, sizeof value, e.integer ? "%.0f" : (inches ? "%.5f" : "%.3f"),
+             *e.value / (e.converted ? display_scale(inches) : 1));
     lv_textarea_set_text(number, value);
     lv_obj_set_style_text_font(number, font(28), 0);
     lv_obj_set_style_bg_color(number, lv_color_hex(BG), 0);
@@ -261,7 +315,8 @@ static void edit(Edit e) {
     lv_obj_add_event_cb(clear, key, LV_EVENT_CLICKED, (void *)"Clear");
     button(c, "Apply", 286, 404, 122, 50, apply_number, 0, BLUE);
     char limits[80];
-    snprintf(limits, sizeof limits, "Range %.0f to %.0f", e.min, e.max);
+    snprintf(limits, sizeof limits, "Range %.3f to %.3f", e.min / (e.converted ? display_scale(inches) : 1),
+             e.max / (e.converted ? display_scale(inches) : 1));
     number_error = label(c, limits, 22, 476, 386, 14, MUTED);
 }
 static void edit_value(lv_event_t *e) {
@@ -269,30 +324,25 @@ static void edit_value(lv_event_t *e) {
         notify("Wait for the probe sequence to finish before editing geometry.");
         return;
     }
+    probe_return = probe_status != nullptr;
     switch ((uintptr_t)lv_event_get_user_data(e)) {
-    case 0:
-        edit({&prefs.step, .01f, 100, "Jog distance (mm)"});
-        break;
-    case 1:
-        edit({&prefs.jog_feed, 1, 10000, "Jog feed (mm/min)"});
-        break;
     case 2:
-        edit({&prefs.probe.diameter, .1f, 50, "Tool diameter (mm)"});
+        edit({&prefs.probe.diameter, .1f, 50, inches ? "Tool diameter (in)" : "Tool diameter (mm)"});
         break;
     case 3:
-        edit({&prefs.probe.x, .1f, 50, "Plate X offset (mm)"});
+        edit({&prefs.probe.x, .1f, 50, inches ? "Plate X offset (in)" : "Plate X offset (mm)"});
         break;
     case 4:
-        edit({&prefs.probe.y, .1f, 50, "Plate Y offset (mm)"});
+        edit({&prefs.probe.y, .1f, 50, inches ? "Plate Y offset (in)" : "Plate Y offset (mm)"});
         break;
     case 5:
-        edit({&prefs.probe.z, .1f, 50, "Plate Z thickness (mm)"});
+        edit({&prefs.probe.z, .1f, 50, inches ? "Plate Z thickness (in)" : "Plate Z thickness (mm)"});
         break;
     case 6:
-        edit({&prefs.probe.feed, 25, 500, "Probe feed (mm/min)"});
+        edit({&prefs.probe.feed, 25, 500, inches ? "Probe feed (in/min)" : "Probe feed (mm/min)"});
         break;
     case 7:
-        edit({&prefs.probe.inset, 1, 100, "Corner start inset (mm)"});
+        edit({&prefs.probe.inset, 1, 100, inches ? "Corner start inset (in)" : "Corner start inset (mm)"});
         break;
     case 8:
         edit({&prefs.tx, 0, 54, "UART TX pin", true});
@@ -307,7 +357,8 @@ static void edit_value(lv_event_t *e) {
 }
 static void value_button(lv_obj_t *p, const char *title, float value, int x, int y, int w, int id) {
     char text[80];
-    snprintf(text, sizeof text, id >= 8 ? "%s\n%.0f" : "%s\n%.3f", title, value);
+    snprintf(text, sizeof text, id >= 8 ? "%s\n%.0f" : (inches ? "%s\n%.5f" : "%s\n%.3f"), title,
+             value / (id < 8 ? display_scale(inches) : 1));
     button(p, text, x, y, w, 66, edit_value, id);
 }
 static bool stop() { return runtime_action(Action::Stop); }
@@ -315,7 +366,12 @@ static bool home() {
     char axis[] = {home_axis, 0};
     return runtime_action(Action::Home, home_axis ? axis : nullptr);
 }
-static bool run() { return runtime_action(Action::Run, selected); }
+static bool run() {
+    bool ok = runtime_action(Action::Run, selected);
+    if (ok)
+        show_page(JobPage);
+    return ok;
+}
 static bool probe() { return runtime_probe(prefs.probe); }
 static void home_click(lv_event_t *e) {
     home_axis = (uintptr_t)lv_event_get_user_data(e);
@@ -324,12 +380,23 @@ static void home_click(lv_event_t *e) {
     confirm(title, "Clear the machine travel before homing.", home);
 }
 static void stop_click(lv_event_t *) {
+    probe_return = false;
     close_modal();
     release_jog();
-    result(stop());
+    if (stop())
+        show_page(JogPage);
+    else
+        result(false);
 }
 static void pause_click(lv_event_t *) { result(runtime_action(Action::Pause)); }
 static void resume_click(lv_event_t *) { result(runtime_action(Action::Resume)); }
+static void job_pause_click(lv_event_t *) {
+    runtime_snapshot(state);
+    if (!strncmp(state.mode, "Hold", 4))
+        resume_click(nullptr);
+    else
+        pause_click(nullptr);
+}
 static void release_jog() {
     if (jog_held) {
         jog_held = false;
@@ -342,7 +409,7 @@ static void jog_event(lv_event_t *e) {
             return;
         const char *directions[] = {"-+0", "0+0", "++0", "-00", "+00", "--0", "0-0", "+-0", "00+", "00-"};
         bool ok = runtime_action(Action::Jog, directions[(uintptr_t)lv_event_get_user_data(e)],
-                                 continuous ? 10000 : prefs.step, jog_speed);
+                                 continuous ? 10000 : jog_step_mm(inches, step_index), jog_speed);
         jog_held = ok && continuous;
         result(ok);
     } else if (lv_event_get_code(e) == LV_EVENT_RELEASED || lv_event_get_code(e) == LV_EVENT_PRESS_LOST) {
@@ -405,32 +472,38 @@ static void view_action(lv_event_t *e) {
         break;
     }
 }
-static void select_file(lv_event_t *e) {
-    int i = (uintptr_t)lv_event_get_user_data(e);
-    if (i < state.file_count && !state.files[i].directory && !state.files[i].unusable) {
-        snprintf(selected, sizeof selected, "%s", state.files[i].path);
-        lv_label_set_text(file_title, selected);
-        refresh(nullptr);
-    }
+static void file_action(lv_event_t *e) {
+    unsigned action = (uintptr_t)lv_event_get_user_data(e);
+    int index = action / 2;
+    runtime_snapshot(state);
+    if (!ready() || index >= state.file_count || state.files[index].directory || state.files[index].unusable)
+        return;
+    snprintf(selected, sizeof selected, "%s", state.files[index].path);
+    if (action & 1)
+        start_click(nullptr);
+    else
+        preview_click(nullptr);
 }
 static void files() {
     if (!file_box)
         return;
     lv_obj_clean(file_box);
+    revision = state.file_revision;
     if (!state.file_count) {
-        label(file_box, state.listing ? "Reading SD card..." : "Refresh to list controller SD files.", 18, 24,
-              400, 16, MUTED);
+        label(file_box, state.listing ? "Reading SD card..." : "No files", 18, 24, 500, 18, MUTED);
         return;
     }
     for (int i = 0; i < state.file_count; i++) {
-        char s[220];
-        snprintf(s, sizeof s, "%s%s  /  %.1f KB", state.files[i].directory ? "[DIR] " : "",
-                 state.files[i].path, state.files[i].size / 1024.f);
-        lv_obj_t *b = button(file_box, s, 8, 8 + i * 53, 426, 46, select_file, i,
-                             !strcmp(selected, state.files[i].path) ? 0x28516A : EDGE);
-        enable(b, !state.files[i].directory && !state.files[i].unusable);
+        lv_obj_t *row = box(file_box, 0, i * 72, 990, 66);
+        lv_obj_t *name = label(row, state.files[i].path, 16, 22, 516, 18);
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        char size[40];
+        snprintf(size, sizeof size, "%.1f KB", state.files[i].size / 1024.f);
+        label(row, state.files[i].directory ? "Folder" : size, 552, 24, 130, 16, MUTED);
+        bool available = !state.files[i].directory && !state.files[i].unusable;
+        enable(button(row, "Preview", 696, 8, 132, 50, file_action, i * 2), available);
+        enable(button(row, "Run", 840, 8, 132, 50, file_action, i * 2 + 1, BLUE), available);
     }
-    revision = state.file_revision;
 }
 static void contact(lv_event_t *) { result(runtime_action(Action::Contact)); }
 static void corner(lv_event_t *e) {
@@ -438,9 +511,10 @@ static void corner(lv_event_t *e) {
         return;
     prefs.probe.corner = (uintptr_t)lv_event_get_user_data(e);
     save();
-    build_page();
+    show_probe();
 }
 static void probe_click(lv_event_t *) {
+    probe_return = true;
     confirm("Start corner probe?",
             "Start above the plate hole, spindle OFF.\nThe active WCS XYZ offsets will change.\nKeep access "
             "to the physical emergency stop.",
@@ -496,7 +570,36 @@ static void jog_arrow(lv_obj_t *button, int direction) {
     lv_obj_center(line);
 }
 static void wcs(lv_event_t *e) {
-    result(runtime_action(Action::Wcs, nullptr, 54 + (uintptr_t)lv_event_get_user_data(e)));
+    result(runtime_action(Action::Wcs, nullptr,
+                          54 + lv_dropdown_get_selected((lv_obj_t *)lv_event_get_target(e))));
+}
+static lv_obj_t *dropdown(lv_obj_t *parent, const char *options, int selected, int x, int y, int width,
+                          lv_event_cb_t cb) {
+    lv_obj_t *d = lv_dropdown_create(parent);
+    lv_obj_set_pos(d, x, y);
+    lv_obj_set_size(d, width, 48);
+    lv_dropdown_set_options(d, options);
+    lv_dropdown_set_selected(d, selected);
+    lv_obj_set_style_bg_color(d, lv_color_hex(EDGE), 0);
+    lv_obj_set_style_text_color(d, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_border_width(d, 0, 0);
+    lv_obj_set_style_text_font(d, font(18), 0);
+    lv_obj_t *list = lv_dropdown_get_list(d);
+    lv_obj_set_style_bg_color(list, lv_color_hex(CARD), 0);
+    lv_obj_set_style_text_color(list, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_text_font(list, font(20), 0);
+    lv_obj_set_style_pad_ver(list, 14, LV_PART_ITEMS);
+    lv_obj_add_event_cb(d, cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    return d;
+}
+static void step_changed(lv_event_t *e) {
+    step_index = lv_dropdown_get_selected((lv_obj_t *)lv_event_get_target(e));
+    save();
+}
+static void units_changed(lv_event_t *e) {
+    inches = (uintptr_t)lv_event_get_user_data(e);
+    save();
+    build_page();
 }
 static void connect_click(lv_event_t *) {
     if (state.online)
@@ -518,55 +621,121 @@ static void recover(lv_event_t *) {
         notify("No active alarm or command error.");
 }
 static void navigate(lv_event_t *e) {
-    page = (uintptr_t)lv_event_get_user_data(e);
-    build_page();
+    runtime_snapshot(state);
+    if (state.sd_active || page == JobPage || page == CompletePage)
+        return;
+    close_modal();
+    preview_show = false;
+    show_page((uintptr_t)lv_event_get_user_data(e));
 }
-static void layout_dro(bool compact) {
+static void visibility(lv_obj_t *o, bool visible) {
+    if (visible)
+        lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+static void layout_dro() {
+    bool jog = page == JogPage, job = page == JobPage;
     for (int i = 0; i < 3; i++) {
-        lv_obj_set_pos(axis_card[i], compact ? 16 : 16 + i * 336, compact ? 90 + i * 72 : 66);
-        lv_obj_set_size(axis_card[i], compact ? 472 : 320, compact ? 64 : 98);
-        lv_obj_set_pos(axis_name[i], compact ? 94 : 16, compact ? 21 : 16);
-        lv_obj_set_pos(axis_home[i], compact ? 8 : 12, compact ? 6 : 48);
-        lv_obj_set_size(axis_home[i], compact ? 76 : 84, compact ? 52 : 44);
-        lv_obj_set_pos(axis_zero[i], compact ? 386 : 224, compact ? 6 : 48);
-        lv_obj_set_size(axis_zero[i], compact ? 78 : 84, compact ? 52 : 44);
-        lv_obj_set_pos(axis_machine[i], compact ? 120 : 104, compact ? 24 : 65);
-        lv_obj_set_width(axis_machine[i], compact ? 104 : 110);
-        lv_obj_set_pos(axis_work[i], compact ? 230 : 66, compact ? 18 : 10);
-        lv_obj_set_width(axis_work[i], compact ? 148 : 238);
-        lv_obj_set_style_text_font(axis_work[i], font(compact ? 22 : 32), 0);
+        visibility(axis_card[i], jog || job);
+        lv_obj_set_pos(axis_card[i], 16, 90 + i * 72);
+        lv_obj_set_size(axis_card[i], 472, 64);
+        lv_obj_set_pos(axis_name[i], jog ? 94 : 20, 21);
+        lv_obj_set_pos(axis_home[i], 8, 6);
+        lv_obj_set_size(axis_home[i], 76, 52);
+        lv_obj_set_pos(axis_zero[i], 386, 6);
+        lv_obj_set_size(axis_zero[i], 78, 52);
+        visibility(axis_home[i], jog);
+        visibility(axis_zero[i], jog);
+        lv_obj_set_pos(axis_machine[i], 120, 24);
+        lv_obj_set_width(axis_machine[i], 104);
+        lv_obj_set_pos(axis_work[i], jog ? 230 : 260, 18);
+        lv_obj_set_width(axis_work[i], jog ? 148 : 192);
+        lv_obj_set_style_text_font(axis_work[i], font(22), 0);
     }
-    if (compact) {
-        lv_obj_remove_flag(machine_heading, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(work_heading, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(jog_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(jog_hint,
-                          continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance");
-    } else {
-        lv_obj_add_flag(machine_heading, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(work_heading, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(jog_hint, LV_OBJ_FLAG_HIDDEN);
-    }
+    visibility(machine_heading, jog || job);
+    visibility(work_heading, jog || job);
+    visibility(job_controls, job);
+    layout_stop();
+    visibility(dro_actions, jog);
+    visibility(jog_tools, jog);
+    for (int i = 0; i < 3; i++)
+        visibility(nav[i], page < JobPage);
+}
+static void show_probe(lv_event_t *) {
+    lv_obj_t *c = open_modal("Corner probe", 920, 440);
+    button(c, LV_SYMBOL_CLOSE, 832, 14, 64, 48, cancelled);
+    const char *names[] = {"Front left", "Front right", "Rear left", "Rear right"};
+    for (int i = 0; i < 4; i++)
+        enable(
+            button(c, names[i], 24 + i * 218, 84, 206, 54, corner, i, i == prefs.probe.corner ? BLUE : EDGE),
+            !state.probing);
+    value_button(c, inches ? "Tool diameter / in" : "Tool diameter / mm", prefs.probe.diameter, 24, 158, 410,
+                 2);
+    value_button(c, inches ? "Feed / in/min" : "Feed / mm/min", prefs.probe.feed, 464, 158, 432, 6);
+    char text[160];
+    snprintf(text, sizeof text, "Plate X %.3f   Y %.3f   Z %.3f %s", prefs.probe.x / display_scale(inches),
+             prefs.probe.y / display_scale(inches), prefs.probe.z / display_scale(inches),
+             inches ? "in" : "mm");
+    label(c, text, 24, 246, 872, 18, MUTED);
+    probe_status = label(c, "", 24, 288, 872, 18, AMBER);
+    contact_btn = button(c, "Test contact + release", 24, 350, 410, 64, contact);
+    probe_start = button(c, "Probe corner", 464, 350, 432, 64, probe_click, 0, BLUE);
+    refresh(nullptr);
+}
+static void job_ok(lv_event_t *) {
+    runtime_snapshot(state);
+    if (state.sd_active)
+        return;
+    result(runtime_action(Action::JobAcknowledged));
+    show_page(JogPage);
+}
+static void override_changed(lv_event_t *e) {
+    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(e);
+    bool spindle = (uintptr_t)lv_event_get_user_data(e);
+    if (lv_event_get_code(e) != LV_EVENT_RELEASED)
+        return;
+    if (now() - override_sent < 600)
+        return;
+    int value = lv_slider_get_value(slider);
+    result(runtime_action(spindle ? Action::SpindleOverride : Action::FeedOverride, nullptr, value));
+    override_sent = now();
+}
+static lv_obj_t *override_control(const char *title, int y, bool spindle, lv_obj_t **text) {
+    *text = label(body, title, 0, y, 480, 20);
+    lv_obj_t *slider = lv_slider_create(body);
+    lv_obj_set_pos(slider, 20, y + 58);
+    lv_obj_set_size(slider, 452, 18);
+    lv_slider_set_range(slider, 10, 200);
+    lv_slider_set_value(slider, 100, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(EDGE), 0);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(BLUE), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider, 12, LV_PART_KNOB);
+    lv_obj_add_event_cb(slider, override_changed, LV_EVENT_RELEASED, (void *)(uintptr_t)spindle);
+    return slider;
+}
+static void setting_row(lv_obj_t *parent, const char *title, float value, int y, int id) {
+    lv_obj_t *row = box(parent, 0, y, 970, 76);
+    label(row, title, 20, 25, 620, 20);
+    char text[48];
+    snprintf(text, sizeof text, id >= 8 ? "%.0f" : "%.3f %s", value / (id < 8 ? display_scale(inches) : 1),
+             inches ? (id == 6 ? "in/min" : "in") : (id == 6 ? "mm/min" : "mm"));
+    button(row, text, 680, 10, 270, 56, edit_value, id);
 }
 static void build_page() {
     release_jog();
     jog_count = 0;
-    gate_count = 0;
-    preview_btn = nullptr;
-    file_box = file_title = progress = progress_text = time_text = line_text = start_btn = refresh_btn =
-        probe_start = probe_status = contact_btn = wcs_label = nullptr;
+    file_box = file_title = progress = progress_text = time_text = start_btn = refresh_btn = nullptr;
+    feed_slider = spindle_slider = feed_text = spindle_text = nullptr;
     gcode_viewer_detach();
     lv_obj_clean(body);
-    layout_dro(page == 0);
-    if (page == 0)
-        lv_obj_remove_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
-    else
-        lv_obj_add_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(body, page == 0 ? 508 : 90, page == 0 ? 76 : 176);
-    lv_obj_set_width(body, page == 0 ? 500 : 844);
-    lv_obj_set_height(body, page == 0 ? 424 : 328);
     runtime_snapshot(state);
-    for (int i = 0; i < 5; i++)
+    layout_dro();
+    lv_obj_set_pos(body, page == JogPage || page == JobPage ? 508 : 16, 76);
+    lv_obj_set_size(body, page == JogPage || page == JobPage ? 500 : 992, 424);
+    lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    for (int i = 0; i < 3; i++)
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(i == page ? 0x25445B : BG), 0);
     if (page == 0) {
         label(body, "JOG FEEDRATE", 0, 0, 270, 12, MUTED);
@@ -576,9 +745,9 @@ static void build_page() {
             button(body, speeds[i], i * 90, 20, 80, 48, speed_click, i, jog_speed == i ? BLUE : EDGE);
         button(body, "Incremental", 0, 80, 246, 56, jog_mode, 0, !continuous ? BLUE : EDGE);
         button(body, "Continuous", 254, 80, 246, 56, jog_mode, 1, continuous ? BLUE : EDGE);
-        char s[40];
-        snprintf(s, sizeof s, "Step %.2f mm", prefs.step);
-        enable(button(body, s, 282, 20, 218, 48, edit_value, 0), !continuous);
+        enable(dropdown(body, inches ? "0.01 in\n0.1 in\n1 in\n10 in" : "0.1 mm\n1 mm\n10 mm\n100 mm",
+                        step_index, 282, 20, 218, step_changed),
+               !continuous);
         const char *names[] = {
             LV_SYMBOL_LEFT " " LV_SYMBOL_UP,   "Y+", LV_SYMBOL_UP " " LV_SYMBOL_RIGHT,   "X-", "X+",
             LV_SYMBOL_LEFT " " LV_SYMBOL_DOWN, "Y-", LV_SYMBOL_DOWN " " LV_SYMBOL_RIGHT, "Z+", "Z-"};
@@ -593,96 +762,79 @@ static void build_page() {
             lv_obj_add_event_cb(b, jog_event, LV_EVENT_ALL, (void *)(uintptr_t)i);
             jog_buttons[jog_count++] = b;
         }
-    } else if (page == 1 && preview_show && state.download_ready) {
-        label(body, preview_path, 0, 0, 620, 18);
-        button(body, "Back to files", 636, 0, 208, 48, preview_back);
-        lv_obj_t *canvas = box(body, 0, 48, 620, 272);
-        gcode_viewer_attach(canvas, 620, 272);
-        button(body, "Top", 636, 62, 98, 64, view_action, 0);
-        button(body, "3D", 746, 62, 98, 64, view_action, 1);
-        button(body, LV_SYMBOL_PLUS, 636, 138, 98, 64, view_action, 2);
-        button(body, LV_SYMBOL_MINUS, 746, 138, 98, 64, view_action, 3);
-        label(body, "Drag to pan", 636, 216, 208, 16, MUTED);
-        start_btn = button(body, "Run from SD", 636, 252, 208, 64, start_click, 0, BLUE);
-    } else if (page == 1) {
-        label(body, "Controller SD", 0, 0, 280, 22);
-        refresh_btn = button(body, "Refresh", 316, 0, 128, 40, list_click, 0);
-        file_box = box(body, 0, 50, 452, 246);
+    } else if (page == FilesPage && preview_show && state.download_ready) {
+        label(body, preview_path, 0, 0, 730, 20);
+        button(body, "Back to files", 784, 0, 208, 48, preview_back);
+        lv_obj_t *canvas = box(body, 0, 48, 764, 370);
+        gcode_viewer_attach(canvas, 764, 370);
+        button(body, "Top", 784, 70, 98, 64, view_action, 0);
+        button(body, "3D", 894, 70, 98, 64, view_action, 1);
+        button(body, LV_SYMBOL_PLUS, 784, 150, 98, 64, view_action, 2);
+        button(body, LV_SYMBOL_MINUS, 894, 150, 98, 64, view_action, 3);
+        start_btn = button(body, "Run from SD", 784, 350, 208, 64, start_click, 0, BLUE);
+    } else if (page == FilesPage) {
+        label(body, "Controller SD", 0, 0, 600, 22);
+        refresh_btn = button(body, "Refresh", 784, 0, 208, 48, list_click);
+        label(body, "FILE", 16, 58, 500, 12, MUTED);
+        label(body, "SIZE", 552, 58, 120, 12, MUTED);
+        file_box = box(body, 0, 80, 992, 340, BG);
         lv_obj_add_flag(file_box, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(file_box, LV_DIR_VER);
         files();
-        label(body, "SELECTED / RUNNING FILE", 480, 0, 364, 12, MUTED);
-        file_title = label(body, *selected ? selected : "Select a file", 480, 28, 364, 18);
-        progress_text = label(body, "-- %", 480, 92, 200, 32, BLUE);
-        time_text = label(body, "00:00:00", 688, 108, 156, 18);
-        progress = lv_bar_create(body);
-        lv_obj_set_pos(progress, 480, 144);
-        lv_obj_set_size(progress, 364, 12);
-        lv_obj_set_style_bg_color(progress, lv_color_hex(EDGE), 0);
-        lv_obj_set_style_bg_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
-        line_text = label(body, "No active SD job", 480, 174, 364, 16, MUTED);
-        start_btn = button(body, "Run selected", 480, 236, 174, 60, start_click, 0, BLUE);
-        preview_btn = button(body, "Preview", 670, 236, 174, 60, preview_click);
-    } else if (page == 2) {
-        label(body, "Corner probe", 0, 0, 350, 22);
-        label(body, "OUTSIDE CORNER", 0, 42, 350, 12, MUTED);
-        const char *names[] = {"Front left", "Front right", "Rear left", "Rear right"};
-        for (int i = 0; i < 4; i++)
-            button(body, names[i], i * 107, 62, 99, 48, corner, i, i == prefs.probe.corner ? 0x28516A : EDGE);
-        value_button(body, "Tool diameter / mm", prefs.probe.diameter, 0, 132, 212, 2);
-        value_button(body, "Feed / mm/min", prefs.probe.feed, 228, 132, 200, 6);
-        char text[180];
-        snprintf(text, sizeof text,
-                 "Plate X %.1f / Y %.1f / Z %.1f mm\nStart above plate hole. Spindle OFF.\nActive G%d "
-                 "offsets will change.",
-                 prefs.probe.x, prefs.probe.y, prefs.probe.z, state.wcs);
-        label(body, text, 0, 224, 440, 16, MUTED);
-        probe_status = label(body, "Contact not verified", 474, 42, 370, 18, AMBER);
-        contact_btn = button(body, "Test contact + release", 474, 90, 370, 66, contact, 0);
-        probe_start = button(body, "Probe corner", 474, 232, 370, 64, probe_click, 0, BLUE);
-        label(body,
-              "1  Touch tool to plate, then release.\n2  Enter tool diameter.\n3  Position over hole and "
-              "start.",
-              474, 170, 370, 14, MUTED);
-    } else if (page == 3) {
-        label(body, "Work zero & coordinates", 0, 0, 600, 22);
-        wcs_label = label(body, "", 0, 42, 844, 16, MUTED);
-        for (int i = 0; i < 6; i++) {
-            char s[12];
-            snprintf(s, sizeof s, "G%d", 54 + i);
-            gate(button(body, s, i * 142, 80, 132, 54, wcs, i));
-        }
-        gate(button(body, "Zero X", 0, 164, 198, 72, zero_click, 1));
-        gate(button(body, "Zero Y", 214, 164, 198, 72, zero_click, 2));
-        gate(button(body, "Zero Z", 428, 164, 198, 72, zero_click, 4));
-        gate(button(body, "Zero XYZ", 642, 164, 198, 72, zero_click, 7, 0x28516A));
-        for (int i = 0; i < 4; i++) {
-            char s[20];
-            snprintf(s, sizeof s, i == 3 ? "Home all" : "Home %c", "XYZ"[i < 3 ? i : 0]);
-            gate(button(body, s, i * 214, 248, 198, 64, home_click, i == 3 ? 0 : "XYZ"[i]));
-        }
-    } else {
-        label(body, "Probe defaults", 0, 0, 420, 22);
-        value_button(body, "Plate X / mm", prefs.probe.x, 0, 48, 132, 3);
-        value_button(body, "Plate Y / mm", prefs.probe.y, 144, 48, 132, 4);
-        value_button(body, "Plate Z / mm", prefs.probe.z, 288, 48, 132, 5);
-        value_button(body, "Feed / mm/min", prefs.probe.feed, 0, 132, 204, 6);
-        value_button(body, "Start inset / mm", prefs.probe.inset, 220, 132, 200, 7);
-        label(body, "Saved on this display. Controller settings\nare read for state; never auto-rewritten.",
-              0, 234, 430, 16, MUTED);
-        label(body, "Controller UART", 474, 0, 370, 22);
-        value_button(body, "TX pin", prefs.tx, 474, 48, 108, 8);
-        value_button(body, "RX pin", prefs.rx, 594, 48, 108, 9);
-        value_button(body, "Baud", prefs.baud, 714, 48, 130, 10);
-        button(body, state.online ? "Disconnect" : "Connect controller", 474, 134, 370, 62, connect_click, 0,
+    } else if (page == SettingsPage) {
+        lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(body, LV_DIR_VER);
+        label(body, "Settings", 0, 0, 960, 22);
+        lv_obj_t *units = box(body, 0, 44, 970, 80);
+        label(units, "Display units", 20, 28, 500, 20);
+        button(units, "mm", 680, 12, 130, 56, units_changed, 0, !inches ? BLUE : EDGE);
+        button(units, "inch", 820, 12, 130, 56, units_changed, 1, inches ? BLUE : EDGE);
+        label(body, "Probe defaults", 0, 150, 960, 18, MUTED);
+        setting_row(body, "Plate X offset", prefs.probe.x, 182, 3);
+        setting_row(body, "Plate Y offset", prefs.probe.y, 270, 4);
+        setting_row(body, "Plate Z thickness", prefs.probe.z, 358, 5);
+        setting_row(body, "Probe feed", prefs.probe.feed, 446, 6);
+        setting_row(body, "Corner start inset", prefs.probe.inset, 534, 7);
+        label(body, "Controller UART", 0, 646, 960, 18, MUTED);
+        setting_row(body, "TX pin", prefs.tx, 678, 8);
+        setting_row(body, "RX pin", prefs.rx, 766, 9);
+        setting_row(body, "Baud rate", prefs.baud, 854, 10);
+        button(body, state.online ? "Disconnect" : "Connect controller", 0, 950, 472, 64, connect_click, 0,
                BLUE);
-        button(body, runtime_is_demo() ? "Exit preview" : "Preview UI / UART off", 474, 230, 370, 62,
+        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 950, 472, 64,
                demo_click);
+    } else if (page == JobPage) {
+        file_title = label(body, state.filename, 0, 0, 500, 20);
+        lv_obj_set_height(file_title, 26);
+        lv_label_set_long_mode(file_title, LV_LABEL_LONG_DOT);
+        progress_text = label(body, "", 0, 48, 300, 32, BLUE);
+        time_text = label(body, "", 300, 62, 200, 20);
+        progress = lv_bar_create(body);
+        lv_obj_set_pos(progress, 0, 104);
+        lv_obj_set_size(progress, 500, 14);
+        lv_obj_set_style_bg_color(progress, lv_color_hex(BLUE), LV_PART_INDICATOR);
+        feed_slider = override_control("Feed override", 148, false, &feed_text);
+        spindle_slider = override_control("Speed override", 258, true, &spindle_text);
+
+    } else if (page == CompletePage) {
+        label(body, "Job Complete", 140, 80, 712, 32, GREEN);
+        label(body, state.filename, 140, 144, 712, 22);
+        button(body, "OK", 290, 250, 412, 80, job_ok, 0, BLUE);
     }
     refresh(nullptr);
 }
 static void refresh(lv_timer_t *) {
     runtime_snapshot(state);
+    if (state.sd_active && page != JobPage) {
+        close_modal();
+        show_page(JobPage);
+        return;
+    }
+    if (state.job_complete && page != CompletePage) {
+        close_modal();
+        show_page(CompletePage);
+        return;
+    }
     int parsed = preview_parsing.load();
     if (parsed == 2 || parsed == 3) {
         preview_parsing.store(0);
@@ -722,15 +874,15 @@ static void refresh(lv_timer_t *) {
                                              : state.status                    ? GREEN
                                                                                : MUTED),
                                 0);
-    snprintf(s, sizeof s, "G%d  /  mm  /  %s", state.wcs,
+    snprintf(s, sizeof s, "G%d  /  %s  /  %s", state.wcs, inches ? "inch" : "mm",
              state.identified ? (state.extended ? "RT 0x80" : "Legacy status") : "UART offline");
     lv_label_set_text(protocol_label, s);
     uint32_t colors[] = {RED, GREEN, BLUE};
     for (int i = 0; i < 3; i++) {
         if (state.coordinates && state.wco_known) {
-            snprintf(s, sizeof s, "% .3f", state.work[i]);
+            snprintf(s, sizeof s, inches ? "% .4f" : "% .3f", state.work[i] / display_scale(inches));
             lv_label_set_text(axis_work[i], s);
-            snprintf(s, sizeof s, page == 0 ? "% .3f" : "M  % .3f", state.machine[i]);
+            snprintf(s, sizeof s, inches ? "% .4f" : "% .3f", state.machine[i] / display_scale(inches));
             lv_label_set_text(axis_machine[i], s);
         } else {
             lv_label_set_text(axis_work[i], "--.---");
@@ -747,8 +899,6 @@ static void refresh(lv_timer_t *) {
         snprintf(s, sizeof s, "%s", msg);
     lv_label_set_text(status_text, s);
     lv_obj_set_style_text_color(status_text, lv_color_hex(state.alarm || state.error ? RED : MUTED), 0);
-    for (int i = 0; i < gate_count; i++)
-        enable(gated[i], on);
     for (int i = 0; i < 3; i++)
         enable(axis_zero[i], on);
     enable(zero_all_btn, on);
@@ -761,38 +911,53 @@ static void refresh(lv_timer_t *) {
     enable(home_btn, can_home);
     for (int i = 0; i < 3; i++)
         enable(axis_home[i], can_home);
-    enable(pause_btn, state.online && state.status && !strncmp(state.mode, "Run", 3));
-    enable(resume_btn, state.online && state.status && !strcmp(state.mode, "Hold:0"));
+    bool held = !strncmp(state.mode, "Hold", 4);
+    lv_label_set_text(lv_obj_get_child(job_pause, 0), held ? "Resume" : "Pause");
+    lv_obj_set_style_bg_color(job_pause, lv_color_hex(held ? GREEN : AMBER), 0);
+    enable(job_pause,
+           state.online && state.status && (!strncmp(state.mode, "Run", 3) || !strcmp(state.mode, "Hold:0")));
     enable(stop_btn, state.online || state.identified);
-    enable(recover_btn, state.online && (state.alarm || state.error));
-    enable(preview_btn, on && *selected && !preview_pending && preview_parsing.load() == 0);
     if (page == 1 && preview_show)
         enable(start_btn, on && !strcmp(selected, preview_path));
-    if (page == 1 && file_box) {
+    if (page == FilesPage && file_box) {
         if (revision != state.file_revision)
             files();
+        enable(file_box, on);
         enable(refresh_btn, on);
-        enable(start_btn, on && *selected);
-        if (state.sd_active)
-            lv_label_set_text(file_title, state.filename);
+    }
+    if (page == JobPage && progress) {
         snprintf(s, sizeof s, "%.1f %%", state.percent);
-        if (state.downloading)
-            snprintf(s, sizeof s, "%lu KB", (unsigned long)state.download_bytes / 1024);
-        else if (preview_parsing.load() == 1)
-            snprintf(s, sizeof s, "Parsing...");
         lv_label_set_text(progress_text, s);
         lv_bar_set_value(progress, (int)state.percent, LV_ANIM_OFF);
         snprintf(s, sizeof s, "%02lu:%02lu:%02lu", (unsigned long)state.elapsed / 3600,
                  (unsigned long)state.elapsed / 60 % 60, (unsigned long)state.elapsed % 60);
         lv_label_set_text(time_text, s);
-        snprintf(s, sizeof s, "%s  /  Line %d",
-                 state.sd_active        ? state.mode
-                 : state.percent >= 100 ? "Completed"
-                                        : "No active SD job",
-                 state.line);
-        lv_label_set_text(line_text, s);
+        snprintf(s, sizeof s, "Feed override  %d%%", state.feed_override);
+        lv_label_set_text(feed_text, s);
+        snprintf(s, sizeof s, "Speed override  %d%%", state.spindle_override);
+        lv_label_set_text(spindle_text, s);
+        if (!lv_obj_has_state(feed_slider, LV_STATE_PRESSED))
+            lv_slider_set_value(feed_slider, state.feed_override, LV_ANIM_OFF);
+        if (!lv_obj_has_state(spindle_slider, LV_STATE_PRESSED))
+            lv_slider_set_value(spindle_slider, state.spindle_override, LV_ANIM_OFF);
+        bool overrides = state.online && state.status && state.sd_active && state.overrides_known &&
+                         !state.alarm && !state.error;
+        enable(feed_slider, overrides);
+        enable(spindle_slider, overrides);
     }
-    if (page == 2 && probe_start) {
+    if (page == JogPage) {
+        enable(wcs_dropdown, on);
+        if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59)
+            lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
+    }
+    int fault = state.alarm ? state.alarm : -state.error;
+    if (!fault)
+        fault_seen = 0;
+    if (fault && fault != fault_seen) {
+        fault_seen = fault;
+        recover(nullptr);
+    }
+    if (probe_start) {
         if (state.probing) {
             snprintf(s, sizeof s, "Probing axis %d / 3", state.probe_stage < 3 ? state.probe_stage + 1 : 3);
             lv_label_set_text(probe_status, s);
@@ -806,10 +971,6 @@ static void refresh(lv_timer_t *) {
         enable(probe_start, on && state.contact_ready && !state.probe && state.spindle == 0 &&
                                 prefs.probe.diameter > 0 && state.modal_known && state.wco_known);
     }
-    if (wcs_label) {
-        snprintf(s, sizeof s, "Active G%d  /  Work = Machine - Work offset", state.wcs);
-        lv_label_set_text(wcs_label, s);
-    }
 }
 } // namespace
 extern "C" void panel_ui_create() {
@@ -822,9 +983,9 @@ extern "C" void panel_ui_create() {
     state_label = label(root, "Disconnected", 174, 22, 352, 20, MUTED);
     protocol_label = label(root, "UART offline", 690, 504, 318, 12, MUTED);
     lv_obj_set_style_text_align(protocol_label, LV_TEXT_ALIGN_RIGHT, 0);
-    const char *tabs[] = {"Jog", "Files", "Probe", "Zero / Home", "Settings"};
-    for (int i = 0; i < 5; i++)
-        nav[i] = button(root, tabs[i], 16 + i * 154, 528, 144, 64, navigate, i, EDGE);
+    const char *tabs[] = {"Jog", "Files", "Settings"};
+    for (int i = 0; i < 3; i++)
+        nav[i] = button(root, tabs[i], 16 + i * 254, 528, 244, 64, navigate, i, EDGE);
     const char *axes[] = {"X", "Y", "Z"};
     uint32_t colors[] = {RED, GREEN, BLUE};
     for (int i = 0; i < 3; i++) {
@@ -845,31 +1006,39 @@ extern "C" void panel_ui_create() {
     work_heading = label(root, "WORK", 246, 70, 148, 12, MUTED);
     lv_obj_set_style_text_align(machine_heading, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_text_align(work_heading, LV_TEXT_ALIGN_RIGHT, 0);
-    jog_hint = label(root, "", 16, 408, 472, 20, MUTED);
+
     dro_actions = box(root, 16, 314, 472, 64, BG);
     lv_obj_set_style_border_width(dro_actions, 0, 0);
     home_btn = button(dro_actions, "Home all", 0, 0, 112, 64, home_click);
     goto_buttons[0] = button(dro_actions, "Go to XY\nzero", 120, 0, 112, 64, goto_click, 3);
     goto_buttons[1] = button(dro_actions, "Go to Z\nzero", 240, 0, 112, 64, goto_click, 4);
     zero_all_btn = button(dro_actions, "Set zero\nall", 360, 0, 112, 64, zero_click, 7);
+    jog_tools = box(root, 16, 400, 472, 80, BG);
+    lv_obj_set_style_border_width(jog_tools, 0, 0);
+    button(jog_tools, "Probe", 0, 0, 228, 64, show_probe);
+    wcs_dropdown = dropdown(jog_tools, "G54\nG55\nG56\nG57\nG58\nG59", 0, 244, 8, 228, wcs);
+    job_controls = box(root, 16, 330, 228, 80, BG);
+    lv_obj_set_style_border_width(job_controls, 0, 0);
+    job_pause = button(job_controls, "Pause", 0, 0, 228, 80, job_pause_click, 0, AMBER);
+    lv_obj_set_style_text_font(lv_obj_get_child(job_pause, 0), font(22), 0);
     body = box(root, 16, 240, 992, 264, BG);
     lv_obj_set_style_border_width(body, 0, 0);
     status_text = label(root, "Connect controller in Settings", 16, 504, 654, 14, MUTED);
     lv_obj_set_height(status_text, 20);
     lv_label_set_long_mode(status_text, LV_LABEL_LONG_DOT);
-    pause_btn = button(root, "Pause", 692, 8, 150, 48, pause_click, 0, 0x6B542D);
-    resume_btn = button(root, "Resume", 858, 8, 150, 48, resume_click, 0, 0x225B4A);
+
     stop_btn = button(lv_layer_top(), "STOP", 790, 528, 218, 64, nullptr, 0, 0x8A353F);
     lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_PRESSED, nullptr);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
-    recover_btn = button(root, "Recover", 546, 8, 130, 48, recover);
+    lv_obj_add_flag(status_text, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(status_text, recover, LV_EVENT_CLICKED, nullptr);
     build_page();
     lv_timer_create(refresh, 100, nullptr);
 }
 extern "C" void panel_ui_settings(char *buffer, size_t size) {
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f}",
+             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.tx,
-             prefs.rx, prefs.baud);
+             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page);
 }

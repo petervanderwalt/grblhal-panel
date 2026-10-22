@@ -125,22 +125,43 @@ codes rather than displaying truncated geometry. Preserve responsive Stop during
 
 Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
 rows on the left and group the entire XYZ pad on the right, with Z immediately
-beside XY and a blank centre. Other pages retain their wide DRO summary for content
-space. Keep bottom navigation. STOP must stay visible
-on all pages and above dialogs, and send Ctrl-X on touch-down without confirmation. Keep confirmations
-for homing, zeroing, probing and starting jobs. Per-axis Home and Zero are on each DRO;
-individual homing is also on Zero / Home. Update injected-touch coordinates when moving controls.
-Keep Home all, Go to XY zero, Go to Z zero and Set zero all directly beneath the
-DRO on Jog. Set zero changes offsets; Go to zero moves and must be confirmed.
-Go XY follows `DROHandler.goXY0()`: machine Z−5 mm, X0, Y0, restore machine Z.
-Preserve units and distance mode, and wait for fresh Idle before more manual motion.
-Use actual directional arrows for all eight XY directions. Continuous cancels on
-release/lost press; incremental must finish its commanded distance without release cancellation.
-Use Fast / Med / Slow rather than numeric jog-feed entry. Match Ooznest Control:
-100% / 50% / 25% of the minimum maximum rate among moving axes (`$110`–`$112`),
-with a 1000 mm/min fallback if none are known. Keep numeric distance entry.
-The legacy `Preferences.jog_feed` field remains only to preserve existing NVS blobs;
-the chosen preset is stored separately as `jogspeed`.
+beside XY and a blank centre. Use Jog / Files / Settings navigation. Files and
+Settings have no DRO. Probe is a modal launched from Jog; remove Probe and Zero /
+Home tabs. G54-G59 uses a dropdown on Jog. Keep labels short; omit instructional
+filler such as "tap once" and "move the set distance". Settings uses labelled rows.
+
+STOP stays visible above all pages/dialogs and sends Ctrl-X on touch-down without
+confirmation. Keep confirmations for homing, zeroing, probing and starting jobs.
+Keep per-axis Home/Zero on each Jog DRO, with Home all, Go to XY zero, Go to Z zero
+and Set zero all directly below. Set zero changes offsets; Go to zero moves.
+Go XY follows `DROHandler.goXY0()`: machine Z-5 mm, X0, Y0, restore machine Z.
+Generated motion uses mm, restores distance mode and waits for fresh Idle before
+further manual motion. Never generate G20 to match LCD units or change `$13`.
+
+Convert mm/inch only on the LCD; geometry and runtime commands remain mm.
+Jog steps: 0.1, 1, 10, 100 mm or 0.01, 0.1, 1, 10 inch (0.254, 2.54, 25.4, 254 mm).
+Use actual directional arrows. Continuous cancels on release/lost press;
+incremental finishes its distance. Fast / Med / Slow use 100% / 50% / 25% of the
+minimum maximum rate among moving axes (`$110`-`$112`), fallback 1000 mm/min.
+Legacy Preferences `step` and `jog_feed` preserve NVS blob compatibility. Separate
+keys are `jogspeed`, `stepidx` and `inches`.
+
+Workflow: home -> jog/probe stock zero -> select/run controller SD file -> locked
+Job screen -> Job Complete -> OK -> Jog. Job has read-only DRO, percentage, elapsed
+time, Pause/Resume, Feed/Speed sliders and Stop. Hide navigation during jobs.
+Completion needs fresh Idle; Program End alone is insufficient. Stopped or failed
+jobs never count as complete. Files has full-width rows with size, Preview and Run.
+Alarms/errors use dialogs, with no persistent Recover button. Disabled controls
+must remain readable: muted light text on an opaque dark button. Preserve probe
+contact, geometry and spindle interlocks.
+
+On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
+Resume after hold feedback. Stop returns to its bottom-right position on other
+screens and while a dialog is open, so it never obscures dialog actions.
+
+`tools/check-workflow.py` checks LCD units, settings swipes, the Probe modal,
+row Run, navigation lock, overrides and outcomes with UART1 disconnected.
+Update injected-touch coordinates when moving controls.
 
 The inherited wizard/link files remain as reference but are not compiled by
 `main/CMakeLists.txt`. `main.c` creates the panel UI.
@@ -154,6 +175,12 @@ Protocol reference: Ooznest Control source at commit
 `7ce3f90206f1428ae1959136ba5bbdb439f00d1c`, especially
 `js/machine/jogging.js`, `js/machine/dro.js`, `js/ui/ui.js`,
 `js/features/sdcard.js` and `js/machine/probe.js`.
+Override reference: grblHAL core commit `4ec1ae44b857a70d2f9298344feac4b43ed0eb6b`,
+`grbl.h` and `protocol.c`; Ooznest `index.html` and `js/machine/dro.js`.
+Feed coarse/fine +/-: 0x91/0x92 and 0x93/0x94. Spindle: 0x9A/0x9B and 0x9C/0x9D.
+Read `Ov:feed,rapid,spindle`; wait for feedback before another slider target.
+Do not rewrite controller override settings.
+
 For builds newer than 20261013, use one startup `0x87`, then poll `0x80`.
 Do not change `$10` automatically. SD jobs use `$F+` and `$F=/path` on the controller.
 

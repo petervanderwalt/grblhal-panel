@@ -73,6 +73,8 @@ static const char *fault_text(bool alarm, int code) {
 }
 Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c) {}
 void Model::cancel(const char *message) {
+    if (state.sd_active && (state.alarm || state.error))
+        state.job_failed = true;
     goto_pending_ = false;
     if (state.downloading)
         state.download_ready = false;
@@ -148,6 +150,7 @@ bool Model::run(const char *path) {
     snprintf(cmd, sizeof cmd, "$F=%s", path);
     copy(state.filename, path, sizeof state.filename);
     state.percent = 0;
+    state.job_complete = state.job_end = state.job_failed = false;
     state.elapsed = 0;
     state.job_started = now_;
     state.job_seen_run = false;
@@ -221,7 +224,7 @@ bool Model::select_wcs(int wcs) {
 bool Model::goto_zero(int axes) {
     if (!idle() || !state.coordinates || !state.wco_known || !state.modal_known || (axes != 3 && axes != 4))
         return false;
-    const bool inches = state.inches, absolute = state.absolute;
+    const bool absolute = state.absolute;
     char restore_z[64];
     snprintf(restore_z, sizeof restore_z, "G53 G0 Z%.4f", state.machine[2]);
     append("G21 G90");
@@ -233,7 +236,7 @@ bool Model::goto_zero(int axes) {
     } else {
         append("G0 Z0");
     }
-    append(inches ? "G20" : "G21");
+    append("G21");
     append(absolute ? "G90" : "G91");
     append("$G");
     copy(state.mode, "Run", sizeof state.mode);
@@ -310,7 +313,28 @@ bool Model::stop() {
     cancel("Reset sent. Wait for controller identification.");
     state.status = false;
     state.sd_active = false;
+    state.job_complete = state.job_end = false;
     state.download_ready = false;
+    return true;
+}
+bool Model::override_target(bool spindle, int percent) {
+    if (!state.online || !state.identified || !state.status || !state.sd_active || !state.overrides_known ||
+        state.alarm || state.error || percent < 10 || percent > 200)
+        return false;
+    int delta = percent - (spindle ? state.spindle_override : state.feed_override);
+    if (delta < -200 || delta > 200)
+        return false;
+    const uint8_t coarse = spindle ? (delta > 0 ? 0x9A : 0x9B) : (delta > 0 ? 0x91 : 0x92);
+    const uint8_t fine = spindle ? (delta > 0 ? 0x9C : 0x9D) : (delta > 0 ? 0x93 : 0x94);
+    int distance = abs(delta);
+    if (distance)
+        state.overrides_known = false;
+    for (int i = 0; i < distance / 10; i++)
+        if (!rt(coarse))
+            return false;
+    for (int i = 0; i < distance % 10; i++)
+        if (!rt(fine))
+            return false;
     return true;
 }
 bool Model::jog_cancel() {
@@ -377,7 +401,7 @@ bool Model::probe_corner(const ProbeSettings &p) {
     add("G0 Y%.3f", yo + yd * 2);
     add("G0 Z%.3f", p.z + 5);
     append("G0 X0 Y0");
-    append(state.inches ? "G20" : "G21");
+    append("G21");
     append(state.absolute ? "G90" : "G91");
     append("$G");
     state.probing = true;
@@ -433,6 +457,14 @@ void Model::status_report(const char *line) {
             float f = strtof(token + 2, nullptr);
             if (isfinite(f))
                 state.feed = f;
+        } else if (!strncmp(token, "Ov:", 3)) {
+            int feed, rapid, spindle;
+            if (sscanf(token + 3, "%d,%d,%d", &feed, &rapid, &spindle) == 3 && feed >= 1 && feed <= 65535 &&
+                spindle >= 1 && spindle <= 65535) {
+                state.feed_override = feed;
+                state.spindle_override = spindle;
+                state.overrides_known = true;
+            }
         } else if (!strncmp(token, "Ln:", 3))
             state.line = atoi(token + 3);
         else if (!strncmp(token, "Alarm:", 6))
@@ -486,9 +518,11 @@ void Model::status_report(const char *line) {
         state.coordinates = true;
     }
     if (sd) {
+        state.job_complete = false;
         if (!state.sd_active) {
             state.job_started = now_;
             state.elapsed = 0;
+            state.job_seen_run = state.job_end = state.job_failed = false;
         }
         state.sd_active = true;
     }
@@ -496,8 +530,10 @@ void Model::status_report(const char *line) {
         state.job_seen_run = true;
     if (state.sd_active) {
         state.elapsed = (now_ - state.job_started) / 1000;
-        if (!sd && !strcmp(state.mode, "Idle") && state.job_seen_run) {
+        if (!sd && !strcmp(state.mode, "Idle") && (state.job_seen_run || state.job_end) && !state.alarm &&
+            !state.error && !state.job_failed) {
             state.sd_active = false;
+            state.job_complete = true;
             state.percent = 100;
             copy(state.message, "SD job complete", sizeof state.message);
         }
@@ -639,6 +675,8 @@ void Model::receive(const char *line, uint32_t now) {
         state.file_revision++;
     }
     if (!strncmp(line, "ALARM:", 6) || !strncmp(line, "error:", 6)) {
+        if (state.sd_active)
+            state.job_failed = true;
         bool alarm = line[0] == 'A';
         int code = atoi(line + 6);
         if (alarm) {
@@ -655,8 +693,7 @@ void Model::receive(const char *line, uint32_t now) {
     if (!strncmp(line, "[MSG:", 5)) {
         copy(state.message, line, sizeof state.message);
         if (strstr(line, "Program End") && state.sd_active) {
-            state.sd_active = false;
-            state.percent = 100;
+            state.job_end = true;
         }
         return;
     }

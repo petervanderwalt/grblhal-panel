@@ -15,11 +15,12 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
     port.open()
     time.sleep(2)
     port.reset_input_buffer()
-    port.write(b"\nUG SYNC\n")
-    deadline = time.monotonic() + 15
-    while b"@UGERR command" not in port.readline():
-        if time.monotonic() > deadline:
-            raise TimeoutError("Console sync")
+    for attempt in range(15):
+        port.write(b"\nUG SYNC\n")
+        if b"@UGERR command" in port.readline():
+            break
+    else:
+        raise TimeoutError("Console sync")
     time.sleep(.2)
     port.reset_input_buffer()
     def command(s):
@@ -37,26 +38,25 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        tap(242, 560)
-        tap(470, 196)
+        tap(392, 560)
+        tap(904, 100)
         assert state()["files"] == 3
-        tap(250, 257)
-        tap(847, 442)
+        tap(778, 189)
         assert "$F<=/bracket.nc" in command("LAST")
         time.sleep(1)
         data = state()
         assert data["download_ready"] and data["download_bytes"] > 100 and not data["job"], data
         shot("sd-preview-3d.png")
-        tap(775, 270)  # Top
+        tap(849, 178)  # Top
         shot("sd-preview-top.png")
-        tap(775, 346)  # Zoom in
-        tap(885, 346)  # Zoom out
-        tap(830, 200)  # Back to files
-        tap(650, 442)  # Run selected, separate from preview
+        tap(849, 258)  # Zoom in
+        tap(959, 258)  # Zoom out
+        tap(904, 100)  # Back to files
+        tap(922, 189)  # Run selected, separate from preview
         tap(630, 409)
         assert "$F=/bracket.nc" in command("LAST")
         assert state()["job"]
-        tap(899, 560)
+        tap(374, 370)
         assert not state()["job"]
         tap(88, 560)
         print("PASS: SD download, viewer, Top/3D, zoom, file round trip and separate confirmed run", flush=True)

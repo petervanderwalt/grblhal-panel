@@ -16,7 +16,10 @@ enum class Action {
     Stop,
     JogCancel,
     Contact,
-    Acknowledge
+    Acknowledge,
+    FeedOverride,
+    SpindleOverride,
+    JobAcknowledged
 };
 void runtime_init();
 bool runtime_connect(int tx = 37, int rx = 38, int baud = 115200);

@@ -9,26 +9,39 @@ at 115200 baud, configured and connected from Settings.
 Jog has an eight-direction XY pad, separate Z controls, Incremental/Continuous
 modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
 The landscape Jog screen uses compact vertical DRO rows on the left and a grouped
-XYZ jog pad on the right, with Z directly beside XY and an empty centre. Other
-pages keep the DRO summary above their content. Each axis has Home and Zero;
-individual homing is also on Zero / Home.
-On Jog, Home all, Go to XY zero, Go to Z zero and Set zero all sit directly below
-the DRO. Go to zero moves the machine; Set zero changes the active work offset.
-Both require confirmation. Go to XY zero follows Ooznest Control: rapid via machine
-Z−5 mm, X0, Y0, then restore the original machine Z. Go to Z zero rapids to work Z0.
-Both routines establish mm/absolute mode and restore the original units/distance mode.
-STOP stays visible on every page and immediately sends Ctrl-X without confirmation;
-this resets the controller, so position may need checking or re-homing afterward.
-Incremental sends one move for the entered distance. Continuous sends one long
-jog and raw `0x85` on release or loss of touch. Distance uses a numeric input.
-Fast / Med / Slow use 100% / 50% / 25% of the lowest `$110`–`$112` maximum rate
-among the moving axes, matching Ooznest Control. The fallback before settings are
-available is 1000 mm/min. The selected preset is saved on the display.
+XYZ jog pad on the right, with Z directly beside XY and an empty centre. Each axis
+has Home and Zero. Home all, Go to XY zero, Go to Z zero and Set zero all sit
+below the DRO; Probe opens a modal and G54-G59 uses a dropdown.
+Go to zero moves the machine; Set zero changes the active work offset. Both
+require confirmation. Go to XY zero follows Ooznest Control: rapid via machine
+Z-5 mm, X0, Y0, then restore original machine Z. Go to Z zero rapids to work Z0.
+Generated motion uses mm and restores the original absolute/incremental mode.
 
-Controller SD listing/run/progress, pause/resume/reset, alarm recovery and XYZ
-corner probing are included. Plate defaults are X10/Y10/Z5 mm; enter tool diameter
-on Probe and edit plate defaults in Settings. Preview disconnects the controller
-UART and uses synthetic feedback; it is visibly marked on screen.
+Settings uses labelled rows. Units can be mm or inch; positions, probe geometry
+and jog distances convert on the LCD. Internal geometry and motion commands stay
+in mm. Jog steps are 0.1 / 1 / 10 / 100 mm or 0.01 / 0.1 / 1 / 10 inch.
+Continuous sends one long jog and raw `0x85` on release or loss of touch.
+Incremental sends one move and finishes its set distance. Fast / Med / Slow use
+100% / 50% / 25% of the lowest moving-axis `$110`-`$112` maximum rate, matching
+Ooznest Control. The fallback is 1000 mm/min. Units, step and speed are saved.
+
+Workflow: Home -> Jog/probe stock zero -> Files -> Run. Files uses full-width rows
+with size, Preview and confirmed Run actions. Running switches to a separate screen
+with read-only DROs, percentage, elapsed time, Pause/Resume and Feed/Speed override
+sliders (10-200%). Overrides use actual `Ov:` feedback and grblHAL realtime commands.
+Jog and settings navigation is hidden during a job. Job Complete appears after fresh
+Idle feedback; OK returns to Jog. Stopped or failed jobs never count as complete.
+Alarms/errors open a dialog; tap the status message to reopen it.
+
+On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
+Resume after hold feedback. Stop returns to its bottom-right position on other
+screens and while a dialog is open, so it never obscures dialog actions.
+
+STOP stays visible on every page and above dialogs, and immediately sends Ctrl-X
+without confirmation. This resets the controller, so position may need checking
+or re-homing afterward. Plate defaults are X10/Y10/Z5 mm; enter tool diameter
+in the Probe modal and edit plate defaults in Settings. Preview disconnects the
+controller UART and uses synthetic feedback, visibly marked on screen.
 
 - [Development instructions and code map](AGENTS.md)
 - [Screenshot and touch workflow](docs/device-ui-development.md)
@@ -63,16 +76,23 @@ Then enter `shot captures/home.png`, `tap 650 420`, and
 `shot captures/setup.png`. Finish with `quit`.
 Disconnect the CNC before automated UI exploration: taps are real UI input.
 
-Run `python tools/check-jog.py` for device jog checks in preview mode. It temporarily
-disables physical touch, checks protocol/model cases, diagonals, release-to-stop,
-Home X and Zero X, saves framebuffer PNGs, then restores physical touch.
+Run `python tools/check-workflow.py` for units, settings scrolling, probe modal,
+SD run, job controls, completion and Stop checks. `tools/check-jog.py` covers
+diagonals, release-to-stop, homing and zeroing. Both use UART-disconnected preview
+feedback, temporarily disable physical touch and restore it in cleanup.
 Actual controller wiring and physical motion/probing still require validation.
 
 ![Jog pad on the physical display](docs/screenshots/panel-jog.png)
 
+![Running job on the physical display](docs/screenshots/panel-job.png)
+
+Other device captures: [Files](docs/screenshots/panel-files.png),
+[Settings](docs/screenshots/panel-settings.png), [Probe](docs/screenshots/panel-probe.png),
+[Job Complete](docs/screenshots/panel-complete.png).
+
 ## G-code preview
 
-On Files, refresh the controller SD list, select a file, then tap Preview.
+On Files, refresh the controller SD list and tap Preview in a file row.
 The pendant downloads it using `$F<=/path` and reuses uGsender's G-code viewer.
 Choose Top or 3D, drag to pan, and use +/− to zoom. Back to files returns to the
 list. Run from SD is a separate confirmed action; preview never streams motion.

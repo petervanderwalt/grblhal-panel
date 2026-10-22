@@ -247,6 +247,15 @@ bool runtime_action(Action a, const char *text, float x, float y) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     bool ok = false;
     switch (a) {
+    case Action::FeedOverride:
+    case Action::SpindleOverride:
+        ok = model.override_target(a == Action::SpindleOverride, (int)x);
+        break;
+    case Action::JobAcknowledged:
+        ok = !model.state.sd_active;
+        if (ok)
+            model.state.job_complete = false;
+        break;
     case Action::List:
         ok = model.list();
         break;
@@ -304,6 +313,13 @@ bool runtime_action(Action a, const char *text, float x, float y) {
     }
     if (demo && ok) {
         uint32_t t = now();
+        if (a == Action::FeedOverride || a == Action::SpindleOverride) {
+            char report[80];
+            snprintf(report, sizeof report, "<%s|Ov:%d,100,%d>", model.state.mode,
+                     a == Action::FeedOverride ? (int)x : model.state.feed_override,
+                     a == Action::SpindleOverride ? (int)x : model.state.spindle_override);
+            model.receive(report, t);
+        }
         if (a == Action::JogCancel)
             model.receive("<Idle|FS:0,0>", t);
         if (a == Action::Pause)

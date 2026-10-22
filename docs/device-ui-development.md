@@ -67,6 +67,7 @@ and captures; capture does not force a render from the console task.
 
 Additional debug commands:
 
+- `UG SWIPE x1 y1 x2 y2`: inject a 400 ms drag for scrolling/sliders; replies `@UGOK TAP`.
 - `UG HOLD x y milliseconds` (50–2000): hold and release through LVGL; replies `@UGOK TAP`.
 - `UG TOUCH OFF` / `UG TOUCH ON`: temporarily disable/restore physical touch for deterministic checks.
   Always restore ON in cleanup. Reset also restores touch.
@@ -76,4 +77,8 @@ Additional debug commands:
 - `UG STATE`, `UG LAST`, `UG PREFS`: inspect state, last non-poll transmission and settings.
 
 The Python session supports `demo on`, `rx <Idle|...>`, `test`, `state`, `last`,
-`prefs`, and `touch off/on`. `tools/check-jog.py` exercises held touches directly.
+`prefs`, `touch off/on`, `hold x y ms` and `swipe x1 y1 x2 y2`. `tools/check-jog.py` exercises held touches directly.
+
+`tools/check-workflow.py` checks LCD units, settings scrolling, the Probe modal, SD
+row actions, job navigation lock, overrides, completion and Stop. It restores touch
+in cleanup. Add `--no-captures` for assertions only.

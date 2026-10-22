@@ -23,6 +23,8 @@ static SemaphoreHandle_t tap_done;
 static bool tap_pending;
 static bool release_phase;
 static int hold_ms;
+static lv_point_t swipe_start, swipe_end;
+static int swipe_step;
 
 static void input_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -90,7 +92,12 @@ static void tap_tick(lv_timer_t *timer)
     if (!release_phase) {
         lv_indev_read(remote_input);
         release_phase = true;
-        lv_timer_set_period(timer, hold_ms);
+        lv_timer_set_period(timer, swipe_step >= 0 ? 40 : hold_ms);
+    } else if (swipe_step >= 0 && swipe_step < 10) {
+        swipe_step++;
+        touch_point.x = swipe_start.x + (swipe_end.x - swipe_start.x) * swipe_step / 10;
+        touch_point.y = swipe_start.y + (swipe_end.y - swipe_start.y) * swipe_step / 10;
+        lv_indev_read(remote_input);
     } else {
         pressed = false;
         lv_indev_read(remote_input);
@@ -102,7 +109,8 @@ static void tap_tick(lv_timer_t *timer)
 
 static void command(const char *line)
 {
-    int x, y, consumed = 0, duration = 100;
+    int x, y, x2 = 0, y2 = 0, consumed = 0, duration = 100;
+    bool swipe = sscanf(line, "UG SWIPE %d %d %d %d%n", &x, &y, &x2, &y2, &consumed) == 4 && line[consumed] == 0;
     if (!strcmp(line,"UG TOUCH ON") || !strcmp(line,"UG TOUCH OFF")) {
         bsp_display_lock(0);
         lv_indev_t *physical = bsp_display_get_input_dev();
@@ -124,10 +132,11 @@ static void command(const char *line)
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line, "UG SHOT")) {
         screenshot();
-    } else if (((sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 && line[consumed] == 0) ||
+    } else if ((swipe || (sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 && line[consumed] == 0) ||
                 (sscanf(line, "UG HOLD %d %d %d%n", &x, &y, &duration, &consumed) == 3 && line[consumed] == 0)) &&
                line[consumed] == 0 && x >= 0 && x < BSP_LCD_H_RES &&
-               y >= 0 && y < BSP_LCD_V_RES && duration >= 50 && duration <= 2000) {
+               y >= 0 && y < BSP_LCD_V_RES && duration >= 50 && duration <= 2000 &&
+               (!swipe || (x2 >= 0 && x2 < BSP_LCD_H_RES && y2 >= 0 && y2 < BSP_LCD_V_RES))) {
         if (!bsp_display_lock(2000)) {
             reply("@UGERR display_busy\n");
             return;
@@ -139,6 +148,9 @@ static void command(const char *line)
         }
         xSemaphoreTake(tap_done, 0);
         touch_point = (lv_point_t){x, y};
+        swipe_start = touch_point;
+        swipe_end = (lv_point_t){x2, y2};
+        swipe_step = swipe ? 0 : -1;
         pressed = true;
         release_phase = false;
         hold_ms = duration;

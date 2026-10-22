@@ -16,11 +16,12 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
     port.open()
     time.sleep(2)
     port.reset_input_buffer()
-    port.write(b"\nUG SYNC\n")
-    deadline = time.monotonic() + 15
-    while b"@UGERR command" not in port.readline():
-        if time.monotonic() > deadline:
-            raise TimeoutError("Console sync")
+    for attempt in range(15):
+        port.write(b"\nUG SYNC\n")
+        if b"@UGERR command" in port.readline():
+            break
+    else:
+        raise TimeoutError("Console sync")
     time.sleep(.2)
     port.reset_input_buffer()
     def command(s):
@@ -39,7 +40,9 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
-        tap(88, 560)
+        tap(648, 560)
+        tap(761, 160)  # Metric display units
+        tap(138, 560)
         tap(631, 184)  # Incremental
         command("RX $110=6000")
         command("RX $111=3000")
@@ -101,12 +104,12 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         idle()
         command("RX <Run|SD:42.5,/test.nc|FS:800,12000>")
         time.sleep(.3)
-        tap(767, 32)  # Pause stays available above every page
+        tap(130, 370)  # Pause on dedicated job page
         assert "0x21" in command("LAST")
-        tap(933, 32)
+        tap(130, 370)
         assert "0x7E" in command("LAST")
-        tap(242, 560)  # Files
-        tap(899, 560)  # Stop immediately, without confirming
+        tap(392, 560)  # Navigation is locked during the job
+        tap(374, 370)  # Job Stop below the DRO
         data = json.loads(command("STATE").removeprefix("@UGDATA "))
         assert not data["job"], "Stop opened a dialog or left the job running"
         tap(88, 560)
