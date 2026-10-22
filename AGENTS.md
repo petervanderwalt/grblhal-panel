@@ -151,6 +151,8 @@ shared page_layer horizontally for 220 ms; keep the header and tab bar stationar
 The animation layer holds controls only during the slide; restore their root
 parent afterward. Page rebuilds cancel slides and restore x=0. Mode and speed
 selection update in place; only change matrix disabled flags when readiness changes.
+Command-busy locks input immediately but keeps setup colours steady for the first
+200 ms while Idle; offline, faults, Hold and sustained busy states use pale disabled styling.
 Use subtle button
 gradients and card shadows. Fault dialogs have square edges and red title bands; successful
 completion uses green. Include simulated alarms and errors in workflow checks.

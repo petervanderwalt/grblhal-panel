@@ -227,7 +227,7 @@ static lv_obj_t *button(lv_obj_t *p, const char *s, int x, int y, int w, int h, 
         lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)data);
     return b;
 }
-static void enable(lv_obj_t *b, bool on) {
+static void enable(lv_obj_t *b, bool on, bool brief_busy = false) {
     if (!b)
         return;
     if (on)
@@ -235,15 +235,27 @@ static void enable(lv_obj_t *b, bool on) {
     else
         lv_obj_add_state(b, LV_STATE_DISABLED);
     lv_obj_set_style_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(DISABLED), LV_STATE_DISABLED);
+    lv_style_value_t base;
+    lv_color_t disabled_bg = lv_color_hex(DISABLED);
+    if (brief_busy && lv_obj_get_local_style_prop(b, LV_STYLE_BG_COLOR, &base, 0) == LV_STYLE_RES_FOUND)
+        disabled_bg = base.color;
+    lv_obj_set_style_bg_color(b, disabled_bg, LV_STATE_DISABLED);
+    lv_grad_dir_t gradient = LV_GRAD_DIR_NONE;
+    if (brief_busy && lv_obj_get_local_style_prop(b, LV_STYLE_BG_GRAD_DIR, &base, 0) == LV_STYLE_RES_FOUND)
+        gradient = (lv_grad_dir_t)base.num;
+    lv_obj_set_style_bg_grad_dir(b, gradient, LV_STATE_DISABLED);
+    if (brief_busy && lv_obj_get_local_style_prop(b, LV_STYLE_BG_GRAD_COLOR, &base, 0) == LV_STYLE_RES_FOUND)
+        lv_obj_set_style_bg_grad_color(b, base.color, LV_STATE_DISABLED);
+    lv_obj_set_style_text_color(b, lv_color_hex(brief_busy ? TEXT : MUTED), LV_STATE_DISABLED);
+    lv_obj_set_style_text_color(b, lv_color_hex(brief_busy ? TEXT : MUTED), LV_PART_INDICATOR | LV_STATE_DISABLED);
     lv_obj_set_style_color_filter_opa(b, LV_OPA_TRANSP, LV_STATE_DISABLED);
     if (lv_obj_check_type(b, &lv_button_class) && lv_obj_get_child_count(b)) {
         lv_obj_t *text = lv_obj_get_child(b, 0);
         if (lv_obj_check_type(text, &lv_label_class)) {
             uint32_t color = lv_color_to_u32(lv_obj_get_style_bg_color(b, 0)) & 0xFFFFFF;
-            lv_obj_set_style_text_color(text, lv_color_hex(on ? button_text(color) : MUTED), 0);
+            lv_obj_set_style_text_color(text, lv_color_hex(on || brief_busy ? button_text(color) : MUTED), 0);
         } else if (lv_obj_check_type(text, &lv_line_class))
-            lv_obj_set_style_line_color(text, lv_color_hex(on ? WHITE : MUTED), 0);
+            lv_obj_set_style_line_color(text, lv_color_hex(on || brief_busy ? WHITE : MUTED), 0);
     }
 }
 static void soften(lv_obj_t *b, uint32_t accent = LINE) {
@@ -291,10 +303,20 @@ static lv_obj_t *choices(lv_obj_t *parent, const char *const *map, int selected,
     lv_obj_add_event_cb(m, callback, LV_EVENT_VALUE_CHANGED, nullptr);
     return m;
 }
-static void enable_choices(lv_obj_t *m, bool on) {
-    if (!m || lv_obj_has_state(m, LV_STATE_DISABLED) == !on)
+static void enable_choices(lv_obj_t *m, bool on, bool brief_busy = false) {
+    if (!m)
         return;
-    enable(m, on);
+    bool unchanged = lv_obj_has_state(m, LV_STATE_DISABLED) == !on;
+    enable(m, on, brief_busy);
+    for (int checked = 0; checked < 2; checked++) {
+        lv_style_selector_t selector = LV_PART_ITEMS | LV_STATE_DISABLED | (checked ? LV_STATE_CHECKED : 0);
+        lv_obj_set_style_bg_color(m, lv_color_hex(brief_busy ? (checked ? 0xE8E9FA : BG) : DISABLED), selector);
+        lv_obj_set_style_text_color(m, lv_color_hex(brief_busy ? (checked ? BLUE : TEXT) : MUTED), selector);
+        lv_obj_set_style_border_color(m, lv_color_hex(brief_busy && checked ? BLUE : LINE), selector);
+        lv_obj_set_style_border_width(m, brief_busy ? (checked ? 2 : 1) : 0, selector);
+    }
+    if (unchanged)
+        return;
     if (on)
         lv_buttonmatrix_clear_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_DISABLED);
     else
@@ -1150,10 +1172,19 @@ static void refresh(lv_timer_t *) {
         }
     }
     bool on = ready();
-    enable(probe_btn, on);
-    enable_choices(speed_choices, on);
-    enable_choices(mode_choices, on);
-    enable(step_dropdown, on && !continuous);
+    // Keep input disabled immediately, but avoid a one-frame palette flash for brief command ACKs.
+    static uint32_t busy_since;
+    bool command_busy = page == JogPage && state.busy && state.online && state.identified && state.status &&
+                        !state.alarm && !state.error && !state.sd_active && !strcmp(state.mode, "Idle");
+    if (!command_busy)
+        busy_since = 0;
+    else if (!busy_since)
+        busy_since = now();
+    bool brief_busy = command_busy && now() - busy_since < 200;
+    enable(probe_btn, on, brief_busy);
+    enable_choices(speed_choices, on, brief_busy);
+    enable_choices(mode_choices, on, brief_busy);
+    enable(step_dropdown, on && !continuous, brief_busy && !continuous);
     char s[256];
     snprintf(s, sizeof s, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
     lv_label_set_text(state_label, s);
@@ -1180,17 +1211,17 @@ static void refresh(lv_timer_t *) {
     else
         lv_obj_remove_flag(state_label, LV_OBJ_FLAG_CLICKABLE);
     for (int i = 0; i < 3; i++)
-        enable(axis_zero[i], on);
-    enable(zero_all_btn, on);
+        enable(axis_zero[i], on, brief_busy);
+    enable(zero_all_btn, on, brief_busy);
     for (int i = 0; i < 2; i++)
-        enable(goto_buttons[i], on && state.coordinates && state.wco_known && state.modal_known);
+        enable(goto_buttons[i], on && state.coordinates && state.wco_known && state.modal_known, brief_busy);
     for (int i = 0; i < jog_count; i++)
-        enable(jog_buttons[i], on || jog_held);
+        enable(jog_buttons[i], on || jog_held, brief_busy);
     bool can_home = on || (state.online && state.identified && state.status && !state.busy &&
                            !state.sd_active && !strncmp(state.mode, "Alarm", 5));
-    enable(home_btn, can_home);
+    enable(home_btn, can_home, brief_busy);
     for (int i = 0; i < 3; i++)
-        enable(axis_home[i], can_home);
+        enable(axis_home[i], can_home, brief_busy);
     bool held = !strncmp(state.mode, "Hold", 4);
     lv_label_set_text(lv_obj_get_child(job_pause, 0), held ? "Resume" : "Pause");
     lv_obj_set_style_bg_color(job_pause, lv_color_hex(held ? GREEN : AMBER), 0);
@@ -1227,7 +1258,7 @@ static void refresh(lv_timer_t *) {
         enable(spindle_slider, overrides);
     }
     if (page == JogPage) {
-        enable(wcs_dropdown, on);
+        enable(wcs_dropdown, on, brief_busy);
         if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59)
             lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
     }
