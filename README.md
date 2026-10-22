@@ -11,6 +11,11 @@ modes, Home All and individual axis homing, and XYZ/per-axis work zeroing.
 The landscape layout is intended for two-handed use: XY by the left thumb,
 large Z controls by the right, full-width DROs above, and bottom navigation.
 Each DRO has an axis-zero button. Individual homing is on Zero / Home.
+On Jog, Home all, Go to XY zero, Go to Z zero and Set zero all sit directly below
+the DRO. Go to zero moves the machine; Set zero changes the active work offset.
+Both require confirmation. Go to XY zero follows Ooznest Control: rapid via machine
+Z−5 mm, X0, Y0, then restore the original machine Z. Go to Z zero rapids to work Z0.
+Both routines establish mm/absolute mode and restore the original units/distance mode.
 STOP stays visible on every page and immediately sends Ctrl-X without confirmation;
 this resets the controller, so position may need checking or re-homing afterward.
 Incremental sends one move for the entered distance. Continuous sends one long

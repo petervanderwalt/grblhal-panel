@@ -128,6 +128,12 @@ Z at the right, DROs above the hands, and bottom navigation. STOP must stay visi
 on all pages and above dialogs, and send Ctrl-X on touch-down without confirmation. Keep confirmations
 for homing, zeroing, probing and starting jobs. Per-axis zero is on each DRO;
 individual homing is on Zero / Home. Update injected-touch coordinates when moving controls.
+Keep Home all, Go to XY zero, Go to Z zero and Set zero all directly beneath the
+DRO on Jog. Set zero changes offsets; Go to zero moves and must be confirmed.
+Go XY follows `DROHandler.goXY0()`: machine Z−5 mm, X0, Y0, restore machine Z.
+Preserve units and distance mode, and wait for fresh Idle before more manual motion.
+Use actual directional arrows for all eight XY directions. Continuous cancels on
+release/lost press; incremental must finish its commanded distance without release cancellation.
 
 The inherited wizard/link files remain as reference but are not compiled by
 `main/CMakeLists.txt`. `main.c` creates the panel UI.

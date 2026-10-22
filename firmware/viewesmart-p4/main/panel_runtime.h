@@ -7,6 +7,7 @@ enum class Action {
     Preview,
     Jog,
     Zero,
+    GotoZero,
     Wcs,
     Home,
     Unlock,

@@ -47,6 +47,7 @@ class Model {
     bool jog(char axis, float distance, float feed);
     bool jog_vector(const char *directions, float distance, float feed);
     bool zero(int axes);
+    bool goto_zero(int axes);
     bool select_wcs(int wcs);
     bool home(char axis = 0);
     bool unlock();
@@ -65,6 +66,7 @@ class Model {
     Download download_sink_ = nullptr;
     void *download_context_ = nullptr;
     bool download_failed_ = false;
+    bool goto_pending_ = false;
     char queue_[40][192] = {};
     int queued_ = 0, cursor_ = 0;
     bool awaiting_ = false, need_probe_ = false, got_probe_ = false, initialized_ = false,

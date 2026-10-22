@@ -221,6 +221,48 @@ static bool sd_download() {
     CHECK(!model->state.online && !model->state.download_ready);
     return true;
 }
+static bool goto_work_zero() {
+    ready();
+    CHECK(!model->goto_zero(7));
+    model->state.modal_known = false;
+    CHECK(!model->goto_zero(3));
+    model->state.modal_known = true;
+    model->state.inches = true;
+    model->state.absolute = false;
+    model->state.machine[2] = -12;
+    CHECK(model->goto_zero(3));
+    CHECK(!model->jog('X', 1, 600));
+    const char *commands[] = {"G21 G90",          "G53 G0 Z-5", "G0 X0", "G0 Y0",
+                              "G53 G0 Z-12.0000", "G20",        "G91",   "$G"};
+    for (int i = 0; i < 8; i++) {
+        model->tick(500 + i);
+        CHECK(!strcmp(capture->lines[i], commands[i]));
+        model->receive("ok", 500 + i);
+        if (i == 6)
+            model->receive("<Idle>", 506);
+    }
+    model->tick(508);
+    CHECK(model->state.busy);
+    CHECK(!model->idle()); // Wait for fresh motion completion, not just command acknowledgements.
+    model->receive("<Idle>", 509);
+    model->tick(510);
+    CHECK(model->idle());
+    ready();
+    CHECK(model->goto_zero(4));
+    model->tick(500);
+    model->receive("ok", 500);
+    model->tick(501);
+    CHECK(!strcmp(capture->lines[1], "G0 Z0"));
+    model->receive("error:15", 502);
+    model->tick(503);
+    CHECK(capture->n == 2 && !model->state.busy && model->state.error);
+    ready();
+    CHECK(model->goto_zero(3));
+    CHECK(model->stop());
+    model->tick(500);
+    CHECK(capture->n == 0);
+    return true;
+}
 static bool corner_sequence() {
     ready();
     ProbeSettings p;
@@ -301,6 +343,7 @@ bool model_self_test() {
                           {"coordinates_and_probe_pins", coordinates_and_probe_pins},
                           {"sd_and_progress", sd_and_progress},
                           {"sd_download", sd_download},
+                          {"goto_work_zero", goto_work_zero},
                           {"commands_and_faults", commands_and_faults},
                           {"corner_sequence", corner_sequence},
                           {"feedback_and_write_failure", lost_feedback_and_write_failure}};

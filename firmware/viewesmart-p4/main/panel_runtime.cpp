@@ -82,9 +82,9 @@ static void mock_reply() {
         model.receive("[VER:1.1f.20261020:]", t);
         model.receive("[FIRMWARE:grblHAL]", t);
         model.receive("<Idle|MPos:125.000,84.500,-12.000|WCO:100,50,-20|FS:0,0|Pn:i>", t);
-    } else if (!strcmp(pending_line, "$G"))
+    } else if (!strcmp(pending_line, "$G")) {
         model.receive("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F100 S0]", t);
-    else if (!strcmp(pending_line, "$F+")) {
+    } else if (!strcmp(pending_line, "$F+")) {
         model.receive("[FILE:/bracket.nc|SIZE:24861]", t);
         model.receive("[FILE:/spoilboard.nc|SIZE:98110]", t);
         model.receive("[FILE:/jobs/pocket.nc|SIZE:12480]", t);
@@ -118,6 +118,8 @@ static void mock_reply() {
     }
     // Probe reports are injected separately; an ok alone must never advance a probe.
     model.receive("ok", t);
+    if (!strcmp(pending_line, "$G") && !model.state.sd_active && !model.state.probing)
+        model.receive("<Idle|FS:0,0>", t);
 }
 static void worker(void *) {
     char line[768];
@@ -258,7 +260,8 @@ bool runtime_action(Action a, const char *text, float x, float y) {
                     (char *)heap_caps_malloc(MaxPreviewBytes + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             if (preview_data) {
                 ok = model.download(text, preview_write, nullptr);
-                if (ok) preview_size = 0;
+                if (ok)
+                    preview_size = 0;
             }
         }
         break;
@@ -267,6 +270,9 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         break;
     case Action::Zero:
         ok = model.zero((int)x);
+        break;
+    case Action::GotoZero:
+        ok = model.goto_zero((int)x);
         break;
     case Action::Wcs:
         ok = model.select_wcs((int)x);

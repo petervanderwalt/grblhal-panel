@@ -9,9 +9,11 @@
 namespace panel {
 static void copy(char *to, const char *from, size_t size) { snprintf(to, size, "%s", from); }
 static bool valid_sd_path(const char *path) {
-    if (!path || path[0] != '/' || strlen(path) > 159) return false;
+    if (!path || path[0] != '/' || strlen(path) > 159)
+        return false;
     for (const unsigned char *p = (const unsigned char *)path; *p; p++)
-        if (*p < 32 || *p >= 127 || strchr("!~?|]", *p)) return false;
+        if (*p < 32 || *p >= 127 || strchr("!~?|]", *p))
+            return false;
     return true;
 }
 static bool vector3(const char *s, float *v) {
@@ -71,6 +73,7 @@ static const char *fault_text(bool alarm, int code) {
 }
 Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c) {}
 void Model::cancel(const char *message) {
+    goto_pending_ = false;
     if (state.downloading)
         state.download_ready = false;
     state.downloading = false;
@@ -214,6 +217,28 @@ bool Model::select_wcs(int wcs) {
     if (!action(cmd))
         return false;
     return append("$G");
+}
+bool Model::goto_zero(int axes) {
+    if (!idle() || !state.coordinates || !state.wco_known || !state.modal_known || (axes != 3 && axes != 4))
+        return false;
+    const bool inches = state.inches, absolute = state.absolute;
+    char restore_z[64];
+    snprintf(restore_z, sizeof restore_z, "G53 G0 Z%.4f", state.machine[2]);
+    append("G21 G90");
+    if (axes == 3) {
+        append("G53 G0 Z-5");
+        append("G0 X0");
+        append("G0 Y0");
+        append(restore_z);
+    } else {
+        append("G0 Z0");
+    }
+    append(inches ? "G20" : "G21");
+    append(absolute ? "G90" : "G91");
+    append("$G");
+    copy(state.mode, "Run", sizeof state.mode);
+    goto_pending_ = true;
+    return true;
 }
 bool Model::jog_vector(const char *directions, float distance, float feed) {
     if (!idle() || !directions || strlen(directions) != 3 || !isfinite(distance) || distance <= 0 ||
@@ -464,6 +489,8 @@ void Model::status_report(const char *line) {
     }
     if (!strncmp(state.mode, "Alarm", 5) || !strncmp(state.mode, "Door", 4))
         cancel("Machine interlock active. Check controller before recovery.");
+    if (goto_pending_ && cursor_ >= queued_ && !awaiting_ && !strcmp(state.mode, "Idle"))
+        goto_pending_ = false;
 }
 void Model::receive(const char *line, uint32_t now) {
     now_ = now;
@@ -695,6 +722,8 @@ void Model::tick(uint32_t now) {
             cancel("UART write failed; command queue cancelled");
         }
     } else if (state.busy) {
+        if (goto_pending_)
+            return; // Rapid acknowledgements can precede motion completion.
         bool probed = state.probing;
         queued_ = cursor_ = 0;
         state.busy = state.probing = state.listing = false;

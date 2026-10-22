@@ -40,21 +40,21 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("DEMO ON")
         time.sleep(1)
         tap(88, 560)
-        tap(490, 208)  # Incremental
+        tap(490, 272)  # Incremental
         idle()
-        tap(68, 256)  # X- Y+
+        tap(68, 297)  # X- Y+
         last = command("LAST")
         assert "$J=G91 G21 X-" in last and " Y" in last and "0x85" not in last, last
         command("RX ok")
         idle()
-        tap(714, 208)  # Continuous
-        command("HOLD 68 256 700")
+        tap(714, 272)  # Continuous
+        command("HOLD 68 297 700")
         assert "0x85" in command("LAST")
         time.sleep(.5)
         assert "0x85" in command("LAST"), "Jog queued after release"
         idle()
         shot("jog-continuous.png")
-        tap(490, 208)
+        tap(490, 272)
         shot("jog-incremental.png")
         tap(550, 560)  # Zero / Home
         tap(189, 456)  # Home X
@@ -63,7 +63,20 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert "$HX" in command("LAST")
         command("RX ok")
         idle()
-        tap(88, 560)  # Return to Jog
+        tap(88, 560)  # Return to Jog and its DRO actions
+        tap(386, 202)  # Go to XY work zero, beside the DRO
+        tap(630, 409)
+        assert "$G" in command("LAST")
+        idle()
+        tap(638, 202)  # Go to Z work zero
+        tap(630, 409)
+        assert "$G" in command("LAST")
+        idle()
+        tap(890, 202)  # Set zero all, separate from go-to-zero motion
+        tap(630, 409)
+        assert "G10 L20 P0 X0 Y0 Z0" in command("LAST")
+        command("RX ok")
+        idle()
         tap(282, 136)  # Zero X on DRO
         tap(630, 409)
         assert "G10 L20 P0 X0" in command("LAST")
@@ -82,14 +95,14 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(88, 560)
         # Stop also stays reachable above a confirmation dialog.
         idle()
-        tap(490, 360)  # Home all confirmation
+        tap(134, 202)  # Home all confirmation beside the DRO
         tap(899, 560)  # Stop closes it, without homing
         time.sleep(.5)
         idle()
-        tap(68, 256)
+        tap(68, 297)
         assert "$J=G91 G21 X-" in command("LAST"), "Dialog remained over jog controls"
         command("RX ok")
         idle()
-        print("PASS: jog, navigation, Home X, Zero X, pause/resume, immediate Stop and dialog Stop", flush=True)
+        print("PASS: jog, DRO set/go zero, navigation, homing, pause/resume and Stop", flush=True)
     finally:
         command("TOUCH ON")

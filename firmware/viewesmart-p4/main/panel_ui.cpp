@@ -28,6 +28,7 @@ static lv_obj_t *root, *body, *status_text, *state_label, *protocol_label, *axis
     *axis_card[3], *nav[5];
 static lv_obj_t *pause_btn, *resume_btn, *home_btn, *stop_btn, *recover_btn;
 static lv_obj_t *axis_zero[3];
+static lv_obj_t *dro_actions, *goto_buttons[2], *zero_all_btn;
 static lv_obj_t *preview_btn;
 static bool preview_pending = false, preview_show = false;
 static std::atomic<int> preview_parsing{0};
@@ -441,6 +442,47 @@ static void zero_click(lv_event_t *e) {
             "Set the selected axes to zero in the active WCS.\nMachine coordinates are unchanged.",
             zero_confirm);
 }
+static int goto_axes;
+static bool goto_confirm() { return runtime_action(Action::GotoZero, nullptr, goto_axes); }
+static void goto_click(lv_event_t *e) {
+    goto_axes = (uintptr_t)lv_event_get_user_data(e);
+    confirm(goto_axes == 3 ? "Go to XY work zero?" : "Go to Z work zero?",
+            goto_axes == 3 ? "Rapid via MACHINE Z -5 mm, then X0, then Y0.\nReturn Z to its current machine "
+                             "position.\nClear the entire travel first."
+                           : "Rapid to Z0 in the active work coordinates.\nClear Z travel first.",
+            goto_confirm);
+}
+static void jog_arrow(lv_obj_t *button, int direction) {
+    static lv_point_precise_t points[8][5];
+    static bool initialized = false;
+    if (!initialized) {
+        const int directions[8][2] = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}};
+        for (int i = 0; i < 8; i++) {
+            float length = sqrtf(directions[i][0] * directions[i][0] + directions[i][1] * directions[i][1]);
+            float dx = directions[i][0] / length, dy = directions[i][1] / length;
+            float tx = 24 + dx * 18, ty = 24 + dy * 18;
+            points[i][0].x = lroundf(tx - dx * 11 - dy * 8);
+            points[i][0].y = lroundf(ty - dy * 11 + dx * 8);
+            points[i][1].x = lroundf(tx);
+            points[i][1].y = lroundf(ty);
+            points[i][2].x = lroundf(tx - dx * 11 + dy * 8);
+            points[i][2].y = lroundf(ty - dy * 11 - dx * 8);
+            points[i][3] = points[i][1];
+            points[i][4].x = lroundf(24 - dx * 18);
+            points[i][4].y = lroundf(24 - dy * 18);
+        }
+        initialized = true;
+    }
+    lv_obj_delete(lv_obj_get_child(button, 0));
+    lv_obj_t *line = lv_line_create(button);
+    lv_line_set_points(line, points[direction], 5);
+    lv_obj_set_size(line, 48, 48);
+    lv_obj_set_style_line_color(line, lv_color_hex(TEXT), 0);
+    lv_obj_set_style_line_width(line, 3, 0);
+    lv_obj_set_style_line_rounded(line, true, 0);
+    lv_obj_remove_flag(line, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_center(line);
+}
 static void wcs(lv_event_t *e) {
     result(runtime_action(Action::Wcs, nullptr, 54 + (uintptr_t)lv_event_get_user_data(e)));
 }
@@ -471,14 +513,18 @@ static void build_page() {
     release_jog();
     jog_count = 0;
     gate_count = 0;
-    home_btn = nullptr;
     preview_btn = nullptr;
     file_box = file_title = progress = progress_text = time_text = line_text = start_btn = refresh_btn =
         probe_start = probe_status = contact_btn = wcs_label = nullptr;
     gcode_viewer_detach();
     lv_obj_clean(body);
-    lv_obj_set_pos(body, page == 0 ? 16 : 90, 176);
+    if (page == 0)
+        lv_obj_remove_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(dro_actions, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(body, page == 0 ? 16 : 90, page == 0 ? 240 : 176);
     lv_obj_set_width(body, page == 0 ? 992 : 844);
+    lv_obj_set_height(body, page == 0 ? 264 : 328);
     runtime_snapshot(state);
     for (int i = 0; i < 5; i++)
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(i == page ? 0x25445B : BG), 0);
@@ -498,17 +544,17 @@ static void build_page() {
         const int cells[] = {0, 1, 2, 3, 5, 6, 7, 8};
         for (int i = 0; i < 10; i++) {
             int x = i < 8 ? (cells[i] % 3) * 114 : 844;
-            int y = i < 8 ? 36 + (cells[i] / 3) * 96 : (i == 8 ? 36 : 188);
-            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 104 : 148, i < 8 ? 88 : 128, nullptr);
+            int y = i < 8 ? 20 + (cells[i] / 3) * 80 : (i == 8 ? 20 : 148);
+            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 104 : 148, i < 8 ? 74 : 104, nullptr);
             lv_obj_set_style_text_font(lv_obj_get_child(b, 0), font(28), 0);
+            if (i < 8)
+                jog_arrow(b, i);
             lv_obj_add_event_cb(b, jog_event, LV_EVENT_ALL, (void *)(uintptr_t)i);
             jog_buttons[jog_count++] = b;
         }
-        label(body, "XY", 146, 162, 70, 22, MUTED);
-        home_btn = button(body, LV_SYMBOL_HOME "  Home all", 370, 152, 208, 64, home_click);
-        gate(button(body, "Zero XYZ", 594, 152, 208, 64, zero_click, 7));
+        label(body, "XY", 146, 127, 70, 22, MUTED);
         label(body, continuous ? "Hold to move\nRelease to stop" : "Tap once\nMove the set distance", 370,
-              244, 432, 20, MUTED);
+              172, 432, 20, MUTED);
     } else if (page == 1 && preview_show && state.download_ready) {
         label(body, preview_path, 0, 0, 620, 18);
         button(body, "Back to files", 636, 0, 208, 48, preview_back);
@@ -667,6 +713,9 @@ static void refresh(lv_timer_t *) {
         enable(gated[i], on);
     for (int i = 0; i < 3; i++)
         enable(axis_zero[i], on);
+    enable(zero_all_btn, on);
+    for (int i = 0; i < 2; i++)
+        enable(goto_buttons[i], on && state.coordinates && state.wco_known && state.modal_known);
     for (int i = 0; i < jog_count; i++)
         enable(jog_buttons[i], on || jog_held);
     enable(home_btn, on || (state.online && state.identified && state.status && !state.busy &&
@@ -749,7 +798,13 @@ extern "C" void panel_ui_create() {
         snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
         axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i);
     }
-    body = box(root, 16, 176, 992, 328, BG);
+    dro_actions = box(root, 16, 176, 992, 52, BG);
+    lv_obj_set_style_border_width(dro_actions, 0, 0);
+    home_btn = button(dro_actions, "Home all", 0, 0, 236, 52, home_click);
+    goto_buttons[0] = button(dro_actions, "Go to XY zero", 252, 0, 236, 52, goto_click, 3);
+    goto_buttons[1] = button(dro_actions, "Go to Z zero", 504, 0, 236, 52, goto_click, 4);
+    zero_all_btn = button(dro_actions, "Set zero all", 756, 0, 236, 52, zero_click, 7);
+    body = box(root, 16, 240, 992, 264, BG);
     lv_obj_set_style_border_width(body, 0, 0);
     status_text = label(root, "Connect controller in Settings", 16, 504, 654, 14, MUTED);
     lv_obj_set_height(status_text, 20);
