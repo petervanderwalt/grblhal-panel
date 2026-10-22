@@ -236,6 +236,13 @@ static void enable(lv_obj_t *b, bool on) {
             lv_obj_set_style_line_color(text, lv_color_hex(on ? WHITE : MUTED), 0);
     }
 }
+static void soften(lv_obj_t *b, uint32_t accent = LINE) {
+    lv_obj_set_style_bg_color(b, lv_color_hex(BG), 0);
+    lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_NONE, 0);
+    lv_obj_set_style_border_width(b, 1, 0);
+    lv_obj_set_style_border_color(b, lv_color_mix(lv_color_hex(accent), lv_color_hex(CARD), 72), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(TEXT), 0);
+}
 static bool ready() {
     return state.online && state.status && state.identified && !state.busy && !state.alarm && !state.error &&
            !state.sd_active && !strcmp(state.mode, "Idle");
@@ -1264,6 +1271,8 @@ extern "C" void panel_ui_create() {
         axis_home[i] = button(c, s, 12, 48, 84, 44, home_click, "XYZ"[i], AXIS_COLORS[i]);
         snprintf(s, sizeof s, "Zero %c", "XYZ"[i]);
         axis_zero[i] = button(c, s, 224, 48, 84, 44, zero_click, 1 << i, AXIS_COLORS[i]);
+        soften(axis_home[i], AXIS_COLORS[i]);
+        soften(axis_zero[i], AXIS_COLORS[i]);
     }
     machine_heading = label(root, "MACHINE", 136, 70, 104, 12, MUTED);
     work_heading = label(root, "WORK", 246, 70, 148, 12, MUTED);
@@ -1277,6 +1286,10 @@ extern "C" void panel_ui_create() {
     goto_buttons[0] = button(dro_actions, "Go to XY\nzero", 120, 0, 112, 64, goto_click, 3);
     goto_buttons[1] = button(dro_actions, "Go to Z\nzero", 240, 0, 112, 64, goto_click, 4);
     zero_all_btn = button(dro_actions, "Set zero\nall", 360, 0, 112, 64, zero_click, 7);
+    soften(home_btn);
+    soften(goto_buttons[0]);
+    soften(goto_buttons[1]);
+    soften(zero_all_btn);
     jog_tools = box(root, 16, 400, 472, 80, BG);
     lv_obj_set_style_border_width(jog_tools, 0, 0);
     lv_obj_set_style_bg_opa(jog_tools, LV_OPA_TRANSP, 0);

@@ -149,7 +149,9 @@ Jog / Files / Settings tab accents are purple / green / orange, with opaque
 backgrounds and a solid selected fill; no top selection line. Use subtle button
 gradients and card shadows. Fault dialogs have square edges and red title bands; successful
 completion uses green. Include simulated alarms and errors in workflow checks.
-Axis jog, Home and Zero buttons use X red / Y green / Z blue; XY diagonals use teal.
+Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero
+use quiet flat backgrounds with subtle axis-coloured outlines; DRO action buttons
+are quiet too. Keep the jog pad and orange Probe action prominent.
 The Settings section is labelled Probe, without Defaults.
 Jog DRO and jog-pad cards are both 440 px high. There is no small footer status
 label. Notices use dialogs; the header alarm/error status reopens fault dialogs.
