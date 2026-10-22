@@ -263,8 +263,7 @@ static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320
     lv_obj_set_style_bg_opa(modal, LV_OPA_80, 0);
     lv_obj_set_style_radius(modal, 0, 0);
     lv_obj_t *card = surface(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
-    if (accent == RED)
-        lv_obj_set_style_radius(card, 0, 0);
+    lv_obj_set_style_radius(card, 0, 0);
     lv_obj_t *heading = box(card, 0, 0, width, 64, accent);
     lv_obj_set_style_border_width(heading, 0, 0);
     lv_obj_set_style_radius(heading, 0, 0);
@@ -289,6 +288,11 @@ static void cancelled(lv_event_t *) {
         probe_return = false;
         show_probe();
     }
+}
+static void modal_close_button(lv_obj_t *card) {
+    lv_obj_t *close = button(card, LV_SYMBOL_CLOSE, 832, 8, 64, 48, cancelled, 0, BLUE);
+    lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_grad_dir(close, LV_GRAD_DIR_NONE, 0);
 }
 static void notify(const char *s) {
     lv_obj_t *c = open_modal("Notice");
@@ -713,7 +717,7 @@ static void layout_dro() {
 }
 static void show_probe(lv_event_t *) {
     lv_obj_t *c = open_modal("Corner probe", 920, 440);
-    button(c, LV_SYMBOL_CLOSE, 832, 14, 64, 48, cancelled);
+    modal_close_button(c);
     const char *names[] = {"Front left", "Front right", "Rear left", "Rear right"};
     for (int i = 0; i < 4; i++)
         enable(
@@ -855,12 +859,9 @@ static void show_wifi(lv_event_t *) {
     if (!wifi.scanning && !wifi.connecting && !wifi.count)
         wifi_scan(nullptr);
     lv_obj_t *c = open_modal("Wi-Fi", 920, 480);
-    lv_obj_set_style_radius(c, 0, 0);
     wifi_scan_btn = button(c, "Scan", 560, 80, 140, 52, wifi_scan);
     wifi_disconnect_btn = button(c, "Disconnect", 712, 80, 184, 52, wifi_disconnect);
-    lv_obj_t *close = button(c, LV_SYMBOL_CLOSE, 832, 8, 64, 48, cancelled, 0, BLUE);
-    lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_grad_dir(close, LV_GRAD_DIR_NONE, 0);
+    modal_close_button(c);
     wifi_status = label(c, "", 80, 92, 450, 18);
     lv_label_set_long_mode(wifi_status, LV_LABEL_LONG_DOT);
     wifi_spinner = lv_spinner_create(c);

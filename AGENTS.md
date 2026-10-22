@@ -159,7 +159,8 @@ File preview controls and filename are inset inside the card. Keep Top/3D and
 physical pinch zoom, without +/- buttons or successful download/parse notices.
 The file-list interior is white; the main grey background separates the cards.
 Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
-The Wi-Fi scan dialog has square bottom corners too. Keep touch buttons rounded.
+All modal frames have square corners. Probe and Wi-Fi scan share the same white
+header close icon with a transparent background. Keep touch buttons rounded.
 Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
 Scan rows show signal strength followed by a lock icon for secured networks; open
 networks have no lock. The Font Awesome glyph and license are in main/assets/.
