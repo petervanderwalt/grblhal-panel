@@ -190,7 +190,7 @@ Home tabs. G54-G59 uses a dropdown on Jog. Keep labels short; omit instructional
 filler such as "tap once" and "move the set distance". Settings uses labelled rows.
 
 The controller has physical E-stop buttons. There is no global on-screen STOP.
-Job Stop sends Ctrl-X on touch-down without confirmation, below the DROs.
+Job Stop opens a confirmation below the DROs; only Confirm sends Ctrl-X.
 Keep confirmations for homing, zeroing, probing and starting jobs.
 Keep per-axis Home/Zero on each Jog DRO, with Home all, Go to XY zero, Go to Z zero
 and Set zero all directly below. Set zero changes offsets; Go to zero moves.

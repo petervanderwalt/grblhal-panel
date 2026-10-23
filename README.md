@@ -38,7 +38,7 @@ controller’s reported values. Setup navigation is hidden until the job ends.
 After Job Complete is acknowledged, the pendant returns to Jog.
 
 Alarms and command errors appear in red dialogs. The header fault indicator
-reopens the current fault. Job Stop sends a controller reset; check position
+reopens the current fault. Job Stop asks for confirmation before sending a controller reset; check position
 and re-home as needed afterward. Emergency stopping remains a hardware function.
 
 The toolpath viewer supports G0/G1 and IJK G2/G3 arcs in G17/G18/G19, absolute
@@ -198,6 +198,10 @@ sample data from demonstration mode; Wi-Fi uses the onboard radio.
 **Paused**
 
 ![Paused job with Resume control](docs/screenshots/panel-job-paused.png)
+
+**Stop confirmation**
+
+![Confirm stopping a job](docs/screenshots/panel-stop-confirm.png)
 
 **Complete**
 

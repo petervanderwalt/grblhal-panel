@@ -49,17 +49,17 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("RX $112=1200")
         tap(548, 120)  # Fast
         idle()
-        tap(562, 268)  # X- Y+
+        tap(578, 268)  # X- Y+
         last = command("LAST")
         assert "$J=G91 G21 X-" in last and " Y" in last and "0x85" not in last, last
         assert "F3000.0" in last, last
         command("RX ok")
         idle()
-        tap(678, 358)  # Empty centre must not send a command
+        tap(694, 358)  # Empty centre must not send a command
         assert command("LAST") == last
         for x, rate in ((638, "F1500.0"), (728, "F750.0")):
             tap(x, 120)
-            tap(562, 268)
+            tap(578, 268)
             assert rate in command("LAST")
             command("RX ok")
             idle()
@@ -69,7 +69,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         idle()
         tap(548, 120)
         tap(885, 184)  # Continuous
-        command("HOLD 562 268 700")
+        command("HOLD 578 268 700")
         assert "0x85" in command("LAST")
         time.sleep(.5)
         assert "0x85" in command("LAST"), "Jog queued after release"
@@ -111,7 +111,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(512, 564)  # Navigation is locked during the job
         tap(374, 370)  # Job Stop below the DRO
         data = json.loads(command("STATE").removeprefix("@UGDATA "))
-        assert not data["job"], "Stop opened a dialog or left the job running"
+        assert data["job"], "Stop skipped confirmation"
+        tap(630, 409)
+        data = json.loads(command("STATE").removeprefix("@UGDATA "))
+        assert not data["job"], "Confirmed Stop left the job running"
         tap(88, 560)
         # A confirmation can be cancelled without issuing motion.
         idle()
@@ -119,7 +122,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(342, 409)  # Cancel without homing
         time.sleep(.5)
         idle()
-        tap(562, 268)
+        tap(578, 268)
         assert "$J=G91 G21 X-" in command("LAST"), "Dialog remained over jog controls"
         command("RX ok")
         idle()

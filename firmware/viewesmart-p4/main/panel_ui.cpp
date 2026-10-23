@@ -498,7 +498,13 @@ static void value_button(lv_obj_t *p, const char *title, float value, int x, int
              value / (id < 8 ? display_scale(inches) : 1));
     button(p, text, x, y, w, 66, edit_value, id);
 }
-static bool stop() { return runtime_action(Action::Stop); }
+static bool stop() {
+    release_jog();
+    bool ok = runtime_action(Action::Stop);
+    if (ok)
+        show_page(JogPage);
+    return ok;
+}
 static bool home() {
     char axis[] = {home_axis, 0};
     return runtime_action(Action::Home, home_axis ? axis : nullptr);
@@ -518,12 +524,7 @@ static void home_click(lv_event_t *e) {
 }
 static void stop_click(lv_event_t *) {
     probe_return = false;
-    close_modal();
-    release_jog();
-    if (stop())
-        show_page(JogPage);
-    else
-        result(false);
+    confirm("Stop job?", "Are you sure you want to stop this job?\nThe controller will reset and the job cannot resume.", stop, RED);
 }
 static void pause_click(lv_event_t *) { result(runtime_action(Action::Pause)); }
 static void resume_click(lv_event_t *) { result(runtime_action(Action::Resume)); }
@@ -1043,9 +1044,9 @@ static void build_page() {
         const uint32_t colors[] = {XY_COLOR, AXIS_COLORS[1], XY_COLOR, AXIS_COLORS[0], AXIS_COLORS[0],
                                    XY_COLOR, AXIS_COLORS[1], XY_COLOR, AXIS_COLORS[2], AXIS_COLORS[2]};
         for (int i = 0; i < 10; i++) {
-            int x = i < 8 ? (cells[i] % 3) * 116 : 360;
+            int x = 16 + (i < 8 ? (cells[i] % 3) * 116 : 360);
             int y = i < 8 ? 152 + (cells[i] / 3) * 90 : (i == 8 ? 152 : 288);
-            lv_obj_t *b = button(body, names[i], x, y, i < 8 ? 108 : 140, i < 8 ? 80 : 124, nullptr, 0,
+            lv_obj_t *b = button(body, names[i], x, y, 108, i < 8 ? 80 : 124, nullptr, 0,
                                  colors[i]);
             lv_obj_set_style_text_font(lv_obj_get_child(b, 0), font(28), 0);
             if (i < 8)
@@ -1425,7 +1426,7 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_border_width(body, 0, 0);
 
     stop_btn = button(root, "Stop", 260, 330, 228, 80, nullptr, 0, RED);
-    lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
     lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
     build_page();

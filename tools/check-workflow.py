@@ -140,7 +140,18 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("RX <Run|SD:5,/bracket.nc|Ov:100,100,100>")
         time.sleep(.3)
         page(3)
+        last = command("LAST")
         tap(374, 370)
+        page(3)
+        assert data("STATE")["job"], "Stop skipped confirmation"
+        assert command("LAST") == last, "Stop sent a command before confirmation"
+        shot("panel-stop-confirm")
+        tap(342, 409)  # Cancel must leave the running job untouched.
+        page(3)
+        assert data("STATE")["job"]
+        assert command("LAST") == last
+        tap(374, 370)
+        tap(630, 409)
         time.sleep(.7)
         page(0)
         assert not data("STATE")["job"]
@@ -151,6 +162,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         shot("panel-alarm")
         tap(342, 409)  # Dismiss the fault dialog
         tap(374, 370)  # Job Stop remains below the DRO
+        tap(630, 409)
         time.sleep(.7)
         page(0)
         assert not data("STATE")["job"]
