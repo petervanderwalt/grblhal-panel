@@ -106,6 +106,8 @@ def main():
             command("DEMO ON")
             time.sleep(1)
             original_inches = data("PREFS")["inches"]
+            if data("PREFS").get("actuator_mode"):
+                raise RuntimeError("Select CNC mode before capturing the CNC gallery")
             if args.section in ("wifi", "all"):
                 page(2)
                 tap(800, 28)
@@ -132,7 +134,7 @@ def main():
 
             if args.section in ("core", "all"):
                 page(2)
-                tap(761, 160)
+                tap(761, 256)
                 page(0)
                 idle()
                 tap(631, 184)
@@ -167,12 +169,12 @@ def main():
                 shot("panel-settings-uart")
                 page(0)
                 page(2)
-                tap(901, 160)
+                tap(901, 256)
                 shot("panel-settings-inch")
                 page(0)
                 shot("panel-jog-inch")
                 page(2)
-                tap(761, 160)
+                tap(761, 256)
 
                 page(1)
                 tap(888, 112)
@@ -216,7 +218,7 @@ def main():
                 idle()
 
             page(2)
-            tap(901 if original_inches else 761, 160)
+            tap(901 if original_inches else 761, 256)
             page(1)
             tap(888, 112)
             print("Gallery captured; preview remains on Files. Review every PNG before publishing.", flush=True)

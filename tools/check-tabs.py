@@ -1,6 +1,7 @@
 """Check tab navigation on COM12 with the controller UART disconnected."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import time
 import serial
@@ -11,7 +12,7 @@ spec.loader.exec_module(remote)
 
 with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port:
     port.dtr = port.rts = False
-    port.port = "COM12"
+    port.port = os.environ.get("PANEL_PORT", "COM12")
     port.open()
     for _ in range(15):
         port.write(b"\nUG SYNC\n")
@@ -30,6 +31,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         remote.debug(port, "TOUCH OFF")
         remote.debug(port, "DEMO ON")
         time.sleep(.4)
+        assert not json.loads(remote.debug(port, "PREFS").removeprefix("@UGDATA ")).get("actuator_mode"), "Select CNC mode before this check"
         for target in (1, 2, 0, 2, 1, 0):
             remote.exchange(port, "tap", point=((176, 512, 848)[target], 564))
             time.sleep(.3)

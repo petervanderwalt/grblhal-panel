@@ -6,6 +6,7 @@ enum class Action {
     Run,
     Preview,
     Jog,
+    ActuatorHome,
     Zero,
     GotoZero,
     Wcs,
@@ -27,11 +28,19 @@ void runtime_disconnect();
 void runtime_snapshot(State &state);
 bool runtime_action(Action action, const char *text = nullptr, float a = 0, float b = 0);
 bool runtime_probe(const ProbeSettings &settings);
+bool runtime_actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary = false);
+bool runtime_actuator_type(bool rotary);
+bool runtime_settings_load();
+bool runtime_setting_write(int id, const char *value);
+void runtime_settings_snapshot(SettingsCatalog &catalog);
+bool runtime_actuator_cycle(int axis, float feed, float end1, float end2, bool rotary = false);
+bool runtime_actuator_cycle_speed(float feed);
 void runtime_demo(bool on);
 bool runtime_is_demo();
 bool runtime_inject(const char *line);
 void runtime_last_tx(char *buffer, size_t size);
 bool model_self_test();
+bool actuator_self_test();
 bool runtime_preview_acquire(const char **data, size_t *size);
 void runtime_preview_release();
 bool runtime_can_upload();

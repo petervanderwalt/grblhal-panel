@@ -25,6 +25,18 @@ static bool vector3(const char *s, float *v) {
     v[2] = c;
     return true;
 }
+static unsigned vector4(const char *s, float *v) {
+    float values[4] = {};
+    int n = sscanf(s, "%f,%f,%f,%f", values, values + 1, values + 2, values + 3);
+    if (n < 3)
+        return 0;
+    for (int i = 0; i < n; i++) {
+        if (!isfinite(values[i]))
+            return 0;
+        v[i] = values[i];
+    }
+    return n;
+}
 static const char *fault_text(bool alarm, int code) {
     if (alarm) {
         switch (code) {
@@ -73,12 +85,25 @@ static const char *fault_text(bool alarm, int code) {
 }
 Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c) {}
 void Model::cancel(const char *message) {
+    if (state.settings_loading || state.settings_saving) {
+        state.settings_result = -1;
+        snprintf(state.settings_message, sizeof state.settings_message, "%s", message);
+        state.settings_revision++;
+    }
+    state.settings_loading = state.settings_saving = false;
+    setting_requested_.clear();
+    setting_write_id_ = -1;
+    actuator_pending_ = false;
+    state.cycle_axis = -1;
+    cycle_resume_ = false;
+    cycle_speed_pending_ = false;
     if (state.sd_active && (state.alarm || state.error))
         state.job_failed = true;
     goto_pending_ = false;
     if (state.downloading)
         state.download_ready = false;
     state.downloading = false;
+    for (auto &command : queue_) command.clear();
     queued_ = cursor_ = 0;
     awaiting_ = need_probe_ = got_probe_ = false;
     state.busy = state.probing = state.listing = false;
@@ -89,6 +114,7 @@ void Model::cancel(const char *message) {
     copy(state.message, message, sizeof state.message);
 }
 void Model::begin(uint32_t now) {
+    settings.clear();
     state.~State();
     new (&state) State();
     now_ = now;
@@ -104,6 +130,8 @@ void Model::begin(uint32_t now) {
     sent_ = now;
 }
 void Model::disconnect() {
+    state.homed_axes = 0;
+    state.machine_known = false;
     cancel("Controller disconnected");
     state.online = false;
     state.status = false;
@@ -112,7 +140,7 @@ void Model::disconnect() {
     copy(state.mode, "Disconnected", sizeof state.mode);
 }
 bool Model::idle() const {
-    return state.online && state.identified && state.status && !strcmp(state.mode, "Idle") && !state.alarm &&
+    return state.online && state.identified && state.status && state.cycle_axis < 0 && !strcmp(state.mode, "Idle") && !state.alarm &&
            !state.error && !state.busy && !state.sd_active && !state.uploading;
 }
 void Model::transfer_finished(uint32_t now) {
@@ -122,9 +150,9 @@ void Model::transfer_finished(uint32_t now) {
     poll_ = now - 250;
 }
 bool Model::append(const char *s) {
-    if (queued_ >= 40 || strlen(s) >= sizeof queue_[0] || strchr(s, '\n') || strchr(s, '\r'))
+    if (queued_ >= 40 || strlen(s) >= 640 || strchr(s, '\n') || strchr(s, '\r'))
         return false;
-    copy(queue_[queued_++], s, sizeof queue_[0]);
+    queue_[queued_++] = s;
     state.busy = true;
     return true;
 }
@@ -288,7 +316,7 @@ bool Model::jog_preset(const char *directions, float distance, int speed) {
     return jog_vector(directions, distance, fmaxf(.1f, rate * factor[speed]));
 }
 bool Model::home(char axis) {
-    if (axis && !strchr("XYZ", axis))
+    if (axis && !strchr("XYZA", axis))
         return false;
     if (!state.online || !state.identified || !state.status || state.busy || state.sd_active ||
         (strcmp(state.mode, "Idle") && strncmp(state.mode, "Alarm", 5)))
@@ -296,6 +324,135 @@ bool Model::home(char axis) {
     state.alarm = state.error = 0;
     char cmd[] = {'$', 'H', axis, 0};
     return append(cmd);
+}
+bool Model::actuator_home(char axis) {
+    const char *axes = "XYZA";
+    const char *a = axis ? strchr(axes, axis) : nullptr;
+    if (!state.extended || !a || unsigned(a - axes) >= state.axis_count)
+        return false;
+    if (!home(axis))
+        return false;
+    state.homed_axes &= ~(1u << (a - axes));
+    return append("$#"); // Read the controller's HOME report after the homing acknowledgement.
+}
+bool Model::settings_load() {
+    if (!idle() || !state.grblhal) return false;
+    settings.clear();
+    state.settings_count = state.settings_groups = 0;
+    state.settings_ready = false;
+    state.settings_result = 0;
+    state.settings_loading = true;
+    sent_ = now_;
+    copy(state.settings_message, "Reading controller settings", sizeof state.settings_message);
+    return append("$EG") && append("$ES") && append("$ESH") && append("$$");
+}
+bool Model::setting_write(int id, const char *value) {
+    if (!idle() || !state.grblhal || !state.settings_ready || !value) {
+        copy(state.settings_message, "Controller must be connected, idle and settings loaded", sizeof state.settings_message);
+        return false;
+    }
+    const auto *s = settings.find(id);
+    std::string error;
+    if (!s || !SettingsCatalog::validate(*s, value, error)) {
+        snprintf(state.settings_message, sizeof state.settings_message, "%s", s ? error.c_str() : "Setting unavailable");
+        return false;
+    }
+    if (strpbrk(value, "!?~") && (!state.legacy_rt_known || state.legacy_rt)) {
+        copy(state.settings_message, "These characters require legacy realtime commands ($39) disabled", sizeof state.settings_message);
+        return false;
+    }
+    if (s->type != 8 && s->value == value) {
+        state.settings_result = 1;
+        copy(state.settings_message, "Unchanged", sizeof state.settings_message);
+        return true;
+    }
+    setting_write_id_ = id;
+    setting_password_ = s->type == 8;
+    setting_reboot_ = s->reboot;
+    setting_requested_ = value;
+    setting_value_seen_ = false;
+    state.settings_ready = false;
+    state.settings_result = 0;
+    state.settings_saving = true;
+    sent_ = now_;
+    state.settings_count = state.settings_groups = 0;
+    copy(state.settings_message, "Saving and checking controller readback", sizeof state.settings_message);
+    char command[640];
+    snprintf(command, sizeof command, "$%d=%s", id, value);
+    settings.clear();
+    state.machine_known = state.coordinates = state.wco_known = false;
+    state.wco_axes = 0;
+    if (id == 376) { state.rotary_known = false; state.homed_axes &= ~8u; }
+    return append(command) && append("$EG") && append("$ES") && append("$ESH") && append("$$");
+}
+bool Model::actuator_type(bool rotary) {
+    if (!idle() || !state.extended || state.axis_count < 4 || !state.rotary_known)
+        return false;
+    if (rotary == bool(state.rotary_axes & 8))
+        return true;
+    unsigned mask = state.rotary_axes >> 3;
+    mask = rotary ? mask | 1u : mask & ~1u;
+    char command[32];
+    snprintf(command, sizeof command, "$376=%u", mask);
+    if (!append(command) || !append("$$"))
+        return false;
+    state.rotary_known = state.machine_known = state.coordinates = state.wco_known = false;
+    state.wco_axes = 0;
+    state.homed_axes &= ~8u;
+    return true;
+}
+bool Model::actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary) {
+    if (!idle() || actuator_pending_ || state.cycle_axis >= 0 || !state.extended || !state.machine_known || state.spindle != 0 || axis < 0 || axis >= 4 ||
+        unsigned(axis) >= state.axis_count || !(state.homed_axes & (1u << axis)) ||
+        !isfinite(target) || !isfinite(feed) || !isfinite(end1) || !isfinite(end2) ||
+        end1 == end2 || fabsf(end1) > 100000 || fabsf(end2) > 100000 ||
+        target < fminf(end1, end2) || target > fmaxf(end1, end2) || feed < .1f || feed > 1000000 ||
+        (rotary && axis != 3) || (axis == 3 && (!state.rotary_known || rotary != bool(state.rotary_axes & 8))))
+        return false;
+    if (state.axis_max_rate[axis] > 0)
+        feed = fminf(feed, state.axis_max_rate[axis]);
+    char cmd[100];
+    snprintf(cmd, sizeof cmd, "$J=G53 G90 G21 %c%.3f F%.1f", "XYZA"[axis], target, feed);
+    if (!append(cmd))
+        return false;
+    actuator_pending_ = true;
+    copy(state.mode, "Jog", sizeof state.mode);
+    return true;
+}
+bool Model::actuator_cycle(int axis, float feed, float end1, float end2, bool rotary) {
+    if (state.cycle_axis >= 0 || axis < 0 || axis >= 4 ||
+        state.machine[axis] < fminf(end1, end2) - .01f || state.machine[axis] > fmaxf(end1, end2) + .01f)
+        return false;
+    float target = fabsf(state.machine[axis] - end2) <= .01f ? end1 : end2;
+    if (!actuator_move(axis, target, feed, end1, end2, rotary))
+        return false;
+    cycle_ends_[0] = end1;
+    cycle_ends_[1] = end2;
+    cycle_target_ = target;
+    cycle_feed_ = feed;
+    cycle_rotary_ = rotary;
+    cycle_resume_ = false;
+    cycle_speed_pending_ = false;
+    state.cycle_axis = axis;
+    return true;
+}
+bool Model::actuator_cycle_speed(float feed) {
+    int axis = state.cycle_axis;
+    if (axis < 0 || !state.online || !state.status || strncmp(state.mode, "Jog", 3) ||
+        !isfinite(feed) || feed < .1f || feed > 1000000)
+        return false;
+    if (state.busy) {
+        cycle_feed_ = feed;
+        cycle_speed_pending_ = true;
+        return true;
+    }
+    if (!jog_cancel())
+        return false;
+    // Restart the same leg only after cancellation has produced fresh Idle feedback.
+    cycle_feed_ = feed;
+    state.cycle_axis = axis;
+    cycle_resume_ = true;
+    return true;
 }
 bool Model::unlock() {
     if (!state.online || !state.identified || state.busy || strncmp(state.mode, "Alarm", 5))
@@ -318,6 +475,8 @@ bool Model::stop() {
         return false;
     cancel("Reset sent. Wait for controller identification.");
     state.status = false;
+    state.homed_axes = 0;
+    state.machine_known = false;
     state.sd_active = false;
     state.job_complete = state.job_end = false;
     state.download_ready = false;
@@ -433,7 +592,12 @@ void Model::status_report(const char *line) {
         state.alarm = -1;
     state.status = true;
     state.last_status = now_;
-    float coords[3];
+    if (actuator_pending_ && !state.busy && !strcmp(state.mode, "Idle"))
+        actuator_pending_ = false;
+    if (!strncmp(state.mode, "Alarm", 5))
+        state.homed_axes = 0;
+    float coords[4] = {};
+    unsigned coord_axes = 0;
     bool machine = false, position = false, sd = false, pins = false;
     if (full_report_) {
         state.probe = false;
@@ -442,17 +606,28 @@ void Model::status_report(const char *line) {
     }
     while ((token = strtok_r(nullptr, "|", &save))) {
         if (!strncmp(token, "WCO:", 4)) {
-            float v[3];
-            if (vector3(token + 4, v)) {
-                for (int i = 0; i < 3; i++)
-                    state.wco[i] = v[i] * (state.report_inches ? 25.4f : 1);
+            float v[4];
+            if ((state.wco_axes = vector4(token + 4, v))) {
+                for (unsigned i = 0; i < state.wco_axes; i++)
+                    state.wco[i] = v[i] * (state.report_inches && !(state.rotary_axes & (1u << i)) ? 25.4f : 1);
                 state.wco_known = true;
             }
         } else if (!strncmp(token, "MPos:", 5) || !strncmp(token, "WPos:", 5)) {
-            if (vector3(token + 5, coords)) {
+            if ((coord_axes = vector4(token + 5, coords))) {
                 machine = token[0] == 'M';
                 position = true;
             }
+        } else if (!strncmp(token, "H:", 2)) {
+            const char *comma = strchr(token + 2, ',');
+            // A lone H:1 means the configured homing cycle, not necessarily every axis.
+            if (comma) {
+                char *end;
+                unsigned long mask = strtoul(comma + 1, &end, 10);
+                if (end > comma + 1 && !*end && mask <= 255)
+                    state.homed_axes = mask & 15;
+            }
+            else if (token[2] == '0')
+                state.homed_axes = 0;
         } else if (!strncmp(token, "FS:", 3)) {
             float f, s;
             if (sscanf(token + 3, "%f,%f", &f, &s) == 2 && isfinite(f) && isfinite(s)) {
@@ -503,18 +678,22 @@ void Model::status_report(const char *line) {
             }
         }
     }
+    if (state.alarm)
+        state.homed_axes = 0;
     if (!state.extended && !pins) {
         state.probe = false;
         state.probe_known = true;
     }
     if (position) {
-        for (int i = 0; i < 3; i++) {
-            float v = coords[i] * (state.report_inches ? 25.4f : 1);
+        state.axis_count = coord_axes;
+        state.machine_known = machine || (state.wco_known && state.wco_axes >= coord_axes);
+        for (unsigned i = 0; i < coord_axes; i++) {
+            float v = coords[i] * (state.report_inches && !(state.rotary_axes & (1u << i)) ? 25.4f : 1);
             if (machine)
                 state.machine[i] = v;
             else
                 state.work[i] = v;
-            if (state.wco_known) {
+            if (state.wco_known && i < state.wco_axes) {
                 if (machine)
                     state.work[i] = v - state.wco[i];
                 else
@@ -548,6 +727,33 @@ void Model::status_report(const char *line) {
         cancel("Machine interlock active. Check controller before recovery.");
     if (goto_pending_ && cursor_ >= queued_ && !awaiting_ && !strcmp(state.mode, "Idle"))
         goto_pending_ = false;
+    if (state.cycle_axis >= 0) {
+        int axis = state.cycle_axis;
+        bool valid = state.machine_known && unsigned(axis) < state.axis_count &&
+                     (state.homed_axes & (1u << axis)) && !state.alarm && !state.error &&
+                     state.spindle == 0 && !state.sd_active && !state.uploading &&
+                     (axis != 3 || (state.rotary_known && cycle_rotary_ == bool(state.rotary_axes & 8)));
+        if (!valid || (strcmp(state.mode, "Idle") && strncmp(state.mode, "Jog", 3))) {
+            char mode[sizeof state.mode];
+            copy(mode, state.mode, sizeof mode);
+            jog_cancel();
+            copy(state.mode, mode, sizeof state.mode);
+        } else if (position && !strcmp(state.mode, "Idle") && !state.busy && !actuator_pending_) {
+            bool reached = fabsf(state.machine[axis] - cycle_target_) <= .01f;
+            if (!cycle_resume_ && !reached) {
+                state.cycle_axis = -1;
+                copy(state.message, "Repeat stopped before its endpoint", sizeof state.message);
+            } else {
+                if (reached)
+                    cycle_target_ = cycle_target_ == cycle_ends_[1] ? cycle_ends_[0] : cycle_ends_[1];
+                cycle_resume_ = false;
+                cycle_speed_pending_ = false;
+                state.cycle_axis = -1;
+                if (actuator_move(axis, cycle_target_, cycle_feed_, cycle_ends_[0], cycle_ends_[1], cycle_rotary_))
+                    state.cycle_axis = axis;
+            }
+        }
+    }
 }
 void Model::receive(const char *line, uint32_t now) {
     now_ = now;
@@ -622,6 +828,7 @@ void Model::receive(const char *line, uint32_t now) {
         }
     }
     if (!strcmp(line, "[FIRMWARE:grblHAL]")) {
+        state.grblhal = true;
         if (!state.identified) {
             state.identified = true;
             state.extended = state.build > 20261013;
@@ -634,6 +841,19 @@ void Model::receive(const char *line, uint32_t now) {
         }
         return;
     }
+    if (settings.receive(line)) {
+        state.settings_count = int(settings.entries.size());
+        state.settings_groups = int(settings.groups.size());
+        if (state.settings_loading || state.settings_saving) sent_ = now;
+        if (state.settings_saving && awaiting_ && cursor_ < queued_ && queue_[cursor_] == "$$") {
+            char prefix[24]; snprintf(prefix, sizeof prefix, "$%d=", setting_write_id_);
+            if (!strncmp(line, prefix, strlen(prefix))) setting_value_seen_ = true;
+        }
+    }
+    if (!strncmp(line, "$39=", 4) && (!strcmp(line + 4, "0") || !strcmp(line + 4, "1"))) {
+        state.legacy_rt_known = true;
+        state.legacy_rt = line[4] == '1';
+    }
     if (!strncmp(line, "[GC:", 4)) {
         state.modal_known = true;
         state.inches = strstr(line, "G20 ") != nullptr;
@@ -645,19 +865,42 @@ void Model::receive(const char *line, uint32_t now) {
                 state.wcs = w;
         }
     }
+    if (!strncmp(line, "$376=", 5)) {
+        char *end;
+        long mask = strtol(line + 5, &end, 10);
+        if (end != line + 5 && !*end && mask >= 0 && mask <= 31) {
+            uint8_t axes = uint8_t(mask << 3);
+            if (axes != state.rotary_axes || !state.rotary_known) {
+                state.homed_axes &= ~(axes ^ state.rotary_axes);
+                state.machine_known = state.coordinates = state.wco_known = false;
+                state.wco_axes = 0; // Re-read positions with the newly confirmed units.
+            }
+            state.rotary_axes = axes;
+            state.rotary_known = true;
+        }
+    }
     if (!strncmp(line, "$13=", 4)) {
         bool inches = atoi(line + 4) != 0;
-        if (inches != state.report_inches) {
+        if (state.settings_saving && state.report_units_known && inches != state.report_inches) {
+            // A status received before readback may already use the new units.
+            state.machine_known = state.coordinates = state.wco_known = false;
+            state.wco_axes = 0;
+        }
+        // Only the first $13 report reinterprets positions received before units were known.
+        if (!state.report_units_known && inches != state.report_inches) {
             float f = inches ? 25.4f : 1 / 25.4f;
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
+                if (state.rotary_axes & (1u << i))
+                    continue;
                 state.machine[i] *= f;
                 state.work[i] *= f;
                 state.wco[i] *= f;
             }
         }
         state.report_inches = inches;
+        state.report_units_known = true;
     }
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         char setting[8];
         snprintf(setting, sizeof setting, "$%d=", 110 + i);
         if (!strncmp(line, setting, strlen(setting))) {
@@ -700,14 +943,25 @@ void Model::receive(const char *line, uint32_t now) {
         bool alarm = line[0] == 'A';
         int code = atoi(line + 6);
         if (alarm) {
+            state.homed_axes = 0;
             state.alarm = code;
             copy(state.mode, "Alarm", sizeof state.mode);
         } else
             state.error = code;
         char message[192];
         snprintf(message, sizeof message, "%s%s%s", fault_text(alarm, code), cursor_ < queued_ ? " / " : "",
-                 cursor_ < queued_ ? queue_[cursor_] : "");
+                 setting_password_ && state.settings_saving ? "Password setting" : cursor_ < queued_ ? queue_[cursor_].c_str() : "");
         cancel(message);
+        return;
+    }
+    if (!strncmp(line, "[HOME:", 6)) {
+        const char *colon = strrchr(line, ':');
+        if (colon && colon != line + 5) {
+            char *end;
+            unsigned long mask = strtoul(colon + 1, &end, 10);
+            if (end > colon + 1 && !strcmp(end, "]") && mask <= 15)
+                state.homed_axes = mask;
+        }
         return;
     }
     if (!strncmp(line, "[MSG:", 5)) {
@@ -737,6 +991,7 @@ void Model::receive(const char *line, uint32_t now) {
 }
 void Model::tick(uint32_t now) {
     now_ = now;
+    bool homing = awaiting_ && cursor_ < queued_ && !strncmp(queue_[cursor_].c_str(), "$H", 2);
     if (!state.online)
         return;
     if (!state.identified) {
@@ -757,10 +1012,11 @@ void Model::tick(uint32_t now) {
         append("$#");
         append("$$");
     }
-    if ((!state.downloading && ((state.status && now - state.last_status > 2000) ||
+    bool settings_io = state.settings_loading || state.settings_saving;
+    if ((!state.downloading && !settings_io && ((state.status && now - state.last_status > 2000) ||
                                 (!state.status && now - identified_at_ > 5000))) ||
-        (state.downloading && now - sent_ > 10000)) {
-        rt(state.probing ? 0x18 : '!');
+        ((state.downloading || settings_io) && now - sent_ > 10000)) {
+        rt(state.probing || homing ? 0x18 : '!');
         cancel("Status timed out. Controls locked; reconnect the controller.");
         state.status = false;
         state.online = false;
@@ -784,9 +1040,13 @@ void Model::tick(uint32_t now) {
             cursor_++;
             need_probe_ = got_probe_ = false;
         } else {
-            if (now - sent_ > (state.probing ? 120000u : 10000u)) {
-                if (state.probing)
+            if (now - sent_ > (homing ? 300000u : state.probing ? 120000u : 10000u)) {
+                if (state.probing || homing)
                     rt(0x18);
+                if (homing) {
+                    state.homed_axes = 0;
+                    state.machine_known = false;
+                }
                 state.error = 1;
                 cancel("Command timed out; queue cancelled. Check controller before continuing.");
             }
@@ -794,10 +1054,10 @@ void Model::tick(uint32_t now) {
         }
     }
     if (cursor_ < queued_) {
-        if (line_(context_, queue_[cursor_])) {
+        if (line_(context_, queue_[cursor_].c_str())) {
             awaiting_ = true;
             sent_ = now;
-            need_probe_ = strstr(queue_[cursor_], "G38.2") != nullptr;
+            need_probe_ = strstr(queue_[cursor_].c_str(), "G38.2") != nullptr;
             got_probe_ = false;
         } else {
             state.error = 1;
@@ -807,11 +1067,35 @@ void Model::tick(uint32_t now) {
         if (goto_pending_)
             return; // Rapid acknowledgements can precede motion completion.
         bool probed = state.probing;
+        for (auto &command : queue_) command.clear();
         queued_ = cursor_ = 0;
         state.busy = state.probing = state.listing = false;
+        if (state.settings_loading || state.settings_saving) {
+            state.settings_ready = !settings.overflow && !settings.entries.empty();
+            bool verified = true;
+            if (state.settings_saving) {
+                const auto *s = settings.find(setting_write_id_);
+                verified = setting_value_seen_ && s && SettingsCatalog::matches(*s, setting_requested_);
+            }
+            state.settings_result = state.settings_ready && verified ? 1 : -1;
+            copy(state.settings_message, !state.settings_ready ? "Settings incomplete; refresh to retry" :
+                 !verified ? "Controller readback did not match; check the reported value" :
+                 state.settings_saving ? (setting_reboot_ ? "Saved. Restart controller to apply this setting" :
+                                         setting_password_ ? "Saved. Controller masks password readback" : "Saved and verified") :
+                 "Settings loaded", sizeof state.settings_message);
+            state.settings_loading = state.settings_saving = false;
+            state.settings_revision++;
+            setting_requested_.clear();
+            setting_write_id_ = -1;
+            if (now - state.last_status > 2000) { state.status = false; identified_at_ = now; }
+        }
         if (probed)
             copy(state.message, "Corner probe complete. Remove the plate before running.",
                  sizeof state.message);
+    }
+    if (cycle_speed_pending_ && state.cycle_axis >= 0 && !state.busy && !awaiting_ && !strcmp(state.mode, "Jog")) {
+        cycle_speed_pending_ = false;
+        actuator_cycle_speed(cycle_feed_);
     }
 }
 } // namespace panel

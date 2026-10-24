@@ -1,13 +1,29 @@
 # grblHAL panel
 
-A touchscreen pendant for grblHAL CNC controllers, built for the VIEWESMART
-7-inch ESP32-P4/C6 display. Home the machine, set up the stock, choose a file
-from the controller’s SD card and follow the job from a dedicated run screen.
+A touchscreen pendant for grblHAL controllers, built for the VIEWESMART
+7-inch ESP32-P4/C6 display. CNC mode handles machine setup, controller SD files
+and job progress. Actuator mode provides individual X/Y/Z/A controls, with linear
+or rotary A.
 
-The landscape layout puts the position readout on the left and the jog controls
+The CNC landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
 screens keep the common machine operations within reach. Bottom tabs switch
 between Jog, Files and Settings with a short sliding transition.
+
+Settings also offers an **Actuator** mode for independent X/Y/Z/A
+mechanisms. It replaces Jog and Files with an **Actuators** screen. Configure
+each actuator's name, button labels, machine-coordinate endpoints, speed and
+Buttons / Position / Presets / Repeat layout in Settings. Four vertical columns
+provide large position sliders or a rotary A dial. Repeat travels back and forth
+between endpoints, with Go, Stop and a vertical speed slider. Slider changes
+apply on finger release. Homing and fresh controller feedback are required.
+Saving A's Linear/Rotary selection also configures the connected controller and
+checks its reported type before allowing A movement.
+
+The initial actuator version moves one axis at a time. A read-only Wi-Fi status
+page is available at `http://<display-ip>:47820/actuators`. Coordinated sequences,
+browser motion commands and Home Assistant control are planned. See the
+[Actuator mode guide](docs/actuator-mode.md) for setup, limitations and use cases.
 
 ## Machine setup
 
@@ -52,6 +68,14 @@ The preview does not simulate collisions or controller execution.
 Choose metric or imperial display units, configure the controller UART, and
 adjust probe geometry and feeds. Display units are converted locally; generated
 motion commands and internal geometry remain in millimetres.
+
+**Machine settings** opens the connected grblHAL controller's complete settings
+list, organised by its reported groups. Find settings by name, description or
+`$` number. Each editor shows the controller's description, units and limits,
+with switches, option lists, axis checkboxes or an onscreen keyboard as appropriate.
+Save writes one setting and checks the controller's reported value. Settings
+marked as requiring a restart are identified before saving; the pendant does
+not restart the controller automatically. See [Machine settings](docs/machine-settings.md).
 
 Open Wi-Fi from Settings or the header icon. Scan, select a network and enter
 its password using the onscreen keyboard. Each network row shows signal strength
@@ -104,6 +128,37 @@ sample data from demonstration mode; Wi-Fi uses the onboard radio.
 **Jog — metric, incremental**
 
 ![Metric jog screen with axis-coloured controls](docs/screenshots/panel-jog.png)
+
+<details>
+<summary>Actuator controls and configuration</summary>
+
+**Buttons, position slider and presets**
+
+![Four independent actuator controls](docs/screenshots/panel-actuators.png)
+
+**Rotary A with degree readout and angular position dial**
+
+![Actuator controls with rotary A](docs/screenshots/panel-actuator-rotary.png)
+
+**Repeated endpoint travel with speed control**
+
+![Actuator repeat control](docs/screenshots/panel-actuator-repeat.png)
+
+![Rotary A configuration](docs/screenshots/panel-actuator-rotary-config.png)
+
+**Mode selection**
+
+![CNC and Actuator mode selection](docs/screenshots/panel-settings-actuator-mode.png)
+
+**Per-actuator settings**
+
+![Actuator configuration rows in Settings](docs/screenshots/panel-actuator-settings.png)
+
+**Names, endpoint labels, positions and speed**
+
+![Actuator settings with LVGL keyboard](docs/screenshots/panel-actuator-config.png)
+
+</details>
 
 <details>
 <summary>Jog modes, probing and confirmations</summary>
@@ -164,6 +219,47 @@ sample data from demonstration mode; Wi-Fi uses the onboard radio.
 **Inch display setting**
 
 ![Inch units selected in settings](docs/screenshots/panel-settings-inch.png)
+
+</details>
+
+<details>
+<summary>grblHAL machine settings</summary>
+
+**Groups and current values**
+
+![Grouped grblHAL settings](docs/screenshots/panel-machine-settings.png)
+
+**Homing group**
+
+![Controller homing settings](docs/screenshots/panel-machine-settings-homing.png)
+
+**Paged settings list**
+
+![Further controller settings](docs/screenshots/panel-machine-settings-page2.png)
+
+**Numeric value, description and controller limits**
+
+![Numeric setting editor](docs/screenshots/panel-machine-setting-number.png)
+
+**Switches and option lists**
+
+![Boolean setting editor](docs/screenshots/panel-machine-setting-switch.png)
+
+![Controller option list](docs/screenshots/panel-machine-setting-options.png)
+
+**Bitfields and axis masks**
+
+![Homing options](docs/screenshots/panel-machine-setting-mask.png)
+
+![Homing axis mask](docs/screenshots/panel-machine-setting-axes.png)
+
+**Text, masked passwords and addresses**
+
+![Controller text setting](docs/screenshots/panel-machine-setting-text.png)
+
+![Masked controller password editor](docs/screenshots/panel-machine-setting-password.png)
+
+![Controller IP address editor](docs/screenshots/panel-machine-setting-ip.png)
 
 </details>
 

@@ -5,8 +5,12 @@
 #include "lvgl.h"
 #include "nvs.h"
 #include "panel_runtime.h"
+#include "panel_actuators.h"
+#include "cJSON.h"
 #include "wifi_bridge.h"
 #include <atomic>
+#include <algorithm>
+#include <cctype>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,6 +33,10 @@ struct Preferences {
     float tx = 37, rx = 38, baud = 115200, step = 1, jog_feed = 600;
 };
 static Preferences prefs;
+static ActuatorPreferences actuator_prefs;
+static bool actuator_mode = false;
+static bool a_rotary = false;
+static bool actuator_config_open = false;
 static State state;
 static wifi_bridge_state_t wifi;
 static lv_obj_t *wifi_row_status, *wifi_status, *wifi_list, *wifi_spinner, *wifi_scan_btn,
@@ -84,6 +92,9 @@ static bool (*confirmation)() = nullptr;
 static void build_page();
 static void release_jog();
 static void refresh(lv_timer_t *);
+static void machine_closed();
+static void machine_refresh();
+static void show_machine_settings(lv_event_t *);
 static void parent_page_content(lv_obj_t *parent) {
     lv_obj_t *objects[] = {left_surface, right_surface, axis_card[0], axis_card[1], axis_card[2],
                            machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn};
@@ -111,6 +122,9 @@ static void save() {
         nvs_set_u8(h, "jogspeed", jog_speed);
         nvs_set_u8(h, "inches", inches);
         nvs_set_u8(h, "stepidx", step_index);
+        nvs_set_u8(h, "application", actuator_mode);
+        nvs_set_u8(h, "arotary", a_rotary);
+        nvs_set_blob(h, "actuators", &actuator_prefs, sizeof actuator_prefs);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -141,6 +155,17 @@ static void load() {
             inches = unit == 1;
         if (nvs_get_u8(h, "stepidx", &step) == ESP_OK && step < 4)
             step_index = step;
+        uint8_t application = 0;
+        nvs_get_u8(h, "application", &application);
+        actuator_mode = application == 1;
+        uint8_t rotary = 0;
+        nvs_get_u8(h, "arotary", &rotary);
+        a_rotary = rotary == 1;
+        ActuatorPreferences actuators;
+        n = sizeof actuators;
+        if (nvs_get_blob(h, "actuators", &actuators, &n) == ESP_OK &&
+            n == sizeof actuators && actuators.valid())
+            actuator_prefs = actuators;
         nvs_close(h);
     }
 }
@@ -300,7 +325,8 @@ static lv_obj_t *choices(lv_obj_t *parent, const char *const *map, int selected,
         lv_obj_set_style_border_color(m, lv_color_hex(LINE), selector);
         lv_obj_set_style_border_width(m, 0, selector);
     }
-    lv_obj_add_event_cb(m, callback, LV_EVENT_VALUE_CHANGED, nullptr);
+    if (callback)
+        lv_obj_add_event_cb(m, callback, LV_EVENT_VALUE_CHANGED, nullptr);
     return m;
 }
 static void enable_choices(lv_obj_t *m, bool on, bool brief_busy = false) {
@@ -333,6 +359,8 @@ static void result(bool ok) {
         notify("Action unavailable: check connection, machine state and setup.");
 }
 static void close_modal() {
+    machine_closed();
+    actuator_config_open = false;
     if (modal)
         lv_obj_delete(modal);
     modal = nullptr;
@@ -376,8 +404,8 @@ static void cancelled(lv_event_t *) {
         show_probe();
     }
 }
-static void modal_close_button(lv_obj_t *card) {
-    lv_obj_t *close = button(card, LV_SYMBOL_CLOSE, 832, 8, 64, 48, cancelled, 0, BLUE);
+static void modal_close_button(lv_obj_t *card, int width = 920, lv_event_cb_t callback = cancelled) {
+    lv_obj_t *close = button(card, LV_SYMBOL_CLOSE, width - 88, 8, 64, 48, callback, 0, BLUE);
     lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
     lv_obj_set_style_bg_grad_dir(close, LV_GRAD_DIR_NONE, 0);
 }
@@ -728,7 +756,8 @@ static lv_obj_t *dropdown(lv_obj_t *parent, const char *options, int selected, i
     lv_obj_set_style_text_color(list, lv_color_hex(TEXT), 0);
     lv_obj_set_style_text_font(list, font(20), 0);
     lv_obj_set_style_pad_ver(list, 14, LV_PART_ITEMS);
-    lv_obj_add_event_cb(d, cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    if (cb)
+        lv_obj_add_event_cb(d, cb, LV_EVENT_VALUE_CHANGED, nullptr);
     return d;
 }
 static void step_changed(lv_event_t *e) {
@@ -792,7 +821,7 @@ static void visibility(lv_obj_t *o, bool visible) {
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 static void layout_dro() {
-    bool jog = page == JogPage, job = page == JobPage;
+    bool jog = page == JogPage && !actuator_mode, job = page == JobPage;
     for (int i = 0; i < 3; i++) {
         visibility(axis_card[i], jog || job);
         lv_obj_set_pos(axis_card[i], 16, 90 + i * 72);
@@ -1005,7 +1034,12 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
              inches ? (id == 6 ? "in/min" : "in") : (id == 6 ? "mm/min" : "mm"));
     button(row, text, 680, 10, 270, 56, edit_value, id);
 }
+#include "panel_actuators_ui.inc"
+#include "panel_settings_ui.inc"
 static void build_page() {
+    runtime_snapshot(state);
+    if (state.cycle_axis >= 0)
+        runtime_action(Action::JogCancel);
     lv_anim_delete(page_layer, nullptr);
     lv_obj_set_x(page_layer, 0);
     parent_page_content(root);
@@ -1015,12 +1049,21 @@ static void build_page() {
     file_box = file_title = progress = progress_text = time_text = start_btn = refresh_btn = nullptr;
     feed_slider = spindle_slider = feed_text = spindle_text = nullptr;
     speed_choices = mode_choices = step_dropdown = nullptr;
+    memset(act_position, 0, sizeof act_position);
+    memset(act_travel, 0, sizeof act_travel);
+    memset(act_slider, 0, sizeof act_slider);
+    memset(act_home, 0, sizeof act_home);
+    memset(act_move, 0, sizeof act_move);
+    memset(act_stop, 0, sizeof act_stop);
     gcode_viewer_detach();
     lv_obj_clean(body);
     runtime_snapshot(state);
     layout_dro();
-    lv_obj_set_pos(body, page == JogPage || page == JobPage ? 508 : 16, 76);
-    lv_obj_set_size(body, page == JogPage || page == JobPage ? 500 : 992, 424);
+    visibility(nav[1], !actuator_mode);
+    lv_label_set_text(lv_obj_get_child(nav[0], 0), actuator_mode ? "Actuators" : "Jog");
+    bool compact = (page == JogPage && !actuator_mode) || page == JobPage;
+    lv_obj_set_pos(body, compact ? 508 : 16, 76);
+    lv_obj_set_size(body, compact ? 500 : 992, 424);
     lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
     if (page < JobPage)
         lv_tabview_set_active(tabview, page, LV_ANIM_OFF);
@@ -1028,7 +1071,9 @@ static void build_page() {
     lv_obj_set_style_bg_color(body, lv_color_hex(CARD), 0);
     lv_obj_set_style_bg_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_shadow_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_10, 0);
-    if (page == 0) {
+    if (page == JogPage && actuator_mode) {
+        build_actuators();
+    } else if (page == 0) {
         label(body, "JOG FEEDRATE", 0, 0, 270, 12, MUTED);
         label(body, "JOG DISTANCE", 282, 0, 218, 12, MUTED);
         static const char *const speeds[] = {"Fast", "Med", "Slow", ""};
@@ -1077,27 +1122,44 @@ static void build_page() {
         lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(body, LV_DIR_VER);
         label(body, "Settings", 0, 0, 960, 22, WHITE);
-        lv_obj_t *units = surface(body, 0, 44, 970, 80);
+        button(body, "Machine settings", 680, 0, 270, 40, show_machine_settings);
+        lv_obj_t *application = surface(body, 0, 44, 970, 80);
+        label(application, "Mode", 20, 28, 500, 20);
+        static const char *const applications[] = {"CNC", "Actuator", ""};
+        choices(application, applications, actuator_mode, 680, 16, 270, 48, application_changed);
+        lv_obj_t *units = surface(body, 0, 140, 970, 80);
         label(units, "Display units", 20, 28, 500, 20);
         button(units, "mm", 680, 12, 130, 56, units_changed, 0, !inches ? BLUE : EDGE);
         button(units, "inch", 820, 12, 130, 56, units_changed, 1, inches ? BLUE : EDGE);
-        lv_obj_t *network = surface(body, 0, 140, 970, 88);
+        lv_obj_t *network = surface(body, 0, 236, 970, 88);
         label(network, "Wi-Fi", 20, 12, 620, 20);
         wifi_row_status = label(network, "", 20, 46, 620, 14, MUTED);
         button(network, "Networks", 680, 16, 270, 56, show_wifi);
-        label(body, "Probe", 0, 260, 960, 18, MUTED);
-        setting_row(body, "Plate X offset", prefs.probe.x, 292, 3);
-        setting_row(body, "Plate Y offset", prefs.probe.y, 380, 4);
-        setting_row(body, "Plate Z thickness", prefs.probe.z, 468, 5);
-        setting_row(body, "Probe feed", prefs.probe.feed, 556, 6);
-        setting_row(body, "Corner start inset", prefs.probe.inset, 644, 7);
-        label(body, "Controller UART", 0, 756, 960, 18, MUTED);
-        setting_row(body, "TX pin", prefs.tx, 788, 8);
-        setting_row(body, "RX pin", prefs.rx, 876, 9);
-        setting_row(body, "Baud rate", prefs.baud, 964, 10);
-        button(body, state.online ? "Disconnect" : "Connect controller", 0, 1060, 472, 64, connect_click, 0,
+        label(body, actuator_mode ? "Actuators" : "Probe", 0, 356, 960, 18, MUTED);
+        if (actuator_mode) {
+            const char *styles[] = {"Buttons", "Position slider", "Three presets", "Repeat / speed slider"};
+            for (int i = 0; i < 4; i++) {
+                auto row = surface(body, 0, 388 + i * 88, 970, 76);
+                char title[80];
+                snprintf(title, sizeof title, "%s / %c", actuator_prefs.axes[i].name, "XYZA"[i]);
+                label(row, title, 20, 10, 600, 20);
+                label(row, i == 3 && a_rotary ? "Rotary / degrees" : styles[actuator_prefs.axes[i].style], 20, 42, 600, 14, MUTED);
+                button(row, "Configure", 680, 10, 270, 56, actuator_config, i);
+            }
+        } else {
+            setting_row(body, "Plate X offset", prefs.probe.x, 388, 3);
+            setting_row(body, "Plate Y offset", prefs.probe.y, 476, 4);
+            setting_row(body, "Plate Z thickness", prefs.probe.z, 564, 5);
+            setting_row(body, "Probe feed", prefs.probe.feed, 652, 6);
+            setting_row(body, "Corner start inset", prefs.probe.inset, 740, 7);
+        }
+        label(body, "Controller UART", 0, 852, 960, 18, MUTED);
+        setting_row(body, "TX pin", prefs.tx, 884, 8);
+        setting_row(body, "RX pin", prefs.rx, 972, 9);
+        setting_row(body, "Baud rate", prefs.baud, 1060, 10);
+        button(body, state.online ? "Disconnect" : "Connect controller", 0, 1156, 472, 64, connect_click, 0,
                BLUE);
-        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 1060, 472, 64,
+        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 1156, 472, 64,
                demo_click);
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
@@ -1143,6 +1205,13 @@ static void refresh(lv_timer_t *) {
         show_page(CompletePage);
         return;
     }
+    if (machine_browser || machine_editor || machine_search) {
+        int fault = state.alarm ? state.alarm : -state.error;
+        if (!fault) fault_seen = 0;
+        if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
+        else machine_refresh();
+        return; // The full-screen settings view does not need hidden Jog/Job redraws.
+    }
     int parsed = preview_parsing.load();
     if (parsed == 2 || parsed == 3) {
         preview_parsing.store(0);
@@ -1174,6 +1243,8 @@ static void refresh(lv_timer_t *) {
         }
     }
     bool on = ready();
+    if (page == JogPage && actuator_mode)
+        refresh_actuators();
     // Keep input disabled immediately, but avoid a one-frame palette flash for brief command ACKs.
     static uint32_t busy_since;
     bool command_busy = page == JogPage && state.busy && state.online && state.identified && state.status &&
@@ -1262,7 +1333,7 @@ static void refresh(lv_timer_t *) {
         enable(feed_slider, overrides);
         enable(spindle_slider, overrides);
     }
-    if (page == JogPage) {
+    if (page == JogPage && !actuator_mode) {
         enable(wcs_dropdown, on, brief_busy);
         if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59)
             lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
@@ -1312,6 +1383,7 @@ static void refresh(lv_timer_t *) {
         enable(probe_start, on && state.contact_ready && !state.probe && state.spindle == 0 &&
                                 prefs.probe.diameter > 0 && state.modal_known && state.wco_known);
     }
+    machine_refresh();
 }
 } // namespace
 extern "C" void panel_ui_create() {
@@ -1435,9 +1507,15 @@ extern "C" void panel_ui_create() {
 extern "C" void panel_ui_settings(char *buffer, size_t size) {
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d}",
+             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.tx,
-             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page);
+             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary);
+}
+extern "C" bool panel_ui_setting_field(const char *text) {
+    if ((!machine_editor && !machine_search) || !machine_field || !text || strlen(text) > MaxSettingValue)
+        return false;
+    lv_textarea_set_text(machine_field, text);
+    return true;
 }
 
 extern "C" bool panel_ui_wifi_password(const char *password) {
@@ -1445,4 +1523,68 @@ extern "C" bool panel_ui_wifi_password(const char *password) {
         return false;
     lv_textarea_set_text(wifi_password, password);
     return true;
+}
+extern "C" bool panel_ui_actuator_field(unsigned index, const char *text) {
+    if (!actuator_config_open || index >= 6 || !text || strlen(text) > 48)
+        return false;
+    lv_textarea_set_text(act_fields[index], text);
+    return true;
+}
+extern "C" bool panel_ui_actuator_json(char *buffer, size_t size) {
+    cJSON *j = cJSON_CreateObject();
+    if (!j)
+        return false;
+    cJSON_AddBoolToObject(j, "actuator_mode", actuator_mode);
+    cJSON_AddBoolToObject(j, "online", state.online && state.status);
+    cJSON_AddStringToObject(j, "state", state.mode);
+    cJSON_AddBoolToObject(j, "preview", runtime_is_demo());
+    cJSON_AddNumberToObject(j, "alarm", state.alarm);
+    cJSON_AddNumberToObject(j, "error", state.error);
+    cJSON_AddNumberToObject(j, "repeat_axis", state.cycle_axis);
+    cJSON *list = cJSON_AddArrayToObject(j, "actuators");
+    for (int i = 0; i < 4; i++) {
+        const auto &a = actuator_prefs.axes[i];
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddItemToArray(list, item);
+        char axis[] = {"XYZA"[i], 0};
+        cJSON_AddStringToObject(item, "axis", axis);
+        cJSON_AddStringToObject(item, "name", a.name);
+        cJSON_AddStringToObject(item, "first_label", a.first);
+        cJSON_AddStringToObject(item, "second_label", a.second);
+        cJSON_AddNumberToObject(item, "style", a.style);
+        cJSON_AddBoolToObject(item, "repeating", state.cycle_axis == i);
+        bool rotary = i == 3 && a_rotary;
+        cJSON_AddBoolToObject(item, "rotary", rotary);
+        cJSON_AddStringToObject(item, "unit", rotary ? "deg" : "mm");
+        cJSON_AddNumberToObject(item, "first", a.end1);
+        cJSON_AddNumberToObject(item, "second", a.end2);
+        cJSON_AddNumberToObject(item, "speed", a.feed);
+        if (!rotary) {
+            cJSON_AddNumberToObject(item, "first_mm", a.end1);
+            cJSON_AddNumberToObject(item, "second_mm", a.end2);
+            cJSON_AddNumberToObject(item, "speed_mm_min", a.feed);
+        }
+        cJSON_AddBoolToObject(item, "available", unsigned(i) < state.axis_count);
+        bool known = state.online && state.status && state.machine_known &&
+                     (i != 3 || (state.rotary_known && rotary == bool(state.rotary_axes & 8))) &&
+                     unsigned(i) < state.axis_count && (state.homed_axes & (1u << i));
+        cJSON_AddBoolToObject(item, "homed", known);
+        if (known) {
+            cJSON_AddNumberToObject(item, "position", state.machine[i]);
+            if (!rotary)
+                cJSON_AddNumberToObject(item, "position_mm", state.machine[i]);
+        } else {
+            cJSON_AddNullToObject(item, "position");
+            if (!rotary)
+                cJSON_AddNullToObject(item, "position_mm");
+        }
+        if (known && a.end1 != a.end2)
+            cJSON_AddNumberToObject(item, "position_percent", fminf(100, fmaxf(0,
+                (state.machine[i] - a.end1) * 100 / (a.end2 - a.end1))));
+        else
+            cJSON_AddNullToObject(item, "position_percent");
+    }
+    bool ok = cJSON_PrintPreallocated(j, buffer, size, false);
+    cJSON_Delete(j);
+    return ok;
 }

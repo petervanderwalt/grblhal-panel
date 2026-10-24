@@ -43,6 +43,7 @@ static void reply(const char *text)
 
 static void screenshot(void)
 {
+    assert(heap_caps_check_integrity_all(true));
     const size_t size = BSP_LCD_H_RES * BSP_LCD_V_RES * 2;
     uint16_t *pixels = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     char *line = malloc(BSP_LCD_H_RES * 8 + 48);
@@ -59,9 +60,12 @@ static void screenshot(void)
         return;
     }
     /* Copy the last displayed frame; rendering stays on the LVGL task. */
+    printf("@UGDBG screenshot stack %lu\n", (unsigned long)uxTaskGetStackHighWaterMark(NULL));
+    assert(heap_caps_check_integrity_all(true));
 
     esp_err_t err = bsp_display_copy_framebuffer(pixels, size);
     bsp_display_unlock();
+    assert(heap_caps_check_integrity_all(true));
     if (err != ESP_OK) {
         reply("\n@UGERR framebuffer\n");
     } else {
@@ -112,6 +116,8 @@ static void tap_tick(lv_timer_t *timer)
 
 static void command(const char *line)
 {
+    // One console task owns these buffers; leave stack space for framebuffer row staging.
+    static char out[1040], payload[1024];
     int x, y, x2 = 0, y2 = 0, consumed = 0, duration = 100;
     bool swipe = sscanf(line, "UG SWIPE %d %d %d %d%n", &x, &y, &x2, &y2, &consumed) == 4 && line[consumed] == 0;
     if (!strcmp(line,"UG TOUCH ON") || !strcmp(line,"UG TOUCH OFF")) {
@@ -128,14 +134,13 @@ static void command(const char *line)
     } else if (!strncmp(line, "UG RX ", 6)) {
         reply(panel_debug_receive(line + 6) ? "@UGOK RX\n" : "@UGERR preview_required\n");
     } else if (!strcmp(line, "UG STATE") || !strcmp(line, "UG LAST") || !strcmp(line,"UG PREFS")) {
-        char out[512],payload[448];
         if (!strcmp(line, "UG STATE")) panel_debug_state(payload,sizeof payload);
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG WIFI STATE")) {
-        char data[1024],out[1040]; wifi_bridge_debug(data,sizeof data);
-        snprintf(out,sizeof out,"@UGDATA %s\n",data);reply(out);
+        wifi_bridge_debug(payload,sizeof payload);
+        snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strncmp(line,"UG WIFI PASSWORD ",17)) {
         const char *hex = line + 17; size_t n = strlen(hex); char password[65] = {0};
         bool valid = n <= 128 && n % 2 == 0;
@@ -148,6 +153,33 @@ static void command(const char *line)
         bool ok = valid && panel_ui_wifi_password(password);
         bsp_display_unlock(); memset(password,0,sizeof password);
         reply(ok ? "@UGOK WIFI\n" : "@UGERR wifi_password_field\n");
+    } else if (!strncmp(line, "UG SETTING FIELD ", 17)) {
+        const char *hex = line + 17; size_t n = strlen(hex); char text[513] = {0};
+        bool valid = n <= 1024 && n % 2 == 0;
+        for (size_t i = 0; valid && i < n; i += 2) {
+            unsigned byte; int used = 0;
+            if (sscanf(hex + i, "%2x%n", &byte, &used) != 1 || used != 2 || byte < 32 || byte > 126) valid = false;
+            else text[i / 2] = byte;
+        }
+        bsp_display_lock(0);
+        bool ok = valid && panel_ui_setting_field(text);
+        bsp_display_unlock(); memset(text, 0, sizeof text);
+        reply(ok ? "@UGOK SETTING\n" : "@UGERR setting_field\n");
+    } else if (!strncmp(line, "UG ACTUATOR FIELD ", 18)) {
+        unsigned index; int used = 0;
+        bool valid = sscanf(line + 18, "%u %n", &index, &used) == 1 && used > 0;
+        const char *hex = line + 18 + used; size_t n = strlen(hex); char text[49] = {0};
+        valid = valid && n <= 96 && n % 2 == 0;
+        for (size_t i = 0; valid && i < n; i += 2) {
+            unsigned byte; int consumed = 0;
+            if (sscanf(hex + i, "%2x%n", &byte, &consumed) != 1 || consumed != 2 || byte < 32 || byte > 126)
+                valid = false;
+            else text[i / 2] = byte;
+        }
+        bsp_display_lock(0);
+        bool ok = valid && panel_ui_actuator_field(index, text);
+        bsp_display_unlock();
+        reply(ok ? "@UGOK ACTUATOR\n" : "@UGERR actuator_field\n");
     } else if (!strcmp(line, "UG SHOT")) {
         screenshot();
     } else if ((swipe || (sscanf(line, "UG TAP %d %d%n", &x, &y, &consumed) == 2 && line[consumed] == 0) ||
@@ -195,7 +227,7 @@ static void command(const char *line)
 static void console_task(void *arg)
 {
     (void)arg;
-    char line[768];
+    static char line[2048];
     size_t used = 0;
     bool overflow = false;
     for (;;) {
@@ -229,6 +261,6 @@ void ui_remote_start(void)
     lv_indev_set_read_cb(remote_input, input_read);
     lv_indev_set_mode(remote_input, LV_INDEV_MODE_EVENT);
     bsp_display_unlock();
-    BaseType_t created = xTaskCreate(console_task, "ui_remote", 8192, NULL, 2, NULL);
+    BaseType_t created = xTaskCreate(console_task, "ui_remote", 12 * 1024, NULL, 2, NULL);
     ESP_ERROR_CHECK(created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }

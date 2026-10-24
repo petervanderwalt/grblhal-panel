@@ -245,7 +245,59 @@ Do not rewrite controller override settings.
 For builds newer than 20261013, use one startup `0x87`, then poll `0x80`.
 Do not change `$10` automatically. SD jobs use `$F+` and `$F=/path` on the controller.
 
+## Actuator mode
+
+Settings Mode selects CNC or Actuator and persists separately from the existing
+preferences blob. Actuator mode hides Files and replaces Jog with four XYZA
+actuator cards. Configuration and editable labels belong in Settings only.
+Use four full-height columns across the screen, with large vertical linear
+sliders. Position tracks are uniformly coloured on both sides of the thumb.
+`panel_actuators.h` holds the versioned settings; `panel_actuators_ui.inc` reuses
+the private UI helpers. Slider moves commit only on release. Never queue moves
+while dragging or automatically zero work coordinates after homing.
+
+Require controller-reported homing, known machine coordinates, endpoint bounds
+and fresh Idle feedback. Use G53 metric absolute jogs, not work-coordinate moves.
+Do not assume A exists or is configured as linear. The first version permits
+one actuator move at a time. Stop cancels the active jog without controller reset.
+Only A offers Linear/Rotary selection (`arotary` NVS key). Require a matching
+controller `$376` report before A moves; its bit zero selects A. Explicitly saving
+A's settings while connected/idle may change that bit, preserving every other
+rotary bit, then query `$$` for readback. No startup/open-dialog type writes.
+Offline edits are local until Save is used while connected. Rotary A uses degrees and deg/min in every LCD unit mode;
+the parser exempts rotary axes from `$13` inch conversion. Position layout uses
+an angular dial, with one move on release and bounded endpoints, without wrapping.
+`tools/check-actuator-rotary.py --port COM17 --configure-demo` writes a Pan
+example, checks the dial, type mismatch and inch display, and captures the LCD.
+Repeat layout runs one actuator between bounded endpoints until Stop. Keep its
+state machine in the model, with fresh Idle position at each reversal. Speed
+changes cancel and restart the same leg only after fresh Idle position; zero
+disarms. Navigation away also disarms. Never persist an armed repeat state.
+`tools/check-actuator-repeat.py --port COM17 --configure-demo` selects Repeat
+for Z and checks reversals, speed changes, Stop and navigation cancellation.
+The Wi-Fi actuator page is read-only; remote commands and MQTT are future work.
+See `docs/actuator-mode.md` for protocol details, research and development hooks.
+`tools/check-actuators.py --port COM17 --configure-demo` writes development
+example settings and checks the new UI; use only on a development display.
+The existing CNC checks and gallery require CNC mode and retain their own
+sequences. Do not add actuator configurations to the CNC gallery implicitly.
+
+The display was identified on COM17 on 2026-10-23 using `UG PREFS`; enumerate
+ports and identify firmware before resetting or flashing. The CNC check scripts
+accept `PANEL_PORT` to override COM12.
+
 ## Controller transport
+
+The Machine settings browser uses controller metadata, not a fixed settings list.
+LVGL uses `CONFIG_LV_USE_CLIB_MALLOC=y` so widget allocations use ESP-IDF's heap
+instead of a fixed 64 KiB pool. Retain this when porting the grouped browser.
+Keep LCD DMA buffers in internal RAM.
+Keep `$EG`, `$ES`, `$ESH`, `$$` acknowledgement-paced. `$ES` fields 8/9 are
+reboot/allow-null flags; current values come from `$$`. Save only an explicitly
+edited setting while idle, then read back and verify. Never write on startup or
+when opening a dialog. Keep passwords masked and setting-write values out of LAST.
+`UG SETTING FIELD <ASCII-hex>` fills an open editor/search field without saving.
+See `docs/machine-settings.md` for implementation and limits.
 
 Keep full grblHAL serial support as a first-class option. The user has UART pins
 on the controller and proposed display IO37 TX / IO38 RX. Cross TX to controller

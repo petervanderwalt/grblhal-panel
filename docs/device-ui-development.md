@@ -82,6 +82,8 @@ Additional debug commands:
 - `UG DEMO ON` / `UG DEMO OFF`: explicit preview mode; actual controller UART is disconnected.
 - `UG RX line`: inject controller feedback in preview only.
 - `UG STATE`, `UG LAST`, `UG PREFS`: inspect state, last non-poll transmission and settings.
+- `UG SETTING FIELD <ASCII-hex>`: fill the open machine-setting or Find field;
+  this does not save. Use demo mode for automated setting-write checks.
 - `UG WIFI STATE`: inspect actual C6 scan/connection state, RSSI, SSID, IP and scan names.
 - `UG WIFI PASSWORD hex`: fill the currently open password field from printable
   ASCII encoded as hex, without echoing it. This still requires selecting a scanned

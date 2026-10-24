@@ -66,14 +66,20 @@ def exchange(port, command, output=None, point=None):
     deadline = time.monotonic() + 180
     width = height = crc = None
     rows = []
+    diagnostics = []
     while time.monotonic() < deadline:
         line = port.readline().strip()
         marker = line.find(b"@UG")
         if marker < 0:
             if line.startswith(b"ESP-ROM:"):
-                raise RuntimeError("Device reset during command")
+                raise RuntimeError("Device reset during command\n" + "\n".join(diagnostics))
+            if line:
+                diagnostics.append(line.decode("utf-8", errors="replace"))
+                diagnostics = diagnostics[:128]
             continue
         line = line[marker:].decode("ascii")
+        if line.startswith("@UGDBG"):
+            diagnostics = (diagnostics + [line])[:128]
         if line.startswith("@UGERR"):
             raise RuntimeError(line)
         if command == "tap" and line == "@UGOK TAP":
@@ -101,7 +107,7 @@ def exchange(port, command, output=None, point=None):
             output.write_bytes(png_bytes(raw, width, height))
             print(f"Saved {output.resolve()} ({width}x{height}, CRC {crc:08x})")
             return
-    raise TimeoutError("No complete response from UI remote firmware")
+    raise TimeoutError("No complete response from UI remote firmware\n" + "\n".join(diagnostics))
 
 def debug(port, command):
     port.write(("\nUG " + command + "\n").encode("ascii"))

@@ -2,15 +2,19 @@ idf_component_register(
     SRCS
         main.c
         panel_handoff.cpp
+        panel_actuator_web.cpp
         panel_upload.cpp
         tests/panel_upload_test.cpp
         wifi_bridge.c
         ui_remote.c
         panel_model.cpp
+        panel_settings.cpp
+        tests/panel_settings_test.cpp
         panel_runtime.cpp
         panel_ui.cpp
         assets/wifi_lock.c
         gcode_viewer.cpp
         tests/panel_model_test.cpp
+        tests/panel_actuators_test.cpp
     INCLUDE_DIRS
         .)

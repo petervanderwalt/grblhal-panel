@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "panel_settings.h"
 
 namespace panel {
 constexpr int MaxFiles = 64;
@@ -24,7 +25,14 @@ struct State {
     bool online = false, identified = false, extended = false, status = false;
     bool ymodem = false;
     bool coordinates = false, wco_known = false, modal_known = false, inches = false, absolute = true;
-    bool report_inches = false, probe = false, probe_known = false, contact_ready = false;
+    bool report_inches = false, report_units_known = false, probe = false, probe_known = false, contact_ready = false;
+    bool rotary_known = false;
+    bool grblhal = false, legacy_rt_known = false, legacy_rt = false;
+    bool settings_loading = false, settings_saving = false, settings_ready = false;
+    int settings_count = 0, settings_groups = 0, settings_result = 0;
+    uint32_t settings_revision = 0;
+    char settings_message[128] = "";
+    uint8_t rotary_axes = 0;
     bool busy = false, probing = false, listing = false, sd_active = false, job_seen_run = false;
     bool downloading = false, download_ready = false;
     bool uploading = false, upload_success = false;
@@ -36,8 +44,11 @@ struct State {
     char download_path[160] = "";
     int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0;
     uint32_t build = 0, last_status = 0, job_started = 0, elapsed = 0, file_revision = 0;
-    float machine[3] = {}, work[3] = {}, wco[3] = {}, feed = 0, spindle = 0, percent = 0;
-    float axis_max_rate[3] = {};
+    float machine[4] = {}, work[4] = {}, wco[4] = {}, feed = 0, spindle = 0, percent = 0;
+    float axis_max_rate[4] = {};
+    unsigned axis_count = 0, wco_axes = 0, homed_axes = 0;
+    bool machine_known = false;
+    int cycle_axis = -1;
     char mode[20] = "Disconnected", message[192] = "Connect a grblHAL controller", filename[160] = "";
     File files[MaxFiles] = {};
 };
@@ -47,6 +58,7 @@ class Model {
     using Realtime = bool (*)(void *, uint8_t);
     Model(Line line, Realtime realtime, void *context);
     State state;
+    SettingsCatalog settings;
     void begin(uint32_t now);
     void disconnect();
     void receive(const char *line, uint32_t now);
@@ -63,6 +75,13 @@ class Model {
     bool goto_zero(int axes);
     bool select_wcs(int wcs);
     bool home(char axis = 0);
+    bool actuator_home(char axis);
+    bool actuator_type(bool rotary);
+    bool settings_load();
+    bool setting_write(int id, const char *value);
+    bool actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary = false);
+    bool actuator_cycle(int axis, float feed, float end1, float end2, bool rotary = false);
+    bool actuator_cycle_speed(float feed);
     bool unlock();
     bool pause();
     bool resume();
@@ -82,7 +101,13 @@ class Model {
     void *download_context_ = nullptr;
     bool download_failed_ = false;
     bool goto_pending_ = false;
-    char queue_[40][192] = {};
+    bool actuator_pending_ = false;
+    float cycle_ends_[2] = {}, cycle_target_ = 0, cycle_feed_ = 0;
+    bool cycle_rotary_ = false, cycle_resume_ = false, cycle_speed_pending_ = false;
+    std::string queue_[40];
+    int setting_write_id_ = -1;
+    bool setting_value_seen_ = false, setting_password_ = false, setting_reboot_ = false;
+    std::string setting_requested_;
     int queued_ = 0, cursor_ = 0;
     bool awaiting_ = false, need_probe_ = false, got_probe_ = false, initialized_ = false,
          full_report_ = false;

@@ -5,6 +5,7 @@ import time
 import serial
 import sys
 import json
+import os
 
 spec = importlib.util.spec_from_file_location("remote", Path(__file__).with_name("ui-remote.py"))
 remote = importlib.util.module_from_spec(spec)
@@ -12,7 +13,7 @@ spec.loader.exec_module(remote)
 
 with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port:
     port.dtr = port.rts = False
-    port.port = "COM12"
+    port.port = os.environ.get("PANEL_PORT", "COM12")
     port.open()
     time.sleep(2)
     port.reset_input_buffer()
@@ -40,8 +41,9 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
+        assert not json.loads(command("PREFS").removeprefix("@UGDATA ")).get("actuator_mode"), "Select CNC mode before this check"
         tap(848, 564)
-        tap(761, 160)  # Metric display units
+        tap(761, 256)  # Metric display units
         tap(176, 564)
         tap(631, 184)  # Incremental
         command("RX $110=6000")

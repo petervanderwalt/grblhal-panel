@@ -4,6 +4,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "panel_runtime.h"
+#include "panel_actuator_web.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,8 +205,8 @@ extern "C" void panel_handoff_start(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 47820;
     config.stack_size = 8192;
-    config.max_uri_handlers = 7;
-    config.max_open_sockets = 3;
+    config.max_uri_handlers = 9;
+    config.max_open_sockets = 5; // Browser preconnections share this listener with gCAM.
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 10;
     if (httpd_start(&server, &config) != ESP_OK) {
@@ -226,4 +227,5 @@ extern "C" void panel_handoff_start(void) {
         route.handler = handle;
         httpd_register_uri_handler(server, &route);
     }
+    panel_actuator_web_register(server);
 }

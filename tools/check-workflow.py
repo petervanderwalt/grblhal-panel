@@ -1,6 +1,7 @@
 """Exercise the pendant workflow on COM12 with the controller UART disconnected."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -12,7 +13,7 @@ spec.loader.exec_module(remote)
 
 with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port:
     port.dtr = port.rts = False
-    port.port = "COM12"
+    port.port = os.environ.get("PANEL_PORT", "COM12")
     port.open()
     for attempt in range(15):
         port.write(b"\nUG SYNC\n")
@@ -60,10 +61,11 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("TEST")
         command("DEMO ON")
         time.sleep(1)
+        assert not data("PREFS").get("actuator_mode"), "Select CNC mode before this check"
         tap(848, 564)
         page(2)
         original_diameter = data("PREFS")["diameter"]
-        tap(901, 160)
+        tap(901, 256)
         assert data("PREFS")["inches"] == 1
         shot("panel-settings-inch")
         command("SWIPE 500 460 500 160")
@@ -87,7 +89,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert abs(data("PREFS")["diameter"] - 6.35) < .001
         tap(916, 118)
         tap(848, 564)
-        tap(761, 160)
+        tap(761, 256)
         assert data("PREFS")["inches"] == 0
         shot("panel-settings")
         tap(176, 564)

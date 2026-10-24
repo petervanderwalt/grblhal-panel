@@ -27,6 +27,8 @@ void app_main(void)
             .sw_rotate = false,
         }
     };
+    // Nested settings dialogs and keyboards need more than the port's 7 KiB default.
+    cfg.lvgl_port_cfg.task_stack = 12 * 1024;
     bsp_display_start_with_config(&cfg);
     bsp_display_backlight_on();
 

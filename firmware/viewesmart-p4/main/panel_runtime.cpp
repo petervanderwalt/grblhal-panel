@@ -8,15 +8,18 @@
 #include "gcode_viewer.h"
 #include "panel_debug.h"
 #include "panel_upload.h"
+#include "panel_settings_demo.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace panel {
 static SemaphoreHandle_t mutex;
 static QueueHandle_t uart_events;
 static bool installed = false, demo = false, pending = false;
-static char last_tx[192], pending_line[192];
+static unsigned demo_rotary_mask = 0;
+static char last_tx[640], pending_line[640];
 static size_t rx_used = 0;
 static char *preview_data = nullptr;
 static size_t preview_size = 0;
@@ -32,7 +35,13 @@ static bool preview_write(void *, const char *data, size_t size) {
 static bool rx_overflow = false;
 static uint32_t now() { return xTaskGetTickCount() * portTICK_PERIOD_MS; }
 static bool send_line(void *, const char *s) {
-    snprintf(last_tx, sizeof last_tx, "%s", s);
+    const char *equal = strchr(s, '=');
+    bool setting = s[0] == '$' && equal && equal > s + 1;
+    if (setting) for (const char *p = s + 1; p < equal; p++) if (*p < '0' || *p > '9') setting = false;
+    if (setting)
+        snprintf(last_tx, sizeof last_tx, "%.*s=<hidden>", int(equal - s), s);
+    else
+        snprintf(last_tx, sizeof last_tx, "%s", s);
     if (demo) {
         snprintf(pending_line, sizeof pending_line, "%s", s);
         pending = true;
@@ -40,12 +49,14 @@ static bool send_line(void *, const char *s) {
     }
     if (!installed)
         return false;
-    char command[196];
+    char command[644];
     int n = snprintf(command, sizeof command, "%s\n", s);
     return uart_write_bytes(UART_NUM_1, command, n) == n;
 }
 extern "C" bool panel_debug_test() {
     bool ok = panel::model_self_test();
+    ok = panel::settings_self_test() && ok;
+    ok = panel::actuator_self_test() && ok;
     ok = upload_self_test() && ok;
     bool viewer = gcode_viewer_parser_test();
     printf("@UGTEST %s viewer_parser\n", viewer ? "PASS" : "FAIL");
@@ -61,10 +72,11 @@ extern "C" void panel_debug_state(char *b, size_t n) {
         b, n,
         "{\"online\":%d,\"identified\":%d,\"extended\":%d,\"ready\":%d,\"alarm\":%d,\"error\":%d,\"x\":%.3f,"
         "\"y\":%.3f,\"z\":%.3f,\"percent\":%.2f,\"job\":%d,\"files\":%d,\"probing\":%d,\"contact\":%d,"
-        "\"downloading\":%d,\"download_ready\":%d,\"download_bytes\":%lu}",
+        "\"downloading\":%d,\"download_ready\":%d,\"download_bytes\":%lu,\"axes\":%u,\"homed\":%u,\"a\":%.3f,\"repeat_axis\":%d,\"rotary_known\":%d,\"rotary_mask\":%u,\"settings_loading\":%d,\"settings_saving\":%d,\"settings_count\":%d,\"settings_groups\":%d,\"settings_result\":%d}",
         s.online, s.identified, s.extended, s.status, s.alarm, s.error, s.work[0], s.work[1], s.work[2],
         s.percent, s.sd_active, s.file_count, s.probing, s.contact_ready, s.downloading, s.download_ready,
-        (unsigned long)s.download_bytes);
+        (unsigned long)s.download_bytes, s.axis_count, s.homed_axes, s.machine[3], s.cycle_axis, s.rotary_known, s.rotary_axes >> 3,
+        s.settings_loading, s.settings_saving, s.settings_count, s.settings_groups, s.settings_result);
 }
 static bool send_rt(void *, uint8_t b) {
     if (b != 0x80 && b != 0x87 && b != '?')
@@ -101,16 +113,74 @@ static void cancel_upload(const char *reason) {
         finish_upload();
     }
 }
+static SettingsCatalog demo_settings;
+static void demo_settings_init() {
+    if (!demo_settings.entries.empty()) return;
+    for (const char *line : demo_setting_reports) demo_settings.receive(line);
+    const char *names[] = {"Travel resolution", "Maximum rate", "Acceleration", "Maximum travel"};
+    const char *units[] = {"steps/mm", "mm/min", "mm/s^2", "mm"};
+    const char *values[] = {"250.000", "3000.000", "100.000", "500.000"};
+    for (int axis = 0; axis < 4; axis++) for (int kind = 0; kind < 4; kind++) {
+        char line[256]; int id = 100 + kind * 10 + axis;
+        snprintf(line, sizeof line, "[SETTING:%d|%d|%c %s|%s|6|0.000|0.001|100000|0|0]",
+                 id, 45 + axis, "XYZA"[axis], names[kind], units[kind]);
+        demo_settings.receive(line);
+        snprintf(line, sizeof line, "$%d=%s", id, values[kind]); demo_settings.receive(line);
+    }
+}
 static void mock_reply() {
     if (!pending) {
         return;
     }
     pending = false;
+    demo_settings_init();
     uint32_t t = now();
     if (!strcmp(pending_line, "$I")) {
         model.receive("[VER:1.1f.20261020:]", t);
         model.receive("[FIRMWARE:grblHAL]", t);
         model.receive("<Idle|MPos:125.000,84.500,-12.000|WCO:100,50,-20|FS:0,0|Pn:i>", t);
+    } else if (!strncmp(pending_line, "$376=", 5)) {
+        demo_rotary_mask = strtoul(pending_line + 5, nullptr, 10);
+        demo_settings.receive(pending_line);
+    } else if (!strcmp(pending_line, "$EG")) {
+        for (const auto &g : demo_settings.groups) {
+            char report[256]; snprintf(report, sizeof report, "[SETTINGGROUP:%d|%d|%s]", g.id, g.parent, g.name.c_str());
+            model.receive(report, t);
+        }
+    } else if (!strcmp(pending_line, "$ES") || !strcmp(pending_line, "$ESH")) {
+        for (const auto &s : demo_settings.entries) {
+            static char report[3072];
+            std::string unit = s.unit;
+            if (demo_rotary_mask & 1) {
+                if (s.id == 103) unit = "steps/deg";
+                if (s.id == 113) unit = "deg/min";
+                if (s.id == 123) unit = "deg/s^2";
+                if (s.id == 133) unit = "deg";
+            }
+            if (!strcmp(pending_line, "$ES"))
+                snprintf(report, sizeof report, "[SETTING:%d|%d|%s|%s|%d|%s|%s|%s|%d|%d]", s.id, s.group,
+                         s.name.c_str(), unit.c_str(), s.type, s.format.c_str(), s.minimum.c_str(), s.maximum.c_str(), s.reboot, s.allow_null);
+            else
+                snprintf(report, sizeof report, "%d\t%s\t%s\t%d\t%s\t%s\t%s\t%s", s.id, s.name.c_str(), unit.c_str(), s.type,
+                         s.format.c_str(), s.description.c_str(), s.minimum.c_str(), s.maximum.c_str());
+            model.receive(report, t);
+        }
+    } else if (!strcmp(pending_line, "$$")) {
+        char report[256], positions[96] = {}, offsets[96] = {};
+        for (const auto &s : demo_settings.entries) {
+            if (s.id == 376) continue;
+            snprintf(report, sizeof report, "$%d=%s", s.id, s.value.c_str()); model.receive(report, t);
+        }
+        snprintf(report, sizeof report, "$376=%u", demo_rotary_mask);
+        model.receive(report, t);
+        for (unsigned i = 0; i < model.state.axis_count && i < 4; i++) {
+            float scale = model.state.report_inches && !(model.state.rotary_axes & (1u << i)) ? 25.4f : 1;
+            snprintf(positions + strlen(positions), sizeof positions - strlen(positions), "%s%.3f", i ? "," : "", model.state.machine[i] / scale);
+            snprintf(offsets + strlen(offsets), sizeof offsets - strlen(offsets), "%s%.3f", i ? "," : "", model.state.wco[i] / scale);
+        }
+        snprintf(report, sizeof report, "<%s|MPos:%s|WCO:%s|H:0,%u|FS:0,0>",
+                 model.state.mode, positions, offsets, model.state.homed_axes);
+        model.receive(report, t);
     } else if (!strcmp(pending_line, "$G")) {
         model.receive("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F100 S0]", t);
     } else if (!strcmp(pending_line, "$F+")) {
@@ -144,6 +214,8 @@ static void mock_reply() {
         char line[256];
         snprintf(line, sizeof line, "<Run|MPos:125,84.5,-12|FS:800,12000|SD:0,%s>", pending_line + 3);
         model.receive(line, t);
+    } else if (pending_line[0] == '$' && pending_line[1] >= '0' && pending_line[1] <= '9' && strchr(pending_line, '=')) {
+        demo_settings.receive(pending_line);
     }
     // Probe reports are injected separately; an ok alone must never advance a probe.
     model.receive("ok", t);
@@ -151,7 +223,7 @@ static void mock_reply() {
         model.receive("<Idle|FS:0,0>", t);
 }
 static void worker(void *) {
-    char line[768];
+    static char line[4096];
     size_t &used = rx_used;
     bool &overflow = rx_overflow;
     uint32_t demo_status = 0;
@@ -186,13 +258,17 @@ static void worker(void *) {
                             model.disconnect();
                             snprintf(model.state.message, sizeof model.state.message,
                                      "Preview line too long; reconnect controller");
+                        } else if (overflow && (model.state.settings_loading || model.state.settings_saving)) {
+                            model.disconnect();
+                            snprintf(model.state.settings_message, sizeof model.state.settings_message,
+                                     "Controller metadata exceeded the line limit; reconnect");
                         } else if (used && !overflow) {
                             line[used] = 0;
                             model.receive(line, now());
                         }
                         used = 0;
                         overflow = false;
-                    } else if (c >= 32 && c < 127) {
+                    } else if ((c >= 32 && c < 127) || c == '\t') {
                         if (used + 1 < sizeof line && !overflow)
                             line[used++] = c;
                         else
@@ -336,6 +412,9 @@ bool runtime_action(Action a, const char *text, float x, float y) {
     case Action::Home:
         ok = model.home(text ? text[0] : 0);
         break;
+    case Action::ActuatorHome:
+        ok = text && model.actuator_home(text[0]);
+        break;
     case Action::Unlock:
         ok = model.unlock();
         break;
@@ -381,6 +460,49 @@ bool runtime_action(Action a, const char *text, float x, float y) {
     xSemaphoreGive(mutex);
     return ok;
 }
+bool runtime_settings_load() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.settings_load();
+    xSemaphoreGive(mutex);
+    return ok;
+}
+bool runtime_setting_write(int id, const char *value) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.setting_write(id, value);
+    xSemaphoreGive(mutex);
+    return ok;
+}
+void runtime_settings_snapshot(SettingsCatalog &catalog) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    catalog = model.settings;
+    xSemaphoreGive(mutex);
+}
+bool runtime_actuator_type(bool rotary) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.actuator_type(rotary);
+    xSemaphoreGive(mutex);
+    return ok;
+}
+bool runtime_actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.actuator_move(axis, target, feed, end1, end2, rotary);
+    xSemaphoreGive(mutex);
+    return ok;
+}
+bool runtime_actuator_cycle(int axis, float feed, float end1, float end2, bool rotary) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.actuator_cycle(axis, feed, end1, end2, rotary);
+    xSemaphoreGive(mutex);
+    return ok;
+}
+bool runtime_actuator_cycle_speed(float feed) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ok = model.actuator_cycle_speed(feed);
+    if (demo && ok)
+        model.receive("<Idle|FS:0,0>", now()); // Position-bearing test feedback completes the restart.
+    xSemaphoreGive(mutex);
+    return ok;
+}
 bool runtime_probe(const ProbeSettings &s) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     bool ok = model.probe_corner(s);
@@ -404,8 +526,13 @@ bool runtime_is_demo() {
 bool runtime_inject(const char *s) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     bool ok = demo;
-    if (ok)
+    if (ok) {
+        bool settings_line = !model.state.downloading && (s[0] == '$' || !strncmp(s, "[SETTING", 8));
         model.receive(s, now());
+        if (settings_line) { demo_settings_init(); demo_settings.receive(s); }
+        if (!strncmp(s, "$376=", 5) && model.state.rotary_known)
+            demo_rotary_mask = model.state.rotary_axes >> 3;
+    }
     xSemaphoreGive(mutex);
     return ok;
 }
