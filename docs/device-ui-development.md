@@ -224,3 +224,23 @@ the PC preview service temporarily stopped. It adds a small uniquely named
 header sample on onboard SD, captures the LCD and checks the top-left back arrow.
 It uses UART-off demo mode, never runs the job, and restores physical touch.
 Restart the preview service after this check.
+## Capturing selected documentation states
+
+Use `--only <screenshot-name> ...` with `capture-gallery.py`,
+`check-machine-settings.py` or `check-tools.py` to retry interrupted images
+without transferring completed captures again. Navigation and checks still run.
+`capture-readme-extras.py --scene <name> ...` captures the remaining UI states, cached large-file views and actuator
+configuration dialogs using isolated demo feedback. Its `--reset`
+option restarts the display before a sequence. Inspect every image before copying
+it into `docs/screenshots`; rejected or wrong-state images must stay out of Git.
+
+The host drains malformed/non-ASCII/out-of-order screenshot rows through `UGEND`
+before reporting failure, so queued touch-restoration commands are not mistaken
+for image data. Rejected frames never replace documentation images. The decoder
+self-test includes log-contaminated rows and subsequent valid rows.
+
+`ui-remote.py` batches available serial bytes on Windows. The gallery buffers
+frame-row logging and flushes at protocol boundaries rather than after every
+row. Keep these paths buffered; per-byte reads and per-row disk flushes made
+large captures exceed the host deadline. `check-macro-grid.py --short-samples`
+uses compact G21/G90 fixtures for photos; its empty-library safeguard remains.

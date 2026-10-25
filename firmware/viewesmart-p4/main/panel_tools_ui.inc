@@ -210,7 +210,7 @@ static void show_macro_editor();
 static bool macro_run_confirmed() { return runtime_action(Action::Macro, macros->entries[macro_run_index].code); }
 static void macro_run_click(lv_event_t *e) {
     macro_run_index = (uintptr_t)lv_event_get_user_data(e);
-    confirm("Run macro?", macros->entries[macro_run_index].name, macro_run_confirmed, macro_colors[macros->entries[macro_run_index].color]);
+    confirm("Run macro?", macros->entries[macro_run_index].name, macro_run_confirmed, AMBER, "Run");
 }
 static bool macro_delete_confirmed() {
     Macro old = macros->entries[macro_edit_index];
@@ -291,7 +291,7 @@ static void show_macro_editor() {
         lv_textarea_set_text(macro_fields[i], i ? m.code : m.name);
         lv_obj_add_event_cb(macro_fields[i], macro_focus, LV_EVENT_FOCUSED, nullptr);
     }
-    static const char *const colors[] = {"Blue", "Teal", "Amber", "Purple", ""};
+    static const char *const colors[] = {"Blue", "Teal", "Amber", "Green", ""};
     macro_colors_control = choices(c, colors, m.color, 640, 100, 336, 54, nullptr);
     label(c, "G-code", 24, 166, 650, 16, MUTED);
     macro_keyboard = lv_keyboard_create(c);

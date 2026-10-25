@@ -1,16 +1,21 @@
 """Verify spindle discovery and confirmed activation on the UART-isolated display."""
+import argparse
 import importlib.util
 import json
 from pathlib import Path
 import time
 import serial
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--port', default='COM12')
+parser.add_argument('--only', nargs='+', help='Capture only these screenshot names')
+args = parser.parse_args()
 spec = importlib.util.spec_from_file_location('remote', Path(__file__).with_name('ui-remote.py'))
 r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
     p.dtr = p.rts = False
-    p.port = 'COM17'
+    p.port = args.port
     p.open()
     for _ in range(25):
         p.write(b'\nUG SYNC\n')
@@ -33,6 +38,8 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         r.exchange(p, 'tap', point=(x, y))
         time.sleep(.6)
     def shot(name):
+        if args.only and name not in args.only:
+            return
         r.exchange(p, 'shot', Path('captures/tools') / (name + '.png'))
     try:
         cmd('DEMO ON')

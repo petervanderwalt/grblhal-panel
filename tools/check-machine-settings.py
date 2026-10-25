@@ -13,6 +13,7 @@ import serial
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', default='COM17')
 parser.add_argument('--captures', type=Path, default=Path('captures/machine-settings'))
+parser.add_argument('--only', nargs='+', help='Capture only these screenshot names')
 parser.add_argument('--no-captures', action='store_true')
 args = parser.parse_args()
 spec = importlib.util.spec_from_file_location('remote', Path(__file__).with_name('ui-remote.py'))
@@ -47,7 +48,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         time.sleep(.6)
 
     def shot(name):
-        if args.no_captures:
+        if args.no_captures or (args.only and name not in args.only):
             return
         time.sleep(.7)
         r.exchange(p, 'shot', args.captures / (name + '.png'))

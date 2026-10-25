@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--port", default="COM12")
     parser.add_argument("--output", type=Path, default=Path("captures/gallery"))
     parser.add_argument("--section", choices=("core", "wifi", "all"), default="core")
+    parser.add_argument("--only", nargs="+", help="Capture only these screenshot names")
     parser.add_argument("--ssid", help="Network to test and restore for Wi-Fi captures")
     args = parser.parse_args()
     password = os.environ.get("PANEL_WIFI_PASSWORD")
@@ -31,12 +32,14 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port, \
             (args.output / "serial.log").open("ab") as trace:
+        remote.buffered_lines(port)
         original_readline = port.readline
 
         def traced_readline(*a, **kw):
             line = original_readline(*a, **kw)
             trace.write(line)
-            trace.flush()
+            if not line.startswith(b"@UGROW "):
+                trace.flush()
             return line
 
         port.readline = traced_readline
@@ -68,6 +71,8 @@ def main():
             time.sleep(.4)
 
         def shot(name):
+            if args.only and name not in args.only:
+                return
             time.sleep(.5)
             remote.exchange(port, "shot", args.output / (name + ".png"))
 
@@ -126,6 +131,7 @@ def main():
                 tap(512, 409)
                 page(2)
                 tap(800, 28)
+                wait_wifi("scanning")
                 choose_network()
                 connected = connect(password)
                 assert connected["connected"], connected

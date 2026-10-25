@@ -36,7 +36,7 @@ new previews. It is not required for browsing cached images or running jobs.
 While the machine is idle, the pendant hashes each file and checks its cache.
 Missing previews are uploaded to the PC as a streaming HTTP body. The server
 checks the SHA-256, generates eight views, and the pendant downloads native RGB565 bitmaps
-into `.panel-previews/v2-<sha256>/` on the display card. A completion marker is
+into `.panel-previews/v3-<sha256>/` on the display card. A completion marker is
 written only after every bitmap arrives. Original G-code is read-only throughout.
 A changed file gets a different cache key. Incomplete caches are retried.
 
@@ -54,9 +54,9 @@ prevent a separate confirmed Run of G-code supported by the controller.
 The server API is deliberately small:
 
 - `GET /health`
-- `POST /v2/jobs/<sha256>` with the raw G-code and Content-Length; returns 202.
-- `GET /v2/jobs/<sha256>/manifest.json`; 202 while working, then ready/error JSON.
-- `GET /v2/jobs/<sha256>/<view>.bin` (or `.png`) for a finished view.
+- `POST /v3/jobs/<sha256>` with the raw G-code and Content-Length; returns 202.
+- `GET /v3/jobs/<sha256>/manifest.json`; 202 while working, then ready/error JSON.
+- `GET /v3/jobs/<sha256>/<view>.bin` (or `.png`) for a finished view.
 
 The service writes only its own `preview-server/cache` directory. It processes
 one generation job at a time. Change the renderer version and firmware cache
@@ -160,3 +160,8 @@ Controller SD still offers listing and Run only; its file content is not downloa
 
 Preview navigation uses a top-left back arrow. Confirmation dialogs keep their
 Cancel/Run or Cancel/OK actions.
+
+Renderer 3 adds thin X/Y reference lines through the G-code origin and an
+outlined `0,0,0` marker. These refer to the file's work coordinates, not the
+controller's machine zero. Axis lines are behind the toolpath; the origin marker
+remains visible above it. The new cache namespace refreshes older images.

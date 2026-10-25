@@ -1,7 +1,8 @@
 """Fill all 20 macro slots, reboot, verify and remove the temporary library.
 
 Requires CNC mode, no open dialog and an empty development macro library.
-Every sample is 768 characters; only G21/G90 execute, in UART-off demo mode.
+Samples are 768 characters by default; --short-samples uses compact photo examples.
+Only G21/G90 execute, in UART-off demo mode.
 """
 import argparse
 import importlib.util
@@ -12,6 +13,7 @@ import serial
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', default='COM17')
+parser.add_argument('--short-samples', action='store_true', help='Use compact G21/G90 examples for documentation photos')
 parser.add_argument('--no-captures', action='store_true')
 args = parser.parse_args()
 spec = importlib.util.spec_from_file_location('remote', Path(__file__).with_name('ui-remote.py'))
@@ -54,7 +56,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         assert not data()['actuator_mode'] and data()['macro_count'] == 0
         tap(640, 564)
         base = 'G21\nG90\n('
-        code = base + 'x' * (768 - len(base) - 1) + ')'
+        code = 'G21\nG90' if args.short_samples else base + 'x' * (768 - len(base) - 1) + ')'
         for i in range(20):
             tap(890, 110)
             field(0, f'Setup {i + 1:02}')
@@ -74,6 +76,8 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         assert data()['macro_count'] == 20, 'Macro library did not persist'
         tap(640, 564)
         tap(850, 447)  # Last tile (row five, column four)
+        if not args.no_captures:
+            r.exchange(p, 'shot', Path('captures/tools/panel-macro-confirm.png'))
         tap(630, 409)
         assert data('STATE')['macro_running'] and '$G' in cmd('LAST')
         cmd('RX <Idle|FS:0,0>')
@@ -84,6 +88,6 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
             tap(630, 409)
             assert data()['macro_count'] == 19 - i
         tap(128, 564)
-        print('PASS: all 20 maximum-size macros saved, survived reboot, ran and were removed')
+        print('PASS: all 20 temporary macros saved, survived reboot, ran and were removed')
     finally:
         cmd('TOUCH ON')

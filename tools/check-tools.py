@@ -13,6 +13,7 @@ import serial
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', default='COM17')
 parser.add_argument('--captures', type=Path, default=Path('captures/tools'))
+parser.add_argument('--only', nargs='+', help='Capture only these screenshot names')
 parser.add_argument('--no-captures', action='store_true')
 parser.add_argument('--reboot-macro', action='store_true', help='Verify an untouched default-colour macro survives a reboot')
 args = parser.parse_args()
@@ -47,7 +48,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         time.sleep(.5)
 
     def shot(name):
-        if not args.no_captures:
+        if not args.no_captures and (not args.only or name in args.only):
             time.sleep(.6)
             r.exchange(p, 'shot', args.captures / (name + '.png'))
 

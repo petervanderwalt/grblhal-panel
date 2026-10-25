@@ -5,7 +5,7 @@
 - Repository: https://github.com/petervanderwalt/grblhal-panel
 - Board: VIEWESMART 7-inch 1024x600 ESP32-P4/C6 touch display.
 - Hardware reference: https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY
-- Connected development device: CH340 USB UART on COM17, ESP32-P4 revision 1.3.
+- Connected development device: USB UART on COM12 (verify the current port), ESP32-P4 revision 1.3.
 - Firmware: `firmware/viewesmart-p4`, based on the user's uGsender firmware.
 - Toolchain used: ESP-IDF 5.3.4, LVGL 9.2.2, RGB565, one LCD framebuffer.
 - Keep existing third-party copyright and license notices.
@@ -354,7 +354,7 @@ listing and Run only. `panel_storage.cpp` mounts the inserted card without
 formatting, scans up to 512 jobs into a PSRAM catalogue, and exposes four rows
 per page. Initialise each sort index before publishing a scan entry; the LVGL
 snapshot may run during scanning. Never render hundreds of LVGL rows at once.
-Cache files belong only in `.panel-previews/v2-<sha256>/`; never rewrite original
+Cache files belong only in `.panel-previews/v3-<sha256>/`; never rewrite original
 G-code. Shared SDMMC cleanup must release slot 0 only, preserving C6 slot 1.
 Long FAT filenames are enabled in sdkconfig. `panel_fs.cpp` validates native
 bitmap headers and reads through a 1 KiB internal staging buffer into a single
@@ -430,3 +430,15 @@ Brightness is 10-100%, live while sliding, saved on release as panel/backlight.
 The WS2812B is GPIO30 (D4/R60 in the schematic), driven through RMT without an
 extra dependency. State policy is in panel_hardware.h; device checks use
 PREFS brightness/rgb_ready/rgb_color and tools/check-hardware-ui.py.
+
+Screenshot checksums run in 16 KiB chunks with a task yield between chunks.
+Do not put full-heap integrity walks back into the screenshot hot path: the
+capture watchdog mitigation keeps large PSRAM walks and uninterrupted checksum work
+out of this path.
+Keep the existing row staging, bounded cache maintenance and host CRC validation.
+
+Shared choice matrices use CLICK_TRIG so VALUE_CHANGED runs after LVGL updates
+the checked item. Keep callbacks on release; running refresh during press left
+Continuous active while Incremental remained highlighted. PREFS exposes
+continuous/mode_checked for the real-touch check and scroll_y for capture
+coordinates after Settings rows change.

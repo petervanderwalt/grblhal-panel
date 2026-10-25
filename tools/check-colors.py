@@ -19,5 +19,5 @@ assert ratio(colors['TRACK'],colors['CARD'])>=3
 blue=colors['PRIMARY'];light=[round((blue>>s&255)*(243/255)+255*(12/255)) for s in (16,8,0)]
 light=light[0]<<16|light[1]<<8|light[2];assert ratio(colors['WHITE'],light)>=4.5
 for p in [root/'panel_ui.cpp',*root.glob('*_ui.inc'),root/'panel_actuator_web.cpp']:
- assert not re.search(r'5356c9|e8e9fa|e6eafe|8b5195',p.read_text(encoding='utf8'),re.I),p
+ assert not re.search(r'5356c9|e8e9fa|e6eafe|8b5195|"Purple"',p.read_text(encoding='utf8'),re.I),p
 print('PASS semantic text pairs, blue gradient and retired-purple audit; screenshots still require visual inspection')

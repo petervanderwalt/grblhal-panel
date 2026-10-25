@@ -4,7 +4,7 @@ from pathlib import Path
 parser=argparse.ArgumentParser();parser.add_argument('--port',default='COM12');parser.add_argument('--file',default='/mb_83.nc');args=parser.parse_args()
 spec=importlib.util.spec_from_file_location('r',Path(__file__).with_name('ui-remote.py'));r=importlib.util.module_from_spec(spec);spec.loader.exec_module(r)
 with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p:
- p.dtr=p.rts=False;p.port=args.port;p.open()
+ p.dtr=p.rts=False;p.port=args.port;p.open();r.buffered_lines(p)
  for _ in range(30):
   p.write(b'\nUG SYNC\n');deadline=time.monotonic()+1
   while time.monotonic()<deadline:

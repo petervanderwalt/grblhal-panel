@@ -4,9 +4,9 @@ import math
 import struct
 import re
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
-VERSION = 2
+VERSION = 3
 VIEWS = ('top', 'bottom', 'front', 'back', 'left', 'right', 'isometric', 'perspective')
 WIDTH, HEIGHT = 740, 328
 WORD = re.compile(r'([A-Z])([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
@@ -126,7 +126,12 @@ def render(source, directory, progress=None):
     geometry_path = directory/'geometry.f32'
     meta = geometry(source,geometry_path,progress)
     segments = np.memmap(geometry_path, dtype='<f4',mode='r').reshape(-1,7)
-    center = (np.array(meta['minimum'])+meta['maximum'])/2
+    low, high = np.minimum(meta['minimum'], 0), np.maximum(meta['maximum'], 0)
+    padding = np.maximum((high-low)*.04, 1.)
+    references = np.array([[low[0]-padding[0],0,0], [high[0]+padding[0],0,0],
+                           [0,low[1]-padding[1],0], [0,high[1]+padding[1],0], [0,0,0]])
+    center = (low+high)/2
+    reference_font = ImageFont.load_default(size=14)
     matrices = {
       'top':np.array([[1,0,0],[0,1,0]]), 'bottom':np.array([[-1,0,0],[0,1,0]]),
       'front':np.array([[1,0,0],[0,0,1]]), 'back':np.array([[-1,0,0],[0,0,1]]),
@@ -146,8 +151,20 @@ def render(source, directory, progress=None):
             xy=project(np.concatenate((segments[i:i+65536,:3],segments[i:i+65536,3:6])))
             all_low=np.minimum(all_low,xy.min(0));all_high=np.maximum(all_high,xy.max(0))
             if progress: progress(phase="rendering", percent=min(20,(i+65536)*20//len(segments)), view=view, views=len(VIEWS))
+        reference_xy = project(references)
+        all_low = np.minimum(all_low, reference_xy.min(0))
+        all_high = np.maximum(all_high, reference_xy.max(0))
         extent=np.maximum(all_high-all_low,1e-6); scale=min((WIDTH-32)/extent[0],(HEIGHT-32)/extent[1]); mid=(all_low+all_high)/2
         image=Image.new('RGB',(WIDTH,HEIGHT),'#ffffff'); draw=ImageDraw.Draw(image)
+        reference_pixels = np.rint((reference_xy-mid)*[scale,-scale]+[WIDTH/2,HEIGHT/2]).astype(int)
+        for axis, color in enumerate(('#BD6666', '#5E9467')):
+            start, end = reference_pixels[axis*2:axis*2+2]
+            if np.linalg.norm(end-start) < 2:
+                continue  # This axis points into the screen in an orthographic side view.
+            draw.line((*start, *end), fill=color, width=1)
+            x, y = end
+            draw.text((max(2,min(WIDTH-24,x+3)), max(2,min(HEIGHT-18,y-16))),
+                      'XY'[axis], fill=color, font=reference_font)
         seen=set()
         for i in range(0,len(segments),65536):
             batch=segments[i:i+65536]
@@ -164,6 +181,13 @@ def render(source, directory, progress=None):
                 draw.line((int(x0),int(y0),int(x1),int(y1)),fill=color,width=1)
             if len(seen)>2000000: seen.clear()
             if progress: progress(phase="rendering", percent=min(99,20+(i+65536)*79//len(segments)), view=view, views=len(VIEWS))
+        ox, oy = reference_pixels[4]
+        draw.ellipse((ox-3,oy-3,ox+3,oy+3), fill='white', outline='#30363B', width=1)
+        label = '0,0,0'
+        lx = max(2,min(WIDTH-42,ox+7)); ly = max(2,min(HEIGHT-18,oy+5))
+        bounds = draw.textbbox((lx,ly),label,font=reference_font)
+        draw.rectangle((bounds[0]-1,bounds[1]-1,bounds[2]+1,bounds[3]+1),fill='white')
+        draw.text((lx,ly),label,fill='#30363B',font=reference_font)
         image.save(directory/(name+'.png'),optimize=False)
         rgb=np.asarray(image,dtype=np.uint16)
         rgb565=((rgb[:,:,0]>>3)<<11)|((rgb[:,:,1]>>2)<<5)|(rgb[:,:,2]>>3)

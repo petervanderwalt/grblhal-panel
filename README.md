@@ -247,6 +247,11 @@ Click a screenshot to open it at full size.
 
 ### Files and cached toolpath views
 
+The large-file example below is `/mb_83.nc` (90,668,882 bytes). The preview
+service generates eight fixed views, which the pendant caches on its SD card.
+The screenshots show those cached images on the actual LCD. Thin X/Y reference
+lines and a `0,0,0` marker locate the file's work origin.
+
 | Features and use | Preview |
 | --- | --- |
 | **Display SD files**<br><br>Browse the display card in pages, with sizes and separate Preview and Run actions. | [<img src="docs/screenshots/panel-display-files.png" alt="Display SD files" width="640">](docs/screenshots/panel-display-files.png) |
@@ -254,8 +259,8 @@ Click a screenshot to open it at full size.
 | **File-start fallback**<br><br>If an image is unavailable, review the first 14 G-code lines directly from onboard SD. Headers and comments stay visible while the server is offline or preparing an image. | [<img src="docs/screenshots/panel-preview-text.png" alt="G-code file-start fallback" width="640">](docs/screenshots/panel-preview-text.png) |
 | **Preview preparation**<br><br>Stage, percentage, elapsed time and an animated activity indicator keep long preparations visible. | [<img src="docs/screenshots/panel-preview-progress.png" alt="Preview preparation" width="640">](docs/screenshots/panel-preview-progress.png) |
 | **Isometric preview**<br><br>Inspect the cached toolpath from an isometric angle. The PC is needed only to generate new previews. | [<img src="docs/screenshots/panel-preview-isometric.png" alt="Isometric preview" width="640">](docs/screenshots/panel-preview-isometric.png) |
-| **Perspective preview**<br><br>Choose among eight fixed views. Drag to pan and use a physical pinch to zoom. | [<img src="docs/screenshots/panel-preview-perspective.png" alt="Perspective preview" width="640">](docs/screenshots/panel-preview-perspective.png) |
-| **Top preview**<br><br>Inspect the XY toolpath before confirming a separate Run action. | [<img src="docs/screenshots/panel-preview-top.png" alt="Top preview" width="640">](docs/screenshots/panel-preview-top.png) |
+| **Server-generated perspective view**<br><br>The preview service exports the same image as PNG and native RGB565. X/Y reference lines pass through the work origin. | [<img src="docs/screenshots/mb83-server-perspective.png" alt="Server-generated perspective view of mb_83.nc with origin references" width="640">](docs/screenshots/mb83-server-perspective.png) |
+| **Server-generated top view**<br><br>Review the XY toolpath with the file origin marked 0,0,0. These exports are generated from the large example file. | [<img src="docs/screenshots/mb83-server-top.png" alt="Server-generated top view of mb_83.nc with origin references" width="640">](docs/screenshots/mb83-server-top.png) |
 | **Preview server**<br><br>Set the PC service address. It generates PNG exports and native bitmap caches for fast LCD display. | [<img src="docs/screenshots/panel-preview-server.png" alt="Preview server" width="640">](docs/screenshots/panel-preview-server.png) |
 | **Run confirmation**<br><br>Confirm the selected SD file before starting it. Opening a preview does not start a job. | [<img src="docs/screenshots/panel-run-confirm.png" alt="Run confirmation" width="640">](docs/screenshots/panel-run-confirm.png) |
 

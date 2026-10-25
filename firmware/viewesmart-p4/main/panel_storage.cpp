@@ -283,7 +283,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
     message("Checking preview cache...");
     if (!hash_file(entry.file.path, entry.hash, revision))
         return false;
-    snprintf(dir, sizeof dir, "%s/v2-%s", CACHE, entry.hash);
+    snprintf(dir, sizeof dir, "%s/v3-%s", CACHE, entry.hash);
     snprintf(path, sizeof path, "%s/complete", dir);
     bool ready = false;
     if (exists(path)) {
@@ -312,11 +312,11 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         wifi_bridge_snapshot(&wifi);
         if (!*server || !wifi.connected)
             return false;
-        snprintf(url, sizeof url, "%s/v2/jobs/%s/manifest.json", server, entry.hash);
+        snprintf(url, sizeof url, "%s/v3/jobs/%s/manifest.json", server, entry.hash);
         message("Checking server cache...");
         int code = get(url, json, sizeof json);
         if (code == 404) {
-            snprintf(url, sizeof url, "%s/v2/jobs/%s", server, entry.hash);
+            snprintf(url, sizeof url, "%s/v3/jobs/%s", server, entry.hash);
             message("Sending G-code for previews...");
             if (!post(url, entry.file.path, revision))
                 return false;
@@ -327,7 +327,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         for (int i = 0; i < 1800; i++) {
             if (!idle() || config_revision.load() != revision)
                 return false;
-            snprintf(url, sizeof url, "%s/v2/jobs/%s/manifest.json", server, entry.hash);
+            snprintf(url, sizeof url, "%s/v3/jobs/%s/manifest.json", server, entry.hash);
             *json = 0;
             code = get(url, json, sizeof json);
             if (code == 200 || code == 202) {
@@ -337,7 +337,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
                            version = cJSON_GetObjectItem(root, "renderer");
                 generated = cJSON_IsString(status) && !strcmp(status->valuestring, "ready") &&
                             cJSON_IsString(hash) && !strcmp(hash->valuestring, entry.hash) &&
-                            cJSON_IsNumber(version) && version->valueint == 2;
+                            cJSON_IsNumber(version) && version->valueint == 3;
                 bool error = cJSON_IsString(status) && !strcmp(status->valuestring, "error");
                 if (error) {
                     unsupported = true;
@@ -376,7 +376,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         for (unsigned i = 0; i < 8; i++) {
             if (!idle())
                 return false;
-            snprintf(url, sizeof url, "%s/v2/jobs/%s/%s.bin", server, entry.hash, views[i]);
+            snprintf(url, sizeof url, "%s/v3/jobs/%s/%s.bin", server, entry.hash, views[i]);
             snprintf(path, sizeof path, "%s/%s.bin", dir, views[i]);
             char text[64];
             snprintf(text, sizeof text, "Downloading view %u/8...", i + 1);
@@ -605,7 +605,7 @@ bool storage_preview(const char *path, unsigned view, char *image, size_t capaci
     xSemaphoreTake(lock, portMAX_DELAY);
     for (unsigned i = 0; i < catalog->count; i++)
         if (!strcmp(catalog->entries[i].file.path, path) && catalog->entries[i].ready) {
-            snprintf(image, capacity, "%s/v2-%s/%s.bin", CACHE, catalog->entries[i].hash, views[view]);
+            snprintf(image, capacity, "%s/v3-%s/%s.bin", CACHE, catalog->entries[i].hash, views[view]);
             ready = true;
             break;
         }

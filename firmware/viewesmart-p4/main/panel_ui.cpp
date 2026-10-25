@@ -352,6 +352,8 @@ static lv_obj_t *choices(lv_obj_t *parent, const char *const *map, int selected,
     lv_buttonmatrix_set_map(m, map);
     lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_NO_REPEAT);
+    // Checked state updates on release; callbacks may refresh or rebuild the matrix.
+    lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
     lv_buttonmatrix_set_one_checked(m, true);
     lv_buttonmatrix_set_button_ctrl(m, selected, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_obj_set_style_bg_opa(m, LV_OPA_TRANSP, 0);
@@ -1040,8 +1042,8 @@ static void wifi_choose(lv_event_t *e) {
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_keyboard_set_textarea(keyboard, wifi_password);
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(BG), 0);
-    lv_obj_set_style_bg_color(keyboard, lv_color_hex(EDGE), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(keyboard, lv_color_hex(WHITE), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(CARD), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(TEXT), LV_PART_ITEMS);
 }
 static void wifi_networks() {
     lv_obj_clean(wifi_list);
@@ -1660,9 +1662,13 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d}",
+             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.tx,
-             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr);
+             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
+             page == JogPage && !actuator_mode && mode_choices
+                 ? (lv_buttonmatrix_has_button_ctrl(mode_choices, 1, LV_BUTTONMATRIX_CTRL_CHECKED) ? 1
+                    : lv_buttonmatrix_has_button_ctrl(mode_choices, 0, LV_BUTTONMATRIX_CTRL_CHECKED) ? 0 : -1)
+                 : -1, body ? lv_obj_get_scroll_y(body) : 0);
 }
 extern "C" bool panel_ui_setting_field(const char *text) {
     if ((!machine_editor && !machine_search) || !machine_field || !text || strlen(text) > MaxSettingValue)

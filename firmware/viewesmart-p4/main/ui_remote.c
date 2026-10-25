@@ -47,7 +47,6 @@ static void reply(const char *text)
 
 static void screenshot_frame(void)
 {
-    assert(heap_caps_check_integrity_all(true));
     const size_t size = BSP_LCD_H_RES * BSP_LCD_V_RES * 2;
     uint16_t *pixels = heap_caps_aligned_alloc(128, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     char *line = heap_caps_malloc(BSP_LCD_H_RES * 8 + 48, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -65,9 +64,8 @@ static void screenshot_frame(void)
     }
     /* Copy the last displayed frame; rendering stays on the LVGL task. */
     printf("@UGDBG screenshot stack %lu\n", (unsigned long)uxTaskGetStackHighWaterMark(NULL));
-    assert(heap_caps_check_integrity_all(true));
 
-    reply("@UGDBG screenshot heap checked\n");
+    reply("@UGDBG screenshot capture ready\n");
     esp_err_t err = bsp_display_copy_framebuffer(pixels, size);
     reply("@UGDBG screenshot pixels staged\n");
     // Keep interrupt-masked cache maintenance bounded.
@@ -78,12 +76,18 @@ static void screenshot_frame(void)
     }
     reply("@UGDBG screenshot frame copied\n");
     bsp_display_unlock();
-    assert(heap_caps_check_integrity_all(true));
     if (err != ESP_OK) {
         reply("\n@UGERR framebuffer\n");
     } else {
+        /* Keep PSRAM checksum work bounded so both cores can service their ticks. */
+        uint32_t checksum = 0;
+        for (size_t offset = 0; offset < size; offset += 16384) {
+            size_t chunk = size - offset < 16384 ? size - offset : 16384;
+            checksum = esp_rom_crc32_le(checksum, (uint8_t *)pixels + offset, chunk);
+            vTaskDelay(1);
+        }
         snprintf(line, 48, "\n@UGSHOT %d %d %08lx\n", BSP_LCD_H_RES, BSP_LCD_V_RES,
-                 (unsigned long)esp_rom_crc32_le(0, (uint8_t *)pixels, size));
+                 (unsigned long)checksum);
         reply(line);
         for (int y = 0; y < BSP_LCD_V_RES; y++) {
             int n = sprintf(line, "@UGROW %d ", y);
@@ -292,7 +296,8 @@ void ui_remote_start(void)
 {
     tap_done = xSemaphoreCreateBinary();
     assert(tap_done);
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0));
+    /* Buffer a full hex-encoded command while UI/NVS work briefly holds the console. */
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 4096, 0, 0, NULL, 0));
     bsp_display_lock(0);
     remote_input = lv_indev_create();
     assert(remote_input);

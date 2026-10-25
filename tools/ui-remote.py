@@ -37,6 +37,29 @@ def png_bytes(raw, width, height):
             chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(rgb)) + chunk(b"IEND", b""))
 
+def buffered_lines(port):
+    """Batch available UART bytes instead of issuing a Windows read per character."""
+    pending = bytearray()
+    raw_read, raw_reset = port.read, port.reset_input_buffer
+    def readline():
+        while True:
+            end = pending.find(b"\n")
+            if end >= 0:
+                line = bytes(pending[:end + 1])
+                del pending[:end + 1]
+                return line
+            block = raw_read(min(16384, port.in_waiting or 1))
+            if not block:
+                line = bytes(pending)
+                pending.clear()
+                return line
+            pending.extend(block)
+    def reset():
+        pending.clear()
+        raw_reset()
+    port.readline, port.reset_input_buffer = readline, reset
+
+
 def self_test():
     assert decode_row("0002f8000001001f", 3) == b"\x00\xf8\x00\xf8\x1f\x00"
     for bad in ("0000f800", "0004f800", "0001f800", "x"):
@@ -58,7 +81,8 @@ def self_test():
         offset += 12 + size
     assert zlib.decompress(idat) == b"\x00\xff\x00\x00\x00\xff\x00\x00\x00\xff"
     class DamagedFrame:
-        def __init__(self): self.lines = [b'@UGSHOT 1 1 00000000\n', b'@UGROW 0 \xa5\n', b'@UGEND\n']
+        def __init__(self, damaged=b'@UGROW 0 \xa5\n'):
+            self.lines = [b'@UGSHOT 1 2 00000000\n', damaged, b'@UGROW 1 00010000\n', b'@UGEND\n']
         def write(self, _): pass
         def readline(self):
             assert self.lines, 'Damaged frame did not finish cleanly'
@@ -70,7 +94,29 @@ def self_test():
         assert 'non-ASCII' in str(error) and not port.lines
     else:
         raise AssertionError('Accepted a damaged frame')
-    print("RLE validation and PNG color/CRC tests passed")
+    for damaged in (b'@UGROW 0 00010000 SDK log\n', b'@UGROW 0 00000000\n', b'@UGROW 5 00010000\n'):
+        port = DamagedFrame(damaged)
+        try:
+            exchange(port, 'shot')
+        except ValueError:
+            assert not port.lines, 'Rejected frame left UART data ahead of cleanup commands'
+        else:
+            raise AssertionError('Accepted a malformed screenshot row')
+    class BufferedPort:
+        def __init__(self): self.data = b"first\nsecond\n"; self.reads = 0
+        @property
+        def in_waiting(self): return len(self.data)
+        def read(self, count):
+            self.reads += 1
+            result, self.data = self.data[:count], self.data[count:]
+            return result
+        def reset_input_buffer(self): self.data = b""
+    port = BufferedPort()
+    buffered_lines(port)
+    assert port.readline() == b"first\n" and port.reads == 1
+    port.reset_input_buffer()
+    assert port.readline() == b"", "Reset kept stale buffered UART data"
+    print("RLE validation, buffered UART reads and PNG color/CRC tests passed")
 
 
 def exchange(port, command, output=None, point=None):
@@ -121,10 +167,16 @@ def exchange(port, command, output=None, point=None):
                 raise ValueError("Invalid framebuffer dimensions")
             rows = []
         elif line.startswith("@UGROW ") and width is not None:
-            _, y, encoded = line.split()
-            if int(y) != len(rows) or len(rows) >= height:
-                raise ValueError("Missing or out-of-order screenshot row")
-            rows.append(decode_row(encoded, width))
+            if packet_error:
+                continue
+            try:
+                _, y, encoded = line.split()
+                if int(y) != len(rows) or len(rows) >= height:
+                    raise ValueError("Missing or out-of-order screenshot row")
+                rows.append(decode_row(encoded, width))
+            except ValueError as error:
+                packet_error = "Invalid screenshot row: " + str(error)
+                continue  # Drain the rejected frame before sending touch-restoration commands.
         elif line == "@UGEND" and width is not None:
             if packet_error:
                 raise ValueError(packet_error)
@@ -181,6 +233,7 @@ def main():
         port.rts = False
         port.port = args.port
         port.open()
+        buffered_lines(port)
         # Probe an invalid, harmless command until the application owns UART0.
         ready = False
         for attempt in range(15):
