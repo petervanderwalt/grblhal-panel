@@ -138,10 +138,10 @@ static void actuator_config(lv_event_t *e) {
         static const char *const types[] = {"Linear", "Rotary", ""};
         choices(c, types, act_edit_rotary, 600, 8, 340, 48, actuator_type);
     }
-    button(c, "Cancel", 20, 240, 170, 48, cancelled);
+    button(c, "Cancel", 20, 240, 170, 48, cancelled, 0, CARD, true);
     static const char *const styles[] = {"Buttons", "Position", "Presets", "Repeat", ""};
     act_style = choices(c, styles, a.style, 220, 240, 520, 48, nullptr);
-    button(c, "Save", 760, 240, 180, 48, actuator_config_save, 0, BLUE);
+    button(c, "Save", 760, 240, 180, 48, actuator_config_save, 0, GREEN);
     act_config_error = label(c, "", 20, 288, 920, 14, RED);
     act_keyboard = lv_keyboard_create(c);
     lv_obj_set_align(act_keyboard, LV_ALIGN_TOP_LEFT);
@@ -241,6 +241,7 @@ static void build_actuators() {
             lv_obj_set_style_arc_color(act_arc, lv_color_hex(MUTED), 0);
             lv_obj_set_style_arc_color(act_arc, lv_color_hex(MUTED), LV_PART_INDICATOR);
             lv_obj_set_style_bg_color(act_arc, lv_color_hex(0xA95B12), LV_PART_KNOB);
+            lv_obj_set_style_bg_color(act_arc, lv_color_hex(MUTED), LV_PART_KNOB | LV_STATE_DISABLED);
             lv_obj_add_event_cb(act_arc, actuator_angle, LV_EVENT_RELEASED, nullptr);
         } else if (a.style == 1 || a.style == 3) {
             act_slider[i] = lv_slider_create(card);
@@ -254,7 +255,10 @@ static void build_actuators() {
             lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(MUTED), LV_PART_INDICATOR);
             lv_obj_set_style_bg_opa(act_slider[i], LV_OPA_COVER, LV_PART_INDICATOR);
             lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(DISABLED), LV_PART_INDICATOR | LV_STATE_DISABLED);
-            lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(BLUE), LV_PART_KNOB);
+            lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(DISABLED), LV_PART_MAIN | LV_STATE_DISABLED);
+            lv_obj_set_style_bg_opa(act_slider[i], LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DISABLED);
+            lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(MUTED), LV_PART_KNOB | LV_STATE_DISABLED);
+            lv_obj_set_style_bg_color(act_slider[i], lv_color_hex(PRIMARY), LV_PART_KNOB);
             lv_obj_add_event_cb(act_slider[i], a.style == 3 ? actuator_speed : actuator_slide, LV_EVENT_RELEASED, (void *)(uintptr_t)i);
             if (a.style == 3) {
                 lv_slider_set_value(act_slider[i], act_speed_percent[i], LV_ANIM_OFF);
@@ -273,7 +277,7 @@ static void build_actuators() {
         } else {
             act_move[i][2] = button(card, a.second, 16, 168, 202, 52, actuator_button, i * 3 + 2, GREEN);
             if (a.style == 2)
-                act_move[i][1] = button(card, "50%", 16, 230, 202, 52, actuator_button, i * 3 + 1, BLUE);
+                act_move[i][1] = button(card, "50%", 16, 230, 202, 52, actuator_button, i * 3 + 1, PRIMARY);
             act_move[i][0] = button(card, a.first, 16, 292, 202, 52, actuator_button, i * 3, 0x247C87);
         }
         act_stop[i] = button(card, "Stop", 16, 366, 202, 44, actuator_stop_click, 0, RED);
@@ -288,7 +292,7 @@ static void refresh_actuators() {
         bool rotary = i == 3 && a_rotary;
         bool type_ok = i != 3 || (state.rotary_known && rotary == bool(state.rotary_axes & 8));
         bool on = ready() && state.cycle_axis < 0 && state.extended && present && homed && configured && state.machine_known &&
-                  state.spindle == 0 && type_ok;
+                  state.spindle == 0 && state.spindle_direction == 0 && type_ok;
         char text[100];
         if (!state.online || !state.status)
             snprintf(text, sizeof text, "Not connected");

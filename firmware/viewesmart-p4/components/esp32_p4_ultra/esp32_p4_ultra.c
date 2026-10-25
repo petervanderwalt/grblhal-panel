@@ -75,17 +75,16 @@ i2c_master_bus_handle_t bsp_i2c_get_handle(void)
 esp_err_t bsp_sdcard_mount(void)
 {
     const esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-#ifdef CONFIG_BSP_SD_FORMAT_ON_MOUNT_FAIL
-        .format_if_mount_failed = true,
-#else
         .format_if_mount_failed = false,
-#endif
         .max_files = 5,
         .allocation_unit_size = 64 * 1024
     };
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.slot = SDMMC_HOST_SLOT_0;
+    // A failed/missing card must not tear down the Wi-Fi coprocessor on slot 1.
+    host.flags |= SDMMC_HOST_FLAG_DEINIT_ARG;
+    host.deinit_p = sdmmc_host_deinit_slot;
     host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
 
     sd_pwr_ctrl_ldo_config_t ldo_config = {
@@ -444,6 +443,8 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t *config, bsp_l
 #endif
 #endif
     dpi_config.num_fbs = CONFIG_BSP_LCD_DPI_BUFFER_NUMS;
+    // Keep framebuffer-copy completion synchronous on this early P4.
+    dpi_config.flags.use_dma2d = true;
 
 #if DISPLAY_JD9165
     jd9165_vendor_config_t vendor_config = {
@@ -733,11 +734,15 @@ esp_err_t bsp_display_copy_framebuffer(void *dest, size_t size)
     void *fb = NULL;
     esp_err_t err = esp_lcd_dpi_panel_get_frame_buffer(s_capture_panel, 1, &fb, NULL);
     if (err == ESP_OK) {
-        /* Stage through internal RAM to avoid a PSRAM-to-PSRAM bulk copy. */
-        uint8_t row[BSP_LCD_H_RES * 2];
+        /* Explicit volatile staging avoids the ROM memcpy path on early P4 silicon. */
+        static volatile uint8_t row[BSP_LCD_H_RES * 2];
+        printf("@UGDBG framebuffer %p snapshot %p staging %p\n",fb,dest,(void *)row);
         for (size_t offset = 0; offset < size; offset += BSP_LCD_H_RES * 2) {
-            memcpy(row, (uint8_t *)fb + offset, sizeof(row));
-            memcpy((uint8_t *)dest + offset, row, sizeof(row));
+            if ((offset/(BSP_LCD_H_RES*2))%128==0) printf("@UGDBG capture row %u\n",(unsigned)(offset/(BSP_LCD_H_RES*2)));
+            const volatile uint8_t *source = (const volatile uint8_t *)fb + offset;
+            volatile uint8_t *target = (volatile uint8_t *)dest + offset;
+            for (size_t i = 0; i < sizeof(row); i++) row[i] = source[i];
+            for (size_t i = 0; i < sizeof(row); i++) target[i] = row[i];
             if ((offset / (BSP_LCD_H_RES * 2)) % 16 == 0) vTaskDelay(1);
         }
     }

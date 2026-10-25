@@ -73,7 +73,7 @@ static void machine_search_open(lv_event_t *) {
     lv_textarea_set_placeholder_text(machine_field, "Name, description or $ number");
     lv_textarea_set_text(machine_field, machine_query.c_str());
     lv_obj_set_style_text_font(machine_field, font(22), 0);
-    button(c, "Find", 780, 92, 200, 54, machine_search_save, 0, BLUE);
+    button(c, "Find", 780, 92, 200, 54, machine_search_save, 0, PRIMARY);
     auto keyboard = lv_keyboard_create(c);
     lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(keyboard, 20, 184); lv_obj_set_size(keyboard, 960, 364);
@@ -129,7 +129,7 @@ static void machine_editor_open(void *) {
     bool list = machine_setting.type == 0 || mask || (machine_setting.type == 3 && !machine_options.empty());
     if (!machine_setting.metadata || !machine_setting.writable || !machine_setting.has_value) {
         label(c, "Controller metadata and a current value are required for editing.", 20, 220, 960, 20, MUTED);
-        button(c, "Back", 20, 490, 200, 52, machine_back);
+        button(c, "OK", 20, 490, 200, 52, machine_back, 0, GREEN);
         return;
     }
     machine_error = label(c, "", 20, list ? 462 : 264, 960, 14, RED);
@@ -179,8 +179,8 @@ static void machine_editor_open(void *) {
         lv_obj_set_style_bg_color(keyboard, lv_color_hex(CARD), LV_PART_ITEMS);
         lv_obj_set_style_text_color(keyboard, lv_color_hex(TEXT), LV_PART_ITEMS);
     }
-    button(c, "Cancel", list ? 20 : 560, list ? 490 : 206, 200, 52, machine_back);
-    machine_save = button(c, "Save", 780, list ? 490 : 206, 200, 52, machine_save_click, 0, BLUE);
+    button(c, "Cancel", list ? 20 : 560, list ? 490 : 206, 200, 52, machine_back, 0, CARD, true);
+    machine_save = button(c, "Save", 780, list ? 490 : 206, 200, 52, machine_save_click, 0, GREEN);
 }
 static void machine_edit_click(lv_event_t *e) {
     machine_edit_id = (uintptr_t)lv_event_get_user_data(e);
@@ -216,8 +216,10 @@ static void machine_render() {
     int y = 4;
     auto group_button = [&](int id, const std::string &name) {
         auto b = button(machine_groups, name.c_str(), 4, y, 224, 44, machine_group_click, (uintptr_t)(intptr_t)id, CARD);
-        lv_obj_set_style_bg_color(b, lv_color_hex(id == machine_group ? 0xE6EAFE : CARD), 0);
-        lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(id == machine_group ? BLUE : TEXT), 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(CARD), 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(id == machine_group ? PRIMARY : TEXT), 0);
+        lv_obj_set_style_border_width(b, id == machine_group ? 2 : 0, 0);
+        lv_obj_set_style_border_color(b, lv_color_hex(PRIMARY), 0);
         lv_obj_set_style_text_align(lv_obj_get_child(b, 0), LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_long_mode(lv_obj_get_child(b, 0), LV_LABEL_LONG_CLIP);
         lv_obj_set_height(lv_obj_get_child(b, 0), 22);

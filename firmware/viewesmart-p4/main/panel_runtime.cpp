@@ -1,4 +1,5 @@
 #include "panel_runtime.h"
+#include "esp_system.h"
 #include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -8,8 +9,10 @@
 #include "gcode_viewer.h"
 #include "panel_debug.h"
 #include "panel_upload.h"
+#include "panel_storage.h"
 #include "panel_settings_demo.h"
 #include <assert.h>
+#include <new>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +21,7 @@ namespace panel {
 static SemaphoreHandle_t mutex;
 static QueueHandle_t uart_events;
 static bool installed = false, demo = false, pending = false;
+static unsigned pending_count = 0;
 static unsigned demo_rotary_mask = 0;
 static char last_tx[640], pending_line[640];
 static size_t rx_used = 0;
@@ -44,7 +48,7 @@ static bool send_line(void *, const char *s) {
         snprintf(last_tx, sizeof last_tx, "%s", s);
     if (demo) {
         snprintf(pending_line, sizeof pending_line, "%s", s);
-        pending = true;
+        pending = true; pending_count++;
         return true;
     }
     if (!installed)
@@ -54,8 +58,11 @@ static bool send_line(void *, const char *s) {
     return uart_write_bytes(UART_NUM_1, command, n) == n;
 }
 extern "C" bool panel_debug_test() {
-    bool ok = panel::model_self_test();
+    bool ok = panel_memory_test();
+    ok = panel::model_self_test() && ok;
+    ok = panel::stream_self_test() && ok;
     ok = panel::settings_self_test() && ok;
+    ok = panel::tools_self_test() && ok;
     ok = panel::actuator_self_test() && ok;
     ok = upload_self_test() && ok;
     bool viewer = gcode_viewer_parser_test();
@@ -68,15 +75,18 @@ extern "C" void panel_debug_last(char *b, size_t n) { panel::runtime_last_tx(b, 
 extern "C" void panel_debug_state(char *b, size_t n) {
     static panel::State s;
     panel::runtime_snapshot(s);
+    int active_spindle = -1;
+    for (unsigned i = 0; i < s.spindle_count; ++i) if (s.spindles[i].active) active_spindle = s.spindles[i].number;
     snprintf(
         b, n,
-        "{\"online\":%d,\"identified\":%d,\"extended\":%d,\"ready\":%d,\"alarm\":%d,\"error\":%d,\"x\":%.3f,"
-        "\"y\":%.3f,\"z\":%.3f,\"percent\":%.2f,\"job\":%d,\"files\":%d,\"probing\":%d,\"contact\":%d,"
-        "\"downloading\":%d,\"download_ready\":%d,\"download_bytes\":%lu,\"axes\":%u,\"homed\":%u,\"a\":%.3f,\"repeat_axis\":%d,\"rotary_known\":%d,\"rotary_mask\":%u,\"settings_loading\":%d,\"settings_saving\":%d,\"settings_count\":%d,\"settings_groups\":%d,\"settings_result\":%d}",
-        s.online, s.identified, s.extended, s.status, s.alarm, s.error, s.work[0], s.work[1], s.work[2],
-        s.percent, s.sd_active, s.file_count, s.probing, s.contact_ready, s.downloading, s.download_ready,
+        "{\"reset_reason\":%d,\"online\":%d,\"identified\":%d,\"extended\":%d,\"ready\":%d,\"alarm\":%d,\"error\":%d,\"x\":%.3f,"
+        "\"y\":%.3f,\"z\":%.3f,\"percent\":%.2f,\"job\":%d,\"files\":%d,\"probing\":%d,\"contact\":%d,\"contact_testing\":%d,\"probe_axis\":%d,"
+        "\"downloading\":%d,\"download_ready\":%d,\"download_bytes\":%lu,\"axes\":%u,\"homed\":%u,\"a\":%.3f,\"repeat_axis\":%d,\"rotary_known\":%d,\"rotary_mask\":%u,\"settings_loading\":%d,\"settings_saving\":%d,\"settings_count\":%d,\"settings_groups\":%d,\"settings_result\":%d,\"inputs\":%lu,\"inputs_known\":%lu,\"spindle_direction\":%d,\"rpm\":%.0f,\"coolant\":%u,\"macro_running\":%d,\"active_spindle\":%d,\"spindle_count\":%u,\"local_job\":%d,\"checking\":%d,\"job_bytes\":%lu,\"job_total\":%lu,\"file_total\":%u,\"file_offset\":%u}",
+        (int)esp_reset_reason(), s.online, s.identified, s.extended, s.status, s.alarm, s.error, s.work[0], s.work[1], s.work[2],
+        s.percent, s.sd_active, s.file_count, s.probing, s.contact_ready, s.contact_testing, s.probe_axis, s.downloading, s.download_ready,
         (unsigned long)s.download_bytes, s.axis_count, s.homed_axes, s.machine[3], s.cycle_axis, s.rotary_known, s.rotary_axes >> 3,
-        s.settings_loading, s.settings_saving, s.settings_count, s.settings_groups, s.settings_result);
+        s.settings_loading, s.settings_saving, s.settings_count, s.settings_groups, s.settings_result,
+        (unsigned long)s.inputs, (unsigned long)s.inputs_known, s.spindle_direction, s.spindle, s.coolant, s.macro_running, active_spindle, s.spindle_count,s.local_job,s.job_preparing,(unsigned long)s.job_bytes,(unsigned long)s.job_total,s.file_total,s.file_offset);
 }
 static bool send_rt(void *, uint8_t b) {
     if (b != 0x80 && b != 0x87 && b != '?')
@@ -85,7 +95,8 @@ static bool send_rt(void *, uint8_t b) {
         return true;
     return installed && uart_write_bytes(UART_NUM_1, &b, 1) == 1;
 }
-static Model model(send_line, send_rt, nullptr);
+static Model *model_instance;
+#define model (*model_instance)
 static char *upload_data;
 static uint32_t upload_revision;
 static bool relist;
@@ -128,17 +139,25 @@ static void demo_settings_init() {
         snprintf(line, sizeof line, "$%d=%s", id, values[kind]); demo_settings.receive(line);
     }
 }
+static int demo_selected_spindle = 0;
 static void mock_reply() {
     if (!pending) {
         return;
     }
-    pending = false;
+    pending = false; pending_count=0;
     demo_settings_init();
     uint32_t t = now();
     if (!strcmp(pending_line, "$I")) {
         model.receive("[VER:1.1f.20261020:]", t);
         model.receive("[FIRMWARE:grblHAL]", t);
         model.receive("<Idle|MPos:125.000,84.500,-12.000|WCO:100,50,-20|FS:0,0|Pn:i>", t);
+    } else if (!strcmp(pending_line, "$SPINDLESH")) {
+        char report[128];
+        snprintf(report, sizeof report, "[SPINDLE:0|0|0|V%s|PWM|0,24000]", demo_selected_spindle == 0 ? "*" : ""); model.receive(report, t);
+        snprintf(report, sizeof report, "[SPINDLE:1|1|2|VD%s|RS485 VFD|1000,18000]", demo_selected_spindle == 1 ? "*" : ""); model.receive(report, t);
+        model.receive("[SPINDLE:2|-|0|V|PWM2|0,1000]", t);
+    } else if (!strncmp(pending_line, "M104Q", 5)) {
+        demo_selected_spindle = atoi(pending_line + 5);
     } else if (!strncmp(pending_line, "$376=", 5)) {
         demo_rotary_mask = strtoul(pending_line + 5, nullptr, 10);
         demo_settings.receive(pending_line);
@@ -167,6 +186,7 @@ static void mock_reply() {
         }
     } else if (!strcmp(pending_line, "$$")) {
         char report[256], positions[96] = {}, offsets[96] = {};
+        model.receive("$30=24000", t); model.receive("$31=0", t);
         for (const auto &s : demo_settings.entries) {
             if (s.id == 376) continue;
             snprintf(report, sizeof report, "$%d=%s", s.id, s.value.c_str()); model.receive(report, t);
@@ -219,7 +239,21 @@ static void mock_reply() {
     }
     // Probe reports are injected separately; an ok alone must never advance a probe.
     model.receive("ok", t);
-    if (!strcmp(pending_line, "$G") && !model.state.sd_active && !model.state.probing)
+    if (pending_line[0] == 'M') {
+        int m = atoi(pending_line + 1);
+        int direction = model.state.spindle_direction;
+        float rpm = model.state.spindle;
+        unsigned coolant = model.state.coolant;
+        if (m == 3 || m == 4) { direction = m == 3 ? 1 : -1; const char *s = strchr(pending_line, 'S'); if (s) rpm = strtof(s + 1, nullptr); }
+        if (m == 5) { direction = 0; rpm = 0; }
+        if (m == 7) coolant |= 1;
+        if (m == 8) coolant |= 2;
+        if (m == 9) coolant = 0;
+        char feedback[96]; snprintf(feedback, sizeof feedback, "<Idle|FS:0,%.0f|A:%s%s%s>", rpm,
+            direction == 1 ? "S" : direction == -1 ? "C" : "", coolant & 1 ? "M" : "", coolant & 2 ? "F" : "");
+        model.receive(feedback, t);
+    }
+    if (!strcmp(pending_line, "$G") && !model.state.sd_active && !model.state.probing && !model.state.macro_running)
         model.receive("<Idle|FS:0,0>", t);
 }
 static void worker(void *) {
@@ -295,10 +329,14 @@ static void worker(void *) {
             relist = false;
             model.list();
         }
-        if (demo)
-            mock_reply();
+        if (demo && model.state.local_job) {
+            if(pending) { unsigned n=pending_count;pending=false;pending_count=0;
+                for(unsigned i=0;i<n;i++)model.receive("ok",t);
+                if(!strncmp(model.state.mode,"Idle",4)||!strncmp(model.state.mode,"Run",3))model.receive("<Run|FS:800,12000>",t);
+            } else if(model.local_stream_done()&&strncmp(model.state.mode,"Hold",4))model.receive("<Idle|FS:0,0>",t);
+        } else if (demo) mock_reply();
         xSemaphoreGive(mutex);
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(model.state.local_job ? 1 : 20));
     }
 }
 void runtime_init() {
@@ -306,6 +344,9 @@ void runtime_init() {
         return;
     mutex = xSemaphoreCreateMutex();
     assert(mutex);
+    void *memory=heap_caps_malloc(sizeof(Model),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    assert(memory);model_instance=new(memory) Model(send_line,send_rt,nullptr);
+    storage_init();
     BaseType_t ok = xTaskCreate(worker, "panel_link", 8192, nullptr, 5, nullptr);
     ESP_ERROR_CHECK(ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
@@ -361,9 +402,19 @@ void runtime_disconnect() {
     model.disconnect();
     xSemaphoreGive(mutex);
 }
+bool runtime_background_idle() {
+    if(!mutex)return false;
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=!model.state.sd_active&&!model.state.busy&&!model.state.probing&&!model.state.uploading&&
+        !model.state.alarm&&!model.state.error&&(!model.state.online||!strcmp(model.state.mode,"Idle"));
+    xSemaphoreGive(mutex);return ok;
+}
 void runtime_snapshot(State &s) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    s = model.state;
+    // Avoid ROM PSRAM-to-PSRAM copies on this P4 revision, as for framebuffer staging.
+    auto dst=(volatile uint8_t *)&s;auto src=(const volatile uint8_t *)&model.state;
+    for(size_t i=0;i<sizeof s;i++)dst[i]=src[i];
+    if(storage_source()) storage_files(s);
     xSemaphoreGive(mutex);
 }
 bool runtime_action(Action a, const char *text, float x, float y) {
@@ -380,12 +431,17 @@ bool runtime_action(Action a, const char *text, float x, float y) {
             model.state.job_complete = false;
         break;
     case Action::List:
-        ok = model.list();
+        if(storage_source()){storage_scan();ok=true;} else ok = model.list();
         break;
     case Action::Run:
-        ok = model.run(text);
+        if(storage_source()) {
+            uint32_t size=0;FILE *file=storage_open(text,&size);
+            ok=file&&model.run_local(file,text,size,now());
+            if(file&&!ok)fclose(file);
+        } else ok = model.run(text);
         break;
     case Action::Preview:
+        if (storage_source()) { storage_prioritize(text); ok=true; break; }
         if (!preview_locked && model.idle()) {
             if (!preview_data)
                 preview_data =
@@ -399,6 +455,21 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         break;
     case Action::Jog:
         ok = model.jog_preset(text, x, (int)y);
+        break;
+    case Action::Spindle:
+        ok = model.spindle_control((int)x, y);
+        break;
+    case Action::SpindleList:
+        ok = model.spindle_list();
+        break;
+    case Action::SpindleSelect:
+        ok = model.spindle_select((int)x);
+        break;
+    case Action::Coolant:
+        ok = model.coolant_control((unsigned)x);
+        break;
+    case Action::Macro:
+        ok = model.macro_run(text);
         break;
     case Action::Zero:
         ok = model.zero((int)x);
@@ -503,9 +574,9 @@ bool runtime_actuator_cycle_speed(float feed) {
     xSemaphoreGive(mutex);
     return ok;
 }
-bool runtime_probe(const ProbeSettings &s) {
+bool runtime_probe(const ProbeSettings &s, int axis, int direction) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.probe_corner(s);
+    bool ok = axis < 0 ? model.probe_corner(s) : model.probe_surface(s, axis, direction);
     xSemaphoreGive(mutex);
     return ok;
 }
@@ -556,6 +627,30 @@ void runtime_preview_release() {
     xSemaphoreTake(mutex, portMAX_DELAY);
     preview_locked = false;
     xSemaphoreGive(mutex);
+}
+bool runtime_can_upload_local() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ready = !model.state.busy && !model.state.sd_active && !model.state.probing &&
+        !model.state.uploading && (!model.state.online || model.idle()) && storage_can_upload();
+    xSemaphoreGive(mutex);
+    return ready;
+}
+bool runtime_upload_local(const char *path, const char *data, size_t size) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool ready = !model.state.busy && !model.state.sd_active && !model.state.probing &&
+        !model.state.uploading && (!model.state.online || model.idle());
+    bool ok = ready && storage_upload(path, data, size);
+    if (ready) {
+        model.state.upload_success = ok;
+        model.state.upload_bytes = ok ? size : 0;
+        model.state.upload_total = size;
+        model.state.upload_revision = ++upload_revision;
+        snprintf(model.state.upload_path, sizeof model.state.upload_path, "%s", path);
+        snprintf(model.state.message, sizeof model.state.message, "%s",
+                 ok ? "Saved to display SD" : "Save failed: existing file, full or unavailable SD");
+    }
+    xSemaphoreGive(mutex);
+    return ok;
 }
 bool runtime_can_upload() {
     xSemaphoreTake(mutex, portMAX_DELAY);

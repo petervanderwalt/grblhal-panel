@@ -51,7 +51,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command('RX $376=2')  # Simulated B remains rotary when A is changed.
         idle()
         tap(848, 564)
-        tap(761, 256)  # Display mm, then configure degree values.
+        tap(761, 448)  # Display mm, then configure degree values.
         tap(910, 160)
         command('SWIPE 500 460 500 310')
         time.sleep(.6)
@@ -91,11 +91,11 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command('RX $376=3')
         idle()
         tap(848, 564)
-        tap(901, 256)
+        tap(901, 448)
         tap(256, 564)
         shot('panel-actuator-rotary-inch')
         tap(848, 564)
-        tap(761, 256)
+        tap(761, 448)
         command('SWIPE 500 460 500 310')
         time.sleep(.6)
         command('SWIPE 500 460 500 284')

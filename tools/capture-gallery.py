@@ -72,7 +72,7 @@ def main():
             remote.exchange(port, "shot", args.output / (name + ".png"))
 
         def page(index):
-            tap((176, 512, 848)[index], 564)
+            tap((128, 384, 896, 640)[index], 564)
             assert data("PREFS")["page"] == index
 
         def idle():
@@ -134,7 +134,7 @@ def main():
 
             if args.section in ("core", "all"):
                 page(2)
-                tap(761, 256)
+                tap(761, 448)
                 page(0)
                 idle()
                 tap(631, 184)
@@ -152,11 +152,12 @@ def main():
                 shot("panel-zero-confirm")
                 tap(342, 409)
                 tap(130, 432)
+                tap(720, 154)  # Corner mode retains tool-diameter editing.
                 shot("panel-probe")
                 tap(280, 272)
                 shot("panel-numpad")
                 tap(380, 459)
-                tap(916, 118)
+                tap(916, 82)
 
                 page(2)
                 shot("panel-settings")
@@ -169,29 +170,23 @@ def main():
                 shot("panel-settings-uart")
                 page(0)
                 page(2)
-                tap(901, 256)
+                tap(901, 448)
                 shot("panel-settings-inch")
                 page(0)
                 shot("panel-jog-inch")
                 page(2)
-                tap(761, 256)
+                tap(761, 448)
 
                 page(1)
+                if data("SD STATE")["local"]:
+                    page(2)
+                    tap(830, 266)
+                    tap(830, 350)
+                    page(1)
+                assert not data("SD STATE")["local"]
                 tap(888, 112)
                 assert data("STATE")["files"] == 3
                 shot("panel-files")
-                tap(778, 189)
-                deadline = time.monotonic() + 20
-                while not data("STATE")["download_ready"]:
-                    if time.monotonic() > deadline:
-                        raise TimeoutError("Preview download")
-                    time.sleep(.2)
-                time.sleep(2)
-                shot("sd-preview-3d")
-                tap(836, 198)
-                shot("sd-preview-top")
-                tap(944, 198)
-                tap(886, 112)
                 tap(922, 189)
                 shot("panel-run-confirm")
                 tap(630, 409)
@@ -205,7 +200,7 @@ def main():
                 tap(130, 370)
                 command("RX [MSG:Program End]")
                 idle()
-                assert data("PREFS")["page"] == 4
+                assert data("PREFS")["page"] == 5
                 shot("panel-complete")
                 tap(512, 366)
                 command("RX ALARM:1")
@@ -218,7 +213,7 @@ def main():
                 idle()
 
             page(2)
-            tap(901 if original_inches else 761, 256)
+            tap(901 if original_inches else 761, 448)
             page(1)
             tap(888, 112)
             print("Gallery captured; preview remains on Files. Review every PNG before publishing.", flush=True)

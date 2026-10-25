@@ -57,6 +57,19 @@ def self_test():
             idat += payload
         offset += 12 + size
     assert zlib.decompress(idat) == b"\x00\xff\x00\x00\x00\xff\x00\x00\x00\xff"
+    class DamagedFrame:
+        def __init__(self): self.lines = [b'@UGSHOT 1 1 00000000\n', b'@UGROW 0 \xa5\n', b'@UGEND\n']
+        def write(self, _): pass
+        def readline(self):
+            assert self.lines, 'Damaged frame did not finish cleanly'
+            return self.lines.pop(0)
+    port = DamagedFrame()
+    try:
+        exchange(port, 'shot')
+    except ValueError as error:
+        assert 'non-ASCII' in str(error) and not port.lines
+    else:
+        raise AssertionError('Accepted a damaged frame')
     print("RLE validation and PNG color/CRC tests passed")
 
 
@@ -67,17 +80,28 @@ def exchange(port, command, output=None, point=None):
     width = height = crc = None
     rows = []
     diagnostics = []
+    packet_error = None
     while time.monotonic() < deadline:
         line = port.readline().strip()
         marker = line.find(b"@UG")
         if marker < 0:
             if line.startswith(b"ESP-ROM:"):
-                raise RuntimeError("Device reset during command\n" + "\n".join(diagnostics))
+                reset_log = [line.decode(errors="replace")]
+                for _ in range(12):
+                    following = port.readline().strip()
+                    if following:
+                        reset_log.append(following.decode(errors="replace"))
+                raise RuntimeError("Device reset during command\n" + "\n".join(diagnostics + reset_log))
             if line:
                 diagnostics.append(line.decode("utf-8", errors="replace"))
                 diagnostics = diagnostics[:128]
             continue
-        line = line[marker:].decode("ascii")
+        try:
+            line = line[marker:].decode("ascii")
+        except UnicodeDecodeError:
+            if command != "shot": raise
+            packet_error = "Screenshot contains non-ASCII data"
+            continue  # Drain to END before restoring touch; never save the damaged frame.
         if line.startswith("@UGDBG"):
             diagnostics = (diagnostics + [line])[:128]
         if line.startswith("@UGERR"):
@@ -86,6 +110,8 @@ def exchange(port, command, output=None, point=None):
             print(line)
             return
         if command != "shot":
+            continue
+        if packet_error and line != "@UGEND":
             continue
         if line.startswith("@UGSHOT "):
             _, w, h, crc_text = line.split()
@@ -100,6 +126,8 @@ def exchange(port, command, output=None, point=None):
                 raise ValueError("Missing or out-of-order screenshot row")
             rows.append(decode_row(encoded, width))
         elif line == "@UGEND" and width is not None:
+            if packet_error:
+                raise ValueError(packet_error)
             raw = b"".join(rows)
             if len(rows) != height or zlib.crc32(raw) & 0xffffffff != crc:
                 raise ValueError("Screenshot incomplete or CRC mismatch")

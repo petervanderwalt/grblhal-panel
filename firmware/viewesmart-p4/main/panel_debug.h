@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 bool panel_debug_test(void);
+bool panel_memory_test(void);
 void panel_debug_demo(bool on);
 bool panel_debug_receive(const char *line);
 void panel_debug_state(char *buffer, size_t size);

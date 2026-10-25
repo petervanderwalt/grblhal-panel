@@ -6,6 +6,7 @@
 #include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
+#include "esp_cache.h"
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,6 +15,9 @@
 #include "bsp/display.h"
 #include "lvgl.h"
 #include "panel_debug.h"
+extern void panel_debug_storage(char *,size_t);
+extern bool panel_ui_preview_server_field(const char *);
+extern bool panel_storage_capture_pause(bool);
 #include "panel_ui.h"
 #include "wifi_bridge.h"
 
@@ -41,12 +45,12 @@ static void reply(const char *text)
     fflush(stdout);
 }
 
-static void screenshot(void)
+static void screenshot_frame(void)
 {
     assert(heap_caps_check_integrity_all(true));
     const size_t size = BSP_LCD_H_RES * BSP_LCD_V_RES * 2;
-    uint16_t *pixels = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    char *line = malloc(BSP_LCD_H_RES * 8 + 48);
+    uint16_t *pixels = heap_caps_aligned_alloc(128, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    char *line = heap_caps_malloc(BSP_LCD_H_RES * 8 + 48, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!pixels || !line) {
         reply("\n@UGERR memory\n");
         free(pixels);
@@ -63,7 +67,16 @@ static void screenshot(void)
     printf("@UGDBG screenshot stack %lu\n", (unsigned long)uxTaskGetStackHighWaterMark(NULL));
     assert(heap_caps_check_integrity_all(true));
 
+    reply("@UGDBG screenshot heap checked\n");
     esp_err_t err = bsp_display_copy_framebuffer(pixels, size);
+    reply("@UGDBG screenshot pixels staged\n");
+    // Keep interrupt-masked cache maintenance bounded.
+    for (size_t offset=0; err==ESP_OK && offset<size; offset+=16384) {
+        size_t chunk=size-offset<16384?size-offset:16384;
+        err=esp_cache_msync((uint8_t *)pixels+offset,chunk,ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        vTaskDelay(1);
+    }
+    reply("@UGDBG screenshot frame copied\n");
     bsp_display_unlock();
     assert(heap_caps_check_integrity_all(true));
     if (err != ESP_OK) {
@@ -91,6 +104,13 @@ static void screenshot(void)
     }
     free(line);
     free(pixels);
+}
+
+static void screenshot(void)
+{
+    if (panel_storage_capture_pause(true)) screenshot_frame();
+    else reply("\n@UGERR storage_busy\n");
+    panel_storage_capture_pause(false);
 }
 
 /* UI callbacks run on the LVGL task, including screen creation and deletion. */
@@ -138,6 +158,10 @@ static void command(const char *line)
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strncmp(line,"UG PREVIEW SERVER ",18)) {
+        bsp_display_lock(0);bool ok=panel_ui_preview_server_field(line+18);bsp_display_unlock();reply(ok?"@UGOK PREVIEW\n":"@UGERR server_field\n");
+    } else if (!strcmp(line,"UG SD STATE")) {
+        panel_debug_storage(payload,sizeof payload);snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG WIFI STATE")) {
         wifi_bridge_debug(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
@@ -165,6 +189,22 @@ static void command(const char *line)
         bool ok = valid && panel_ui_setting_field(text);
         bsp_display_unlock(); memset(text, 0, sizeof text);
         reply(ok ? "@UGOK SETTING\n" : "@UGERR setting_field\n");
+    } else if (!strncmp(line, "UG MACRO FIELD ", 15)) {
+        unsigned index; int used = 0;
+        bool valid = sscanf(line + 15, "%u %n", &index, &used) == 1 && used > 0;
+        const char *hex = line + 15 + used; size_t n = strlen(hex); static char text[769];
+        memset(text, 0, sizeof text);
+        valid = valid && n <= 1536 && n % 2 == 0;
+        for (size_t i = 0; valid && i < n; i += 2) {
+            unsigned byte; int consumed = 0;
+            if (sscanf(hex + i, "%2x%n", &byte, &consumed) != 1 || consumed != 2 ||
+                (byte != 10 && byte != 13 && (byte < 32 || byte > 126))) valid = false;
+            else text[i / 2] = byte;
+        }
+        bsp_display_lock(0);
+        bool ok = valid && panel_ui_macro_field(index, text);
+        bsp_display_unlock();
+        reply(ok ? "@UGOK MACRO\n" : "@UGERR macro_field\n");
     } else if (!strncmp(line, "UG ACTUATOR FIELD ", 18)) {
         unsigned index; int used = 0;
         bool valid = sscanf(line + 18, "%u %n", &index, &used) == 1 && used > 0;

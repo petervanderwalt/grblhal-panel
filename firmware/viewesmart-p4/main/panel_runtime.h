@@ -6,6 +6,11 @@ enum class Action {
     Run,
     Preview,
     Jog,
+    Spindle,
+    SpindleList,
+    SpindleSelect,
+    Coolant,
+    Macro,
     ActuatorHome,
     Zero,
     GotoZero,
@@ -27,7 +32,7 @@ bool runtime_connect(int tx = 37, int rx = 38, int baud = 115200);
 void runtime_disconnect();
 void runtime_snapshot(State &state);
 bool runtime_action(Action action, const char *text = nullptr, float a = 0, float b = 0);
-bool runtime_probe(const ProbeSettings &settings);
+bool runtime_probe(const ProbeSettings &settings, int axis = -1, int direction = -1);
 bool runtime_actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary = false);
 bool runtime_actuator_type(bool rotary);
 bool runtime_settings_load();
@@ -41,9 +46,12 @@ bool runtime_inject(const char *line);
 void runtime_last_tx(char *buffer, size_t size);
 bool model_self_test();
 bool actuator_self_test();
+bool tools_self_test();
 bool runtime_preview_acquire(const char **data, size_t *size);
 void runtime_preview_release();
 bool runtime_can_upload();
+bool runtime_can_upload_local();
+bool runtime_upload_local(const char *path, const char *data, size_t size);
 bool runtime_upload(const char *path, const char *data, size_t size);
 void runtime_cancel_upload();
 } // namespace panel

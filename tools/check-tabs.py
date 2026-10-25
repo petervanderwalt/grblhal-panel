@@ -32,13 +32,13 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         remote.debug(port, "DEMO ON")
         time.sleep(.4)
         assert not json.loads(remote.debug(port, "PREFS").removeprefix("@UGDATA ")).get("actuator_mode"), "Select CNC mode before this check"
-        for target in (1, 2, 0, 2, 1, 0):
-            remote.exchange(port, "tap", point=((176, 512, 848)[target], 564))
+        for target in (1, 3, 2, 0, 2, 3, 1, 0):
+            remote.exchange(port, "tap", point=((128, 384, 896, 640)[target], 564))
             time.sleep(.3)
             prefs = json.loads(remote.debug(port, "PREFS").removeprefix("@UGDATA "))
             assert prefs["page"] == target, prefs
         # Back-to-back selections must cancel the previous slide cleanly.
-        for x in (512, 848, 176):
+        for x in (384, 640, 896, 128):
             remote.exchange(port, "tap", point=(x, 564))
         time.sleep(.3)
         prefs = json.loads(remote.debug(port, "PREFS").removeprefix("@UGDATA "))

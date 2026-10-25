@@ -123,11 +123,11 @@ static bool sd_and_progress() {
     model->tick(507);
     model->receive("<Run|SD:37.5,/jobs/test.nc|Ln:125|FS:800,12000>", 600);
     CHECK(model->state.sd_active && model->state.percent == 37.5f && model->state.line == 125);
-    CHECK(model->pause() && capture->bytes[capture->b - 1] == '!');
+    CHECK(model->pause() && capture->bytes[capture->b - 1] == (model->state.grblhal ? 0x82 : '!'));
     model->receive("<Hold:1>", 601);
     CHECK(!model->resume());
     model->receive("<Hold:0>", 602);
-    CHECK(model->resume() && capture->bytes[capture->b - 1] == '~');
+    CHECK(model->resume() && capture->bytes[capture->b - 1] == (model->state.grblhal ? 0x81 : '~'));
     model->receive("<Idle>", 603);
     CHECK(!model->state.sd_active && model->state.percent == 100);
     return true;
@@ -290,6 +290,59 @@ static bool jog_speed_presets() {
     CHECK(!strcmp(capture->lines[2], "$J=G91 G21 Z1.000 F300.0"));
     return true;
 }
+static bool surface_sequence() {
+    const int axes[] = {2, 0, 0, 1, 1}, directions[] = {-1, -1, 1, -1, 1};
+    for (int test = 0; test < 5; ++test) {
+        ready();
+        ProbeSettings p; p.diameter = test ? 6 : 0; // Z never needs a tool diameter.
+        int axis = axes[test], direction = directions[test];
+        CHECK(!model->probe_surface(p, axis, direction));
+        CHECK(model->contact_test(400));
+        CHECK(model->state.contact_testing);
+        model->receive("<Idle|Pn:I>", 401); model->tick(401);
+        CHECK(model->contact_test(402)); // Reopening a modal preserves the release stage.
+        model->receive("<Idle|Pn:i>", 403); model->tick(403);
+        CHECK(model->state.contact_ready && !model->state.contact_testing);
+        bool absolute = test % 2 == 0;
+        model->state.absolute = absolute;
+        CHECK(model->probe_surface(p, axis, direction));
+        CHECK(!model->state.contact_ready);
+        bool waiting = false;
+        for (int n = 0; n < 12 && model->state.busy; ++n) {
+            model->tick(500 + n * 10);
+            if (capture->n <= n) break;
+            const char *cmd = capture->lines[n];
+            if (strstr(cmd, "G38.2")) {
+                model->receive("ok", 501 + n * 10);
+                model->tick(502 + n * 10);
+                CHECK(capture->n == n + 1);
+                waiting = true;
+                model->receive("[PRB:1,2,3:1]", 503 + n * 10);
+            } else model->receive("ok", 501 + n * 10);
+        }
+        model->tick(1000);
+        CHECK(waiting && !model->state.probing && capture->n == 7);
+        CHECK(!strcmp(capture->lines[0], "G21 G91"));
+        char expected[96];
+        snprintf(expected, sizeof expected, "G38.2 %c%.3f F100.0", "XYZ"[axis], direction * 25.f);
+        CHECK(!strcmp(capture->lines[1], expected));
+        float offset = axis == 2 ? 5 : -direction * 13.f;
+        snprintf(expected, sizeof expected, "G10 L20 P0 %c%.3f", "XYZ"[axis], offset);
+        CHECK(!strcmp(capture->lines[2], expected));
+        snprintf(expected, sizeof expected, "G0 %c%.3f", "XYZ"[axis], -direction * 2.f);
+        CHECK(!strcmp(capture->lines[3], expected));
+        CHECK(!strcmp(capture->lines[4], absolute ? "G90" : "G91"));
+        CHECK(!strcmp(capture->lines[5], "$G") && !strcmp(capture->lines[6], "$#"));
+    }
+    ready(); model->state.contact_ready = true;
+    ProbeSettings p;
+    CHECK(!model->probe_surface(p, 2, 1));
+    CHECK(model->probe_surface(p, 2, -1));
+    model->tick(500); model->receive("ok", 501); model->tick(502);
+    model->receive("[PRB:0,0,0:0]", 503);
+    CHECK(model->state.error && !model->state.probing && capture->n == 2); // No zero/retract after failed PRB.
+    return true;
+}
 static bool corner_sequence() {
     ready();
     ProbeSettings p;
@@ -418,6 +471,7 @@ bool model_self_test() {
                           {"jog_speed_presets", jog_speed_presets},
                           {"commands_and_faults", commands_and_faults},
                           {"corner_sequence", corner_sequence},
+                          {"single_surface_sequence_and_quick_contact", surface_sequence},
                           {"units_overrides_and_completion", units_overrides_and_completion},
                           {"feedback_and_write_failure", lost_feedback_and_write_failure}};
     for (const auto &t : tests) {

@@ -3,8 +3,9 @@
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "panel_runtime.h"
 #include "panel_actuator_web.h"
+#include "panel_runtime.h"
+#include "panel_storage.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,18 +78,22 @@ static esp_err_t handle(httpd_req_t *request) {
         return response(request, "403 Forbidden", "{\"error\":\"origin-not-allowed\"}");
     if (request->method == HTTP_OPTIONS)
         return response(request, "204 No Content", "");
-    bool ready = panel::runtime_can_upload();
+    bool local = panel::storage_source();
+    bool ready = local ? panel::runtime_can_upload_local() : panel::runtime_can_upload();
     if (request->method == HTTP_GET) {
         static panel::State state;
         panel::runtime_snapshot(state);
         char json[512];
         if (!strcmp(request->uri, "/gcam/v1/ping")) {
-            // gCAM v1 requires this compatibility identifier; product identifies the physical receiver.
+            // gCAM v1 requires this compatibility identifier; product identifies the
+            // physical receiver.
             snprintf(json, sizeof json,
                      "{\"app\":\"gSender\",\"product\":\"grblHAL "
-                     "panel\",\"version\":\"panel-1\",\"enabled\":true,\"busy\":%s,\"accepting\":%s,"
-                     "\"maxBytes\":2097152,\"destination\":\"controller-sd\"}",
-                     ready ? "false" : "true", ready ? "true" : "false");
+                     "panel\",\"version\":\"panel-1\",\"enabled\":true,\"busy\":%s,"
+                     "\"accepting\":%s,"
+                     "\"maxBytes\":2097152,\"destination\":\"%s\"}",
+                     ready ? "false" : "true", ready ? "true" : "false",
+                     local ? "display-sd" : "controller-sd");
         } else {
             cJSON *j = cJSON_CreateObject();
             if (!j)
@@ -156,20 +161,26 @@ static esp_err_t handle(httpd_req_t *request) {
     }
     if (!ready) {
         cJSON_Delete(json);
-        return response(request, "409 Conflict", "{\"error\":\"controller-not-ready\"}");
+        return response(request, "409 Conflict",
+                        local ? "{\"error\":\"display-sd-unavailable-or-file-exists\"}"
+                              : "{\"error\":\"controller-not-ready\"}");
     }
     char filename[101], path[102];
     panel_handoff_name(cJSON_IsString(name) ? name->valuestring : nullptr, filename, sizeof filename);
     snprintf(path, sizeof path, "/%s", filename);
-    bool accepted = panel::runtime_upload(path, code->valuestring, size);
+    bool accepted = local ? panel::runtime_upload_local(path, code->valuestring, size)
+                          : panel::runtime_upload(path, code->valuestring, size);
     cJSON_Delete(json);
     if (!accepted)
-        return response(request, "409 Conflict", "{\"error\":\"controller-not-ready\"}");
+        return response(request, "409 Conflict",
+                        local ? "{\"error\":\"display-sd-unavailable-or-file-exists\"}"
+                              : "{\"error\":\"controller-not-ready\"}");
     char result[256];
     snprintf(result, sizeof result,
-             "{\"accepted\":true,\"name\":\"%s\",\"destination\":\"controller-sd\",\"status\":\"/gcam/v1/"
+             "{\"accepted\":true,\"name\":\"%s\",\"destination\":\"%s\","
+             "\"status\":\"/gcam/v1/"
              "status\"}",
-             filename);
+             filename, local ? "display-sd" : "controller-sd");
     return response(request, "202 Accepted", result);
 }
 } // namespace

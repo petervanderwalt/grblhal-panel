@@ -43,7 +43,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         time.sleep(1)
         assert not json.loads(command("PREFS").removeprefix("@UGDATA ")).get("actuator_mode"), "Select CNC mode before this check"
         tap(848, 564)
-        tap(761, 256)  # Metric display units
+        tap(761, 448)  # Metric display units
         tap(176, 564)
         tap(631, 184)  # Incremental
         command("RX $110=6000")
@@ -107,10 +107,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("RX <Run|SD:42.5,/test.nc|FS:800,12000>")
         time.sleep(.3)
         tap(130, 370)  # Pause on dedicated job page
-        assert "0x21" in command("LAST")
+        assert "0x82" in command("LAST")
         tap(130, 370)
-        assert "0x7E" in command("LAST")
-        tap(512, 564)  # Navigation is locked during the job
+        assert "0x81" in command("LAST")
+        tap(384, 564)  # Navigation is locked during the job
         tap(374, 370)  # Job Stop below the DRO
         data = json.loads(command("STATE").removeprefix("@UGDATA "))
         assert data["job"], "Stop skipped confirmation"

@@ -107,8 +107,10 @@ From the repository root, using Python with pyserial:
 python tools/capture-gallery.py --section core
 ```
 
+Cached views and the Preview server dialog are captured by `tools/check-preview.py`.
+
 This captures Jog modes and disabled controls, metric/inch settings, probing and
-numeric input, Home/Zero confirmations, controller file listing, Top/3D previews,
+numeric input, Home/Zero confirmations, controller file listing,
 Run confirmation, running/paused/completed jobs, alarms and command errors.
 It restores the original display-unit preference and physical touch, and leaves
 preview on the simulated Files list. Home/Zero confirmations are cancelled; no
@@ -185,3 +187,40 @@ Keep touch callbacks and rendering on the LVGL task. Keep the internal-RAM row
 staging when copying the framebuffer; a bulk PSRAM-to-PSRAM copy caused watchdog
 resets on this board. Retain the tested SDK configuration, including disabled
 PSRAM instruction/rodata fetching for the ESP-Hosted Wi-Fi path.
+
+The staging passes use explicit volatile byte loops. Row-sized ROM `memcpy`
+calls also caused intermittent capture-time memory corruption on this display;
+repeated page/dialog captures passed after removing that path. Retain both loops.
+`@UGDBG` phase markers distinguish heap checks from framebuffer copying, and
+`UG STATE` includes `reset_reason`. On a reset, the host utility preserves the
+ROM reset header and initial boot lines alongside the diagnostic trace.
+Keep the staging row and RLE output buffer in internal RAM. The PSRAM snapshot
+is cache-line aligned and written back before releasing the display lock. A
+damaged packet is rejected and drained through END so touch cleanup can run;
+the image still requires all rows and the matching CRC before it is saved.
+
+
+## Display SD and cached views
+
+`UG SD STATE` reports mount state, file count, current page, preview server and
+cache readiness for the four visible files. Files starts on Display SD. Select
+Controller SD explicitly before running controller-file demo tests.
+`UG PREVIEW SERVER <http-url>` fills the open Settings editor; Save commits it.
+`UG PREFS` includes `preview_view` (0-7) and `local_preview` for UI checks.
+
+`tools/check-display-sd.py` validates the actual development card's catalogue and
+isolated character-counting streaming. `tools/check-preview.py` checks cached
+native bitmap views. See [Display SD](display-sd-and-previews.md) for server setup,
+cache format, sender limits and hardware memory requirements.
+
+Capture cooperatively pauses background preview transfers and hashing; it does not pause a running G-code sender. `storage_busy` rejects capture if I/O has not yielded within 20 seconds.
+
+`tools/check-file-location.py` checks both Settings file locations across RTS
+reboots and leaves Onboard SD selected. `tools/check-handoff-sd.py --no-captures`
+checks gCAM uploads from Jog with the shared Settings source.
+
+`tools/check-text-fallback.py` checks the real 14-line file-start fallback with
+the PC preview service temporarily stopped. It adds a small uniquely named
+header sample on onboard SD, captures the LCD and checks the top-left back arrow.
+It uses UART-off demo mode, never runs the job, and restores physical touch.
+Restart the preview service after this check.

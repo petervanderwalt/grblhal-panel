@@ -85,10 +85,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         command("RX $376=0")
         time.sleep(1)
         settings()
-        tap(761, 256)
+        tap(761, 448)
         tap(764, 160)
         assert not data("PREFS")["actuator_mode"]
-        tap(512, 564)
+        tap(384, 564)
         assert data("PREFS")["page"] == 1
         tap(848, 564)
         tap(910, 160)
@@ -104,13 +104,13 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         configure(2, ("Vent", "Down", "Up", "0", "-100", "100"), 2)
         configure(3, ("Lift", "Lower", "Raise", "0", "-150", "180"), 0)
         settings()
-        tap(901, 256)
+        tap(901, 448)
         command("SWIPE 500 460 500 310")
         time.sleep(.6)
         tap(830, 347)
         tap(882, 280)  # Saving unchanged inch-displayed values must preserve calibration.
         settings()
-        tap(761, 256)
+        tap(761, 448)
         tap(256, 564)
         idle()
         shot("panel-actuators")

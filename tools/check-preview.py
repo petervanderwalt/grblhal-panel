@@ -1,65 +1,86 @@
-"""Check controller SD download/preview/run on the display with UART-off sample feedback."""
+"""Check cached display-SD views and both Files sources with UART-off feedback."""
+import argparse
 import importlib.util
 import json
-import os
 from pathlib import Path
-import sys
 import time
 import serial
 
-spec = importlib.util.spec_from_file_location("remote", Path(__file__).with_name("ui-remote.py"))
-remote = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(remote)
-with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port:
-    port.dtr = port.rts = False
-    port.port = os.environ.get("PANEL_PORT", "COM12")
-    port.open()
-    time.sleep(2)
-    port.reset_input_buffer()
-    for attempt in range(15):
-        port.write(b"\nUG SYNC\n")
-        if b"@UGERR command" in port.readline():
-            break
-    else:
-        raise TimeoutError("Console sync")
-    time.sleep(.2)
-    port.reset_input_buffer()
-    def command(s):
-        return remote.debug(port, s)
-    def tap(x, y):
-        remote.exchange(port, "tap", point=(x, y))
-        time.sleep(.3)
-    def state():
-        return json.loads(command("STATE").removeprefix("@UGDATA "))
-    def shot(name):
-        if "--no-captures" not in sys.argv:
-            remote.exchange(port, "shot", Path("captures") / name)
-    try:
-        command("TOUCH OFF")
-        command("TEST")
-        command("DEMO ON")
-        time.sleep(1)
-        assert not json.loads(command("PREFS").removeprefix("@UGDATA ")).get("actuator_mode"), "Select CNC mode before this check"
-        tap(512, 564)
-        tap(888, 112)
-        assert state()["files"] == 3
-        tap(778, 189)
-        assert "$F<=/bracket.nc" in command("LAST")
-        time.sleep(1)
-        data = state()
-        assert data["download_ready"] and data["download_bytes"] > 100 and not data["job"], data
-        shot("sd-preview-3d.png")
-        tap(836, 198)  # Top
-        shot("sd-preview-top.png")
-        tap(944, 198)  # 3D; zoom uses physical pinch input
-        tap(886, 112)  # Back to files
-        tap(922, 189)  # Run selected, separate from preview
-        tap(630, 409)
-        assert "$F=/bracket.nc" in command("LAST")
-        assert state()["job"]
-        tap(374, 370)
-        assert not state()["job"]
-        tap(176, 564)
-        print("PASS: SD download, viewer, Top/3D, file round trip and separate confirmed run; physical pinch not injected", flush=True)
-    finally:
-        command("TOUCH ON")
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--port',default='COM12')
+parser.add_argument('--file',default='/arc-ijk.gcode')
+parser.add_argument('--captures',type=Path,default=Path('captures/cached-preview'))
+parser.add_argument('--no-captures',action='store_true')
+args=parser.parse_args()
+spec=importlib.util.spec_from_file_location('remote',Path(__file__).with_name('ui-remote.py'))
+r=importlib.util.module_from_spec(spec);spec.loader.exec_module(r)
+args.captures.mkdir(parents=True,exist_ok=True)
+with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p, (args.captures/'serial.log').open('wb') as trace:
+ original_readline=p.readline
+ def traced_readline(*a,**kw):
+  line=original_readline(*a,**kw);trace.write(line);trace.flush();return line
+ p.readline=traced_readline
+ p.dtr=p.rts=False;p.port=args.port;p.open()
+ for _ in range(25):
+  p.write(b'\nUG SYNC\n');deadline=time.monotonic()+1
+  while time.monotonic()<deadline:
+   if b'@UGERR command' in p.readline():break
+  else:continue
+  break
+ else:raise TimeoutError('Console sync')
+ time.sleep(.8);p.reset_input_buffer()
+ def cmd(s):return r.debug(p,s)
+ def data(s='STATE'):return json.loads(cmd(s).removeprefix('@UGDATA '))
+ def tap(x,y):r.exchange(p,'tap',point=(x,y));time.sleep(.4)
+ def location(local):
+  tap(896,564);tap(830,266);tap(830,313 if local else 350);tap(384,564)
+  assert data('SD STATE')['local']==local
+ def choose_view(view):
+  tap(885,190)
+  cmd('SWIPE 890 260 890 440' if view<6 else 'SWIPE 890 440 890 260')
+  time.sleep(.3)
+  tap(885,246+38*view if view<6 else 401+38*(view-6))
+  assert data('PREFS')['preview_view']==view
+ def shot(name):
+  if not args.no_captures:r.exchange(p,'shot',args.captures/(name+'.png'))
+ try:
+  cmd('DEMO ON');cmd('TOUCH OFF');time.sleep(1)
+  assert not data()['job'],'Stop the current demo job first'
+  if data('PREFS').get('local_preview'):tap(56,112)
+  tap(384,564)
+  if not data('SD STATE')['local']:location(True)
+  sd=data('SD STATE')
+  for _ in range(sd['page']):tap(120,478)
+  for _ in range(128):
+   sd=data('SD STATE')
+   found=next((i for i,f in enumerate(sd['files']) if f['path'].lower()==args.file.lower()),None)
+   if found is not None:break
+   assert sd['page']*4+4<sd['file_count'],args.file
+   tap(900,478)
+  else:raise AssertionError('File not found')
+  shot('panel-display-files')
+  tap(778,189+72*found)
+  for _ in range(300):
+   sd=data('SD STATE')
+   if sd['files'][found]['preview']:break
+   time.sleep(2)
+  assert sd['files'][found]['preview'],sd
+  assert data('PREFS')['local_preview'] and not data()['job']
+  choose_view(6)
+  shot('panel-preview-isometric')
+  choose_view(7)
+  shot('panel-preview-perspective')
+  choose_view(0)
+  shot('panel-preview-top')
+  for view in range(8):choose_view(view)
+  cmd('SWIPE 350 300 400 320');time.sleep(.4)
+  assert data('PREFS')['local_preview'] and not data()['job']
+  tap(56,112);location(False)
+  assert not data('SD STATE')['local']
+  time.sleep(.5);assert data()['files']==3
+  shot('panel-controller-files')
+  tap(896,564);shot('panel-settings');tap(380,96);shot('panel-preview-server')
+  tap(940,55);location(True)
+  assert data('SD STATE')['local']
+  print('PASS all eight cached views, image pan, separate controller listing and preview-server UI',flush=True)
+ finally:cmd('TOUCH ON')

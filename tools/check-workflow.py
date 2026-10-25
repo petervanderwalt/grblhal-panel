@@ -65,7 +65,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(848, 564)
         page(2)
         original_diameter = data("PREFS")["diameter"]
-        tap(901, 256)
+        tap(901, 448)
         assert data("PREFS")["inches"] == 1
         shot("panel-settings-inch")
         command("SWIPE 500 460 500 160")
@@ -84,17 +84,19 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         idle()
         shot("panel-jog-inch")
         tap(130, 432)
+        tap(720, 154)  # Corner mode retains tool-diameter editing.
         tap(280, 272)
         number(".25")
         assert abs(data("PREFS")["diameter"] - 6.35) < .001
-        tap(916, 118)
+        tap(916, 82)
         tap(848, 564)
-        tap(761, 256)
+        tap(761, 448)
         assert data("PREFS")["inches"] == 0
         shot("panel-settings")
         tap(176, 564)
         shot("panel-jog")
         tap(130, 432)
+        tap(720, 154)  # Corner mode retains tool-diameter editing.
         tap(280, 272)
         number(original_diameter)
         assert data("PREFS")["diameter"] == original_diameter
@@ -104,26 +106,31 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         tap(630, 409)  # A new error replaces the open probe modal.
         assert data("STATE")["error"] == 0
         tap(130, 432)
-        tap(916, 118)  # Close probe
+        tap(720, 154)  # Corner mode retains tool-diameter editing.
+        tap(916, 82)  # Close probe
         page(0)
-        tap(512, 564)
+        tap(384, 564)
         page(1)
+        if data("SD STATE")["local"]:
+            tap(170, 110)
+            tap(170, 194)
+        assert not data("SD STATE")["local"]
         tap(888, 112)
         assert data("STATE")["files"] == 3
         shot("panel-files")
         tap(922, 189)  # First row Run
         assert not data("STATE")["job"], "Run skipped confirmation"
         tap(630, 409)
-        page(3)
+        page(4)
         assert data("STATE")["job"]
         command("RX <Run|SD:42.5,/bracket.nc|MPos:125,84.5,-12|FS:800,12000|Ov:100,100,100>")
         time.sleep(.3)
         tap(176, 564)
-        page(3)  # Jog cannot be reached during a job.
+        page(4)  # Jog cannot be reached during a job.
         tap(130, 370)
-        assert "0x21" in command("LAST")
+        assert "0x82" in command("LAST")
         tap(130, 370)
-        assert "0x7E" in command("LAST")
+        assert "0x81" in command("LAST")
         command("SWIPE 742 319 790 319")  # Feed override, commit on release
         assert command("LAST").endswith(("0x91", "0x93"))
         time.sleep(.7)
@@ -132,24 +139,24 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         shot("panel-job")
         command("RX [MSG:Program End]")
         time.sleep(.3)
-        page(3)  # Message alone does not prove motion has stopped.
+        page(4)  # Message alone does not prove motion has stopped.
         idle()
-        page(4)
+        page(5)
         shot("panel-complete")
         tap(512, 366)
         page(0)
         # An explicitly stopped job must never display Job Complete.
         command("RX <Run|SD:5,/bracket.nc|Ov:100,100,100>")
         time.sleep(.3)
-        page(3)
+        page(4)
         last = command("LAST")
         tap(374, 370)
-        page(3)
+        page(4)
         assert data("STATE")["job"], "Stop skipped confirmation"
         assert command("LAST") == last, "Stop sent a command before confirmation"
         shot("panel-stop-confirm")
         tap(342, 409)  # Cancel must leave the running job untouched.
-        page(3)
+        page(4)
         assert data("STATE")["job"]
         assert command("LAST") == last
         tap(374, 370)

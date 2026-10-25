@@ -1,4 +1,5 @@
 #include "panel_model.h"
+#include "panel_macros.h"
 #include <ctype.h>
 #include <math.h>
 #include <new>
@@ -83,8 +84,11 @@ static const char *fault_text(bool alarm, int code) {
         return "Controller rejected the command. Check setup before retrying.";
     }
 }
-Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c) {}
+Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c), stream_(l,c) {}
 void Model::cancel(const char *message) {
+    if (state.local_job) { state.job_failed = true; stream_.cancel(); }
+    state.local_job = state.job_preparing = false; stream_paused_ = false;
+    if (state.macro_running) state.macro_failed = true;
     if (state.settings_loading || state.settings_saving) {
         state.settings_result = -1;
         snprintf(state.settings_message, sizeof state.settings_message, "%s", message);
@@ -100,6 +104,7 @@ void Model::cancel(const char *message) {
     if (state.sd_active && (state.alarm || state.error))
         state.job_failed = true;
     goto_pending_ = false;
+    state.macro_running = false;
     if (state.downloading)
         state.download_ready = false;
     state.downloading = false;
@@ -107,13 +112,18 @@ void Model::cancel(const char *message) {
     queued_ = cursor_ = 0;
     awaiting_ = need_probe_ = got_probe_ = false;
     state.busy = state.probing = state.listing = false;
+    if (state.spindles_loading) { state.spindles_result = -1; state.spindle_revision++; }
+    state.spindles_loading = false;
     state.contact_ready = false;
     contact_stage_ = 0;
+    state.contact_testing = false;
     if (!state.job_seen_run)
         state.sd_active = false;
     copy(state.message, message, sizeof state.message);
 }
 void Model::begin(uint32_t now) {
+    bool interrupted = state.local_job;
+    stream_.cancel();
     settings.clear();
     state.~State();
     new (&state) State();
@@ -124,6 +134,7 @@ void Model::begin(uint32_t now) {
     full_report_ = false;
     cancel("Identifying controller with $I");
     state.online = true;
+    if(interrupted) { state.job_failed = true; state.error = 1; }
     copy(state.mode, "Connecting", sizeof state.mode);
     if (!line_(context_, "$I"))
         disconnect();
@@ -141,7 +152,7 @@ void Model::disconnect() {
 }
 bool Model::idle() const {
     return state.online && state.identified && state.status && state.cycle_axis < 0 && !strcmp(state.mode, "Idle") && !state.alarm &&
-           !state.error && !state.busy && !state.sd_active && !state.uploading;
+           !state.error && !state.busy && !state.sd_active && !state.uploading && !state.macro_failed;
 }
 void Model::transfer_finished(uint32_t now) {
     state.uploading = state.busy = state.status = false;
@@ -402,7 +413,7 @@ bool Model::actuator_type(bool rotary) {
     return true;
 }
 bool Model::actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary) {
-    if (!idle() || actuator_pending_ || state.cycle_axis >= 0 || !state.extended || !state.machine_known || state.spindle != 0 || axis < 0 || axis >= 4 ||
+    if (!idle() || actuator_pending_ || state.cycle_axis >= 0 || !state.extended || !state.machine_known || (state.spindle != 0 || state.spindle_direction != 0) || axis < 0 || axis >= 4 ||
         unsigned(axis) >= state.axis_count || !(state.homed_axes & (1u << axis)) ||
         !isfinite(target) || !isfinite(feed) || !isfinite(end1) || !isfinite(end2) ||
         end1 == end2 || fabsf(end1) > 100000 || fabsf(end2) > 100000 ||
@@ -461,19 +472,22 @@ bool Model::unlock() {
     return append("$X");
 }
 bool Model::pause() {
-    if (!state.status || strncmp(state.mode, "Run", 3))
+    if (!state.status || (!state.local_job && strncmp(state.mode, "Run", 3)))
         return false;
-    return rt('!');
+    if(state.local_job)stream_paused_ = true;
+    return rt(state.grblhal ? 0x82 : '!');
 }
 bool Model::resume() {
     if (!state.status || strncmp(state.mode, "Hold:0", 6))
         return false;
-    return rt('~');
+    stream_paused_ = false;
+    return rt(state.grblhal ? 0x81 : '~');
 }
 bool Model::stop() {
     if (!realtime_(context_, 0x18))
         return false;
     cancel("Reset sent. Wait for controller identification.");
+    state.macro_failed = false;
     state.status = false;
     state.homed_axes = 0;
     state.machine_known = false;
@@ -518,6 +532,8 @@ bool Model::acknowledge_error() {
 bool Model::contact_test(uint32_t now) {
     if (!idle() || !state.probe_known)
         return false;
+    if (contact_stage_) return true;
+    state.contact_testing = true;
     contact_stage_ = 1;
     contact_started_ = now;
     state.contact_ready = false;
@@ -533,7 +549,7 @@ bool Model::probe_corner(const ProbeSettings &p) {
         if (!isfinite(v) || v <= 0)
             return false;
     if (p.x > 50 || p.y > 50 || p.z > 50 || p.diameter > 50 || p.feed < 25 || p.feed > 500 || p.inset > 100 ||
-        state.spindle > 0)
+        (state.spindle > 0 || state.spindle_direction != 0))
         return false;
     // Geometry and ordering follow Ooznest Control's runAutoCorner/stepAutoCorner.
     float xd = (p.corner == 1 || p.corner == 3) ? 1 : -1, yd = p.corner >= 2 ? 1 : -1;
@@ -571,8 +587,39 @@ bool Model::probe_corner(const ProbeSettings &p) {
     append("$G");
     state.probing = true;
     state.probe_stage = 0;
+    state.probe_axis = -1;
     state.contact_ready = false;
     copy(state.message, "Corner probe running; work offsets will change", sizeof state.message);
+    return true;
+}
+bool Model::probe_surface(const ProbeSettings &p, int axis, int direction) {
+    if (!idle() || !state.contact_ready || state.probe || !state.modal_known || !state.coordinates ||
+        !state.wco_known || axis < 0 || axis > 2 || (direction != -1 && direction != 1) ||
+        (axis == 2 && direction != -1) || state.spindle > 0 || state.spindle_direction != 0)
+        return false;
+    float plate = axis == 0 ? p.x : axis == 1 ? p.y : p.z;
+    if (!isfinite(plate) || plate <= 0 || plate > 50 || !isfinite(p.feed) || p.feed < 25 || p.feed > 500 ||
+        (axis != 2 && (!isfinite(p.diameter) || p.diameter <= 0 || p.diameter > 50)))
+        return false;
+    // Ooznest runSingleAxis: relative probe, selected-axis offset, opposite retract.
+    // Z uses plate thickness only; tool radius belongs to X/Y edges.
+    char axis_name = "XYZ"[axis], command[96];
+    float offset = axis == 2 ? plate : -direction * (plate + p.diameter / 2);
+    append("G21 G91");
+    snprintf(command, sizeof command, "G38.2 %c%.3f F%.1f", axis_name, direction * 25.f, p.feed);
+    append(command);
+    snprintf(command, sizeof command, "G10 L20 P0 %c%.3f", axis_name, offset);
+    append(command);
+    snprintf(command, sizeof command, "G0 %c%.3f", axis_name, -direction * 2.f);
+    append(command);
+    append(state.absolute ? "G90" : "G91");
+    append("$G");
+    append("$#");
+    state.probing = true;
+    state.probe_stage = 0;
+    state.probe_axis = axis;
+    state.contact_ready = false;
+    copy(state.message, "Surface probe running; selected work offset will change", sizeof state.message);
     return true;
 }
 void Model::status_report(const char *line) {
@@ -599,6 +646,12 @@ void Model::status_report(const char *line) {
     float coords[4] = {};
     unsigned coord_axes = 0;
     bool machine = false, position = false, sd = false, pins = false;
+    constexpr uint32_t probes = (1u << ('I'-'A')) | (1u << ('J'-'A')) | (1u << ('K'-'A'));
+    // Limits/control inputs are snapshots. Only the acquired I/J/K probes are deltas.
+    state.inputs &= probes;
+    if (state.pins_reporting) {
+        for (const char *p = "XYZABCUVWRHSDLTEOFMQP"; *p; ++p) state.inputs_known |= 1u << (*p-'A');
+    }
     if (full_report_) {
         state.probe = false;
         state.probe_known = true;
@@ -653,6 +706,16 @@ void Model::status_report(const char *line) {
         else if (!strncmp(token, "Pn:", 3)) {
             pins = true;
             const char *p = token + 3;
+            const char *normal = "XYZABCUVWRHSDLTEOFMQP";
+            for (const char *n = normal; *n; ++n) state.inputs_known |= 1u << (*n-'A');
+            for (const char *n = p; *n; ++n) {
+                char upper = toupper((unsigned char)*n);
+                if (upper < 'A' || upper > 'Z') continue;
+                uint32_t bit = 1u << (upper-'A');
+                if (*n >= 'A' && *n <= 'Z') state.inputs |= bit;
+                else if (bit & probes) state.inputs &= ~bit;
+                state.inputs_known |= bit;
+            }
             if (state.extended) {
                 if (strchr(p, 'I')) {
                     state.probe = true;
@@ -665,6 +728,10 @@ void Model::status_report(const char *line) {
                 state.probe = strchr(p, 'P') != nullptr;
                 state.probe_known = true;
             }
+        } else if (!strncmp(token, "A:", 2)) {
+            state.spindle_direction = strchr(token + 2, 'C') ? -1 : strchr(token + 2, 'S') ? 1 : 0;
+            state.coolant = (strchr(token + 2, 'M') ? 1u : 0u) | (strchr(token + 2, 'F') ? 2u : 0u);
+            state.accessories_known = true;
         } else if (!strncmp(token, "SD:", 3)) {
             char *comma = strchr(token + 3, ',');
             if (comma) {
@@ -715,7 +782,7 @@ void Model::status_report(const char *line) {
         state.job_seen_run = true;
     if (state.sd_active) {
         state.elapsed = (now_ - state.job_started) / 1000;
-        if (!sd && !strcmp(state.mode, "Idle") && (state.job_seen_run || state.job_end) && !state.alarm &&
+        if (!state.local_job && !sd && !strcmp(state.mode, "Idle") && (state.job_seen_run || state.job_end) && !state.alarm &&
             !state.error && !state.job_failed) {
             state.sd_active = false;
             state.job_complete = true;
@@ -725,13 +792,21 @@ void Model::status_report(const char *line) {
     }
     if (!strncmp(state.mode, "Alarm", 5) || !strncmp(state.mode, "Door", 4))
         cancel("Machine interlock active. Check controller before recovery.");
+    if (state.local_job && stream_.done() && !strcmp(state.mode,"Idle") && !state.job_failed && !state.alarm && !state.error) {
+        stream_.cancel(); state.local_job = state.job_preparing = state.sd_active = state.busy = false;
+        state.job_complete = true; state.percent = 100; state.modal_known = false;
+        append("$G"); append("$#");
+        copy(state.message,"Job complete",sizeof state.message);
+    }
     if (goto_pending_ && cursor_ >= queued_ && !awaiting_ && !strcmp(state.mode, "Idle"))
         goto_pending_ = false;
+    if (state.macro_running && cursor_ >= queued_ && !awaiting_ && !strcmp(state.mode, "Idle"))
+        state.macro_running = false;
     if (state.cycle_axis >= 0) {
         int axis = state.cycle_axis;
         bool valid = state.machine_known && unsigned(axis) < state.axis_count &&
                      (state.homed_axes & (1u << axis)) && !state.alarm && !state.error &&
-                     state.spindle == 0 && !state.sd_active && !state.uploading &&
+                     state.spindle == 0 && state.spindle_direction == 0 && !state.sd_active && !state.uploading &&
                      (axis != 3 || (state.rotary_known && cycle_rotary_ == bool(state.rotary_axes & 8)));
         if (!valid || (strcmp(state.mode, "Idle") && strncmp(state.mode, "Jog", 3))) {
             char mode[sizeof state.mode];
@@ -810,6 +885,32 @@ void Model::receive(const char *line, uint32_t now) {
         }
         return;
     }
+    if (state.spindles_loading && !strncmp(line, "[SPINDLE:", 9)) {
+        char data[256]; copy(data, line + 9, sizeof data);
+        char *end = strchr(data, ']');
+        if (!end || end[1]) return;
+        *end = 0;
+        char *fields[6], *p = data;
+        unsigned count = 0;
+        do { fields[count++] = p; p = strchr(p, '|'); if (p) *p++ = 0; } while (p && count < 6);
+        if (count < 5 || state.spindle_count >= 8) return;
+        Spindle s;
+        if (strcmp(fields[1], "-")) {
+            char *tail; long n = strtol(fields[1], &tail, 10);
+            if (!*fields[1] || *tail || n < 0 || n > 255) return;
+            s.number = int(n);
+        }
+        copy(s.name, fields[4], sizeof s.name);
+        for (char *c = s.name; *c; ++c) if ((unsigned char)*c < 32) *c = ' ';
+        s.active = strchr(fields[3], '*') != nullptr;
+        if (count == 6) {
+            char tail;
+            s.limits_known = sscanf(fields[5], "%f,%f%c", &s.minimum, &s.maximum, &tail) == 2 &&
+                isfinite(s.minimum) && isfinite(s.maximum) && s.minimum >= 0 && s.maximum > s.minimum;
+        }
+        state.spindles[state.spindle_count++] = s;
+        return;
+    }
     if (!strncmp(line, "[VER:", 5)) {
         const char *p = line;
         while (*p) {
@@ -863,6 +964,25 @@ void Model::receive(const char *line, uint32_t now) {
             snprintf(word, sizeof word, "G%d ", w);
             if (strstr(line, word))
                 state.wcs = w;
+        }
+    }
+    if (!strncmp(line, "$30=", 4) || !strncmp(line, "$31=", 4)) {
+        char *end;
+        float value = strtof(line + 4, &end);
+        if (end != line + 4 && !*end && isfinite(value) && value >= 0) {
+            if (line[2] == '0') state.spindle_max = value;
+            else state.spindle_min = value;
+            state.spindle_limits_seen |= line[2] == '0' ? 1 : 2;
+            state.spindle_limits_known = state.spindle_limits_seen == 3 && state.spindle_max > state.spindle_min;
+        }
+    }
+    if (!strncmp(line, "$10=", 4)) {
+        char *end;
+        unsigned long mask = strtoul(line + 4, &end, 10);
+        if (end != line + 4 && !*end && mask <= 65535) {
+            state.pins_reporting_known = true;
+            state.pins_reporting = mask & 16;
+            if (!state.pins_reporting) state.inputs_known = 0;
         }
     }
     if (!strncmp(line, "$376=", 5)) {
@@ -938,6 +1058,12 @@ void Model::receive(const char *line, uint32_t now) {
         state.file_revision++;
     }
     if (!strncmp(line, "ALARM:", 6) || !strncmp(line, "error:", 6)) {
+        if (state.local_job) rt(state.grblhal ? 0x82 : '!');
+        if (state.spindles_loading && awaiting_ && cursor_ < queued_ && queue_[cursor_] == "$SPINDLESH" && line[0] == 'e') {
+            cancel("Spindle discovery unavailable");
+            return;
+        }
+        if (state.macro_running && line[0] != 'A') rt(state.grblhal ? 0x82 : '!');
         if (state.sd_active)
             state.job_failed = true;
         bool alarm = line[0] == 'A';
@@ -981,13 +1107,76 @@ void Model::receive(const char *line, uint32_t now) {
         got_probe_ = true;
         state.probe_stage++;
     }
+    if (state.local_job && !strcmp(line,"ok")) { stream_.acknowledge(now); return; }
     if (!strcmp(line, "ok") && awaiting_) {
+        if (state.spindles_loading && queue_[cursor_] == "$SPINDLESH") {
+            state.spindles_loading = false;
+            state.spindles_result = state.spindle_count ? 1 : -1;
+            state.spindle_revision++;
+            for (unsigned i = 0; i < state.spindle_count; ++i) if (state.spindles[i].active) {
+                const auto &s = state.spindles[i];
+                state.spindle_limits_known = s.limits_known;
+                state.spindle_min = s.minimum; state.spindle_max = s.maximum;
+            }
+        }
         awaiting_ = false;
         if (!need_probe_ || got_probe_) {
             cursor_++;
             need_probe_ = got_probe_ = false;
         }
     }
+}
+bool Model::run_local(FILE *file,const char *path,uint32_t size,uint32_t now) {
+    if (!idle() || !file || !size || !stream_.start(file,size,now)) return false;
+    state.local_job = state.job_preparing = state.sd_active = state.busy = true;
+    state.job_complete = state.job_failed = state.job_seen_run = state.job_end = false;
+    stream_paused_ = false;
+    state.percent = 0; state.job_bytes = 0; state.job_total = size; state.job_started = now;
+    copy(state.filename,path,sizeof state.filename);
+    return true;
+}
+bool Model::spindle_list() {
+    if (!idle() || !state.grblhal) return false;
+    state.spindle_count = 0; state.spindles_result = 0;
+    state.spindles_loading = true;
+    state.spindle_revision++;
+    return append("$SPINDLESH");
+}
+bool Model::spindle_select(int number) {
+    if (!idle() || !state.grblhal || !state.accessories_known || state.spindle_direction || state.spindle > 0) return false;
+    bool found = false;
+    for (unsigned i = 0; i < state.spindle_count; ++i)
+        if (state.spindles[i].number == number && number >= 0) found = true;
+    if (!found) return false;
+    char command[32]; snprintf(command, sizeof command, "M104Q%d", number);
+    state.spindle_limits_known = false;
+    state.spindle_count = 0; state.spindles_result = 0; state.spindles_loading = true;
+    state.spindle_revision++;
+    return append(command) && append("$SPINDLESH");
+}
+bool Model::spindle_control(int direction, float rpm) {
+    if (!idle() || direction < -1 || direction > 1 || !isfinite(rpm)) return false;
+    if (direction && (!state.spindle_limits_known || rpm <= 0 || rpm < state.spindle_min || rpm > state.spindle_max)) return false;
+    char command[64];
+    if (direction) snprintf(command, sizeof command, "M%d S%.0f", direction == 1 ? 3 : 4, rpm);
+    else snprintf(command, sizeof command, "M5");
+    return append(command);
+}
+bool Model::coolant_control(unsigned mode) {
+    if (!idle() || mode > 3) return false;
+    append("M9");
+    if (mode & 1) append("M7");
+    if (mode & 2) append("M8");
+    return true;
+}
+bool Model::macro_run(const char *code) {
+    std::vector<std::string> lines;
+    if (!idle() || !macro_lines(code, lines)) return false;
+    for (const auto &s : lines) append(s.c_str());
+    append("$G"); // A macro may change WCS, units or distance mode used by manual controls.
+    state.modal_known = false;
+    state.macro_running = true;
+    return true;
 }
 void Model::tick(uint32_t now) {
     now_ = now;
@@ -1022,15 +1211,29 @@ void Model::tick(uint32_t now) {
         state.online = false;
         return;
     }
+    if (state.local_job) {
+        stream_.tick(now, !stream_paused_ && !state.alarm && !state.error && (!strcmp(state.mode,"Idle") || !strcmp(state.mode,"Run")));
+        state.job_preparing = stream_.checking();
+        state.job_bytes = state.job_preparing ? stream_.checked_bytes() : stream_.acknowledged();
+        state.percent = state.job_total ? fminf(99.9f,100.f*state.job_bytes/state.job_total) : 0;
+        if (stream_.failed()) {
+            char reason[128]; copy(reason,stream_.error(),sizeof reason);
+            rt(state.grblhal ? 0x82 : '!'); state.error = 1; state.job_failed = true;
+            cancel(reason);
+        }
+        return;
+    }
     if (contact_stage_) {
         if (now - contact_started_ > 15000) {
             contact_stage_ = 0;
+            state.contact_testing = false;
             copy(state.message, "Contact test timed out", sizeof state.message);
         } else if (contact_stage_ == 1 && state.probe) {
             contact_stage_ = 2;
             copy(state.message, "Contact detected. Release the tool from the plate.", sizeof state.message);
         } else if (contact_stage_ == 2 && !state.probe) {
             contact_stage_ = 0;
+            state.contact_testing = false;
             state.contact_ready = true;
             copy(state.message, "Contact verified. Position above the plate hole.", sizeof state.message);
         }
@@ -1040,7 +1243,8 @@ void Model::tick(uint32_t now) {
             cursor_++;
             need_probe_ = got_probe_ = false;
         } else {
-            if (now - sent_ > (homing ? 300000u : state.probing ? 120000u : 10000u)) {
+            if (now - sent_ > (homing || state.macro_running ? 300000u : state.probing ? 120000u : 10000u)) {
+                if (state.macro_running) rt(state.grblhal ? 0x82 : '!');
                 if (state.probing || homing)
                     rt(0x18);
                 if (homing) {
@@ -1057,14 +1261,14 @@ void Model::tick(uint32_t now) {
         if (line_(context_, queue_[cursor_].c_str())) {
             awaiting_ = true;
             sent_ = now;
-            need_probe_ = strstr(queue_[cursor_].c_str(), "G38.2") != nullptr;
+            need_probe_ = state.probing && strstr(queue_[cursor_].c_str(), "G38.2") != nullptr;
             got_probe_ = false;
         } else {
             state.error = 1;
             cancel("UART write failed; command queue cancelled");
         }
     } else if (state.busy) {
-        if (goto_pending_)
+        if (goto_pending_ || state.macro_running)
             return; // Rapid acknowledgements can precede motion completion.
         bool probed = state.probing;
         for (auto &command : queue_) command.clear();
@@ -1090,7 +1294,7 @@ void Model::tick(uint32_t now) {
             if (now - state.last_status > 2000) { state.status = false; identified_at_ = now; }
         }
         if (probed)
-            copy(state.message, "Corner probe complete. Remove the plate before running.",
+            copy(state.message, "Probe complete. Remove the plate before running.",
                  sizeof state.message);
     }
     if (cycle_speed_pending_ && state.cycle_axis >= 0 && !state.busy && !awaiting_ && !strcmp(state.mode, "Jog")) {

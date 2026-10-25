@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "panel_settings.h"
+#include "panel_stream.h"
 
 namespace panel {
 constexpr int MaxFiles = 64;
@@ -21,12 +22,33 @@ struct ProbeSettings {
     float x = 10, y = 10, z = 5, diameter = 0, feed = 100, inset = 22.5f;
     int corner = 0;
 };
+struct Spindle {
+    int number = -1;
+    char name[64] = "";
+    bool active = false, limits_known = false;
+    float minimum = 0, maximum = 0;
+};
 struct State {
+    bool local_job = false, job_preparing = false;
+    uint32_t job_bytes = 0, job_total = 0;
+    unsigned file_total=0,file_offset=0;
+    Spindle spindles[8];
+    unsigned spindle_count = 0, spindle_revision = 0;
+    bool spindles_loading = false;
+    int spindles_result = 0;
     bool online = false, identified = false, extended = false, status = false;
     bool ymodem = false;
     bool coordinates = false, wco_known = false, modal_known = false, inches = false, absolute = true;
-    bool report_inches = false, report_units_known = false, probe = false, probe_known = false, contact_ready = false;
+    bool report_inches = false, report_units_known = false, probe = false, probe_known = false, contact_ready = false, contact_testing = false;
     bool rotary_known = false;
+    uint32_t inputs = 0, inputs_known = 0;
+    bool pins_reporting_known = false, pins_reporting = false;
+    uint8_t spindle_limits_seen = 0;
+    bool accessories_known = false, spindle_limits_known = false, macro_running = false;
+    bool macro_failed = false;
+    int spindle_direction = 0;
+    unsigned coolant = 0;
+    float spindle_min = 0, spindle_max = 0;
     bool grblhal = false, legacy_rt_known = false, legacy_rt = false;
     bool settings_loading = false, settings_saving = false, settings_ready = false;
     int settings_count = 0, settings_groups = 0, settings_result = 0;
@@ -42,7 +64,7 @@ struct State {
     int feed_override = 100, spindle_override = 100;
     uint32_t download_bytes = 0, download_total = 0, download_revision = 0;
     char download_path[160] = "";
-    int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0;
+    int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0, probe_axis = -1;
     uint32_t build = 0, last_status = 0, job_started = 0, elapsed = 0, file_revision = 0;
     float machine[4] = {}, work[4] = {}, wco[4] = {}, feed = 0, spindle = 0, percent = 0;
     float axis_max_rate[4] = {};
@@ -66,6 +88,8 @@ class Model {
     bool idle() const;
     bool list();
     bool run(const char *path);
+    bool local_stream_done() const { return stream_.done(); }
+    bool run_local(FILE *file, const char *path, uint32_t size, uint32_t now);
     using Download = bool (*)(void *, const char *, size_t);
     bool download(const char *path, Download sink, void *context);
     bool jog(char axis, float distance, float feed);
@@ -89,14 +113,22 @@ class Model {
     bool jog_cancel();
     bool contact_test(uint32_t now);
     bool probe_corner(const ProbeSettings &settings);
+    bool probe_surface(const ProbeSettings &settings, int axis, int direction);
     bool acknowledge_error();
     bool override_target(bool spindle, int percent);
+    bool spindle_control(int direction, float rpm);
+    bool spindle_list();
+    bool spindle_select(int number);
+    bool coolant_control(unsigned mode);
+    bool macro_run(const char *code);
     void transfer_finished(uint32_t now);
 
   private:
     Line line_;
     Realtime realtime_;
     void *context_;
+    Stream stream_;
+    bool stream_paused_ = false;
     Download download_sink_ = nullptr;
     void *download_context_ = nullptr;
     bool download_failed_ = false;

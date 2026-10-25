@@ -5,7 +5,7 @@
 
 static const char page[] = R"HTML(<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Actuators</title>
-<style>body{font:18px system-ui;background:#d9e2ed;color:#303247;margin:0}header{background:#303247;color:white;padding:24px}h1{font-size:26px;margin:0}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;padding:20px;max-width:1100px;margin:auto}article{background:white;padding:24px;border-radius:16px;box-shadow:0 3px 3px #68758b30}h2{font-size:22px;margin:0 0 14px}.position{font-size:32px}progress{width:100%;accent-color:#5356c9}footer{display:flex;justify-content:space-between;margin-top:16px}small{color:#68758b}#status{margin-top:8px}</style>
+<style>body{font:18px system-ui;background:#d9e2ed;color:#30363b;margin:0}header{background:#30363b;color:white;padding:24px}h1{font-size:26px;margin:0}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;padding:20px;max-width:1100px;margin:auto}article{background:white;padding:24px;border-radius:16px;box-shadow:0 3px 3px #56627330}h2{font-size:22px;margin:0 0 14px}.position{font-size:32px}progress{width:100%;accent-color:#176fb5}footer{display:flex;justify-content:space-between;margin-top:16px}small{color:#566273}#status{margin-top:8px}</style>
 <header><h1>Actuators</h1><div id="status">Connecting...</div><small style="color:#ddd">Live status / view only</small></header><main id="cards"></main>
 <script>const cards=document.querySelector('#cards'),status=document.querySelector('#status');
 function text(parent,tag,value,cls){let e=document.createElement(tag);e.textContent=value;if(cls)e.className=cls;parent.append(e);return e}

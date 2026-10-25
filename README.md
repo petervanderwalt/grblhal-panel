@@ -2,16 +2,17 @@
 
 A touchscreen pendant for grblHAL controllers, built for the VIEWESMART
 7-inch ESP32-P4/C6 display. CNC mode handles machine setup, controller SD files
-and job progress. Actuator mode provides individual X/Y/Z/A controls, with linear
+and job progress. Display-SD jobs include cached image previews and buffered
+UART streaming; controller-SD execution remains available. Actuator mode provides individual X/Y/Z/A controls, with linear
 or rotary A.
 
 The CNC landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
 screens keep the common machine operations within reach. Bottom tabs switch
-between Jog, Files and Settings with a short sliding transition.
+between Jog, Files, Macros and Settings with a short sliding transition.
 
 Settings also offers an **Actuator** mode for independent X/Y/Z/A
-mechanisms. It replaces Jog and Files with an **Actuators** screen. Configure
+mechanisms. It replaces Jog, Files and Macros with an **Actuators** screen. Configure
 each actuator's name, button labels, machine-coordinate endpoints, speed and
 Buttons / Position / Presets / Repeat layout in Settings. Four vertical columns
 provide large position sliders or a rotary A dial. Repeat travels back and forth
@@ -33,40 +34,75 @@ browser motion commands and Home Assistant control are planned. See the
   0.1 / 1 / 10 / 100 mm or imperial steps of 0.01 / 0.1 / 1 / 10 inch.
 - **Position:** compact machine and work coordinates, individual axis homing
   and zeroing, Home All, Set Zero All, Go to XY Zero and Go to Z Zero.
-- **Work offsets:** G54–G59 selection beside the Probe control.
-- **Corner probing:** XYZ touch-plate setup with tool diameter entered on a
-  numeric keypad. Plate dimensions and probe settings are configurable.
+- **Work offsets:** G54â€“G59 selection beside the Probe control.
+- **Probing:** single-surface Z, X-/X+ and Y-/Y+, plus XYZ corner probing.
+  Z is selected initially, with editable plate thickness and feed. Lift the plate,
+  touch it to the tool, then release to enable Probe. X/Y and corner modes use
+  the tool diameter; dimensions and feed are configurable.
+- **Spindle / coolant:** a Jog-screen button opens RPM, CW/CCW, spindle Off,
+  mist and flood controls, plus discovery and activation of enabled spindles. Starting or switching the spindle requires confirmation. Controls
+  use the controller's reported state and RPM limits and are available while idle.
+- **Input diagnostics:** Settings â†’ Inputs shows live limits, probes, door,
+  E-stop and other standard controller inputs. LEDs show red for active, green
+  for inactive and grey for unknown or stale feedback.
+
+## Macros
+
+The Macros tab stores up to twenty named G-code sequences in a 4 Ã— 5 grid.
+Use **Add macro** to enter a name and multiline G-code with the onscreen
+keyboard, and choose a tile colour. Tap a tile to Run or its pencil to Edit.
+Delete is inside the editor. Add stays in the header, leaving all twenty slots available.
+Macros persist across restarts independently of controller SD files.
+
+Run asks for confirmation and sends each line only after the previous command
+is acknowledged. Navigation stays on Macros until fresh Idle feedback confirms
+completion. **Stop macro** asks for confirmation before resetting the controller.
+Faults cancel the remaining sequence; command errors also request feed hold.
+Macros run as written: include explicit
+units and distance modes where needed; changing LCD units does not rewrite them.
+Each macro supports 768 characters and 32 executable lines, up to 192 characters
+per line. System commands and realtime characters (`!`, `~`, `?`) are rejected.
 
 Go-to-zero and zero-setting actions require confirmation. Go to XY Zero moves
-via machine Z −5 mm before moving X and Y, then restores the previous machine Z.
+via machine Z âˆ’5 mm before moving X and Y, then restores the previous machine Z.
 Go to Z Zero moves directly to work Z0. Check this clearance against your setup.
 
 ## Files and jobs
 
-Browse files on the **controller’s SD card**, with file sizes and Preview/Run
-actions in each row. Preview downloads the selected file into display memory
-and shows its toolpath in Top or 3D view. Drag to pan and pinch to zoom.
-Running a file is a separate, confirmed action.
+Choose **Onboard SD** or **Controller SD** in Settings > File location. The display card lists jobs
+in pages with file sizes, Preview and Run. It stores the G-code and eight cached
+bitmap views together, and streams a confirmed job to grblHAL using character-counting
+flow control. Controller SD lists files with Run and lets the controller execute
+the job locally, without downloading previews.
+
+A small [PC preview server](preview-server/server.py) prepares Top, Bottom,
+Front, Back, Left, Right, Isometric and Perspective images while the machine is
+idle. The pendant posts missing files over Wi-Fi and saves the results on its
+SD card, keyed by the exact G-code content. Cached views work offline. Drag to
+pan and pinch to zoom an image. Set the server address in Settings.
+See [Display SD, streaming and previews](docs/display-sd-and-previews.md).
 
 During a job, the run screen shows positions, progress and elapsed time, with
 Pause/Resume and Stop below the readout. Feed and spindle overrides use the
-controller’s reported values. Setup navigation is hidden until the job ends.
+controllerâ€™s reported values. Setup navigation is hidden until the job ends.
 After Job Complete is acknowledged, the pendant returns to Jog.
 
 Alarms and command errors appear in red dialogs. The header fault indicator
 reopens the current fault. Job Stop asks for confirmation before sending a controller reset; check position
 and re-home as needed afterward. Emergency stopping remains a hardware function.
 
-The toolpath viewer supports G0/G1 and IJK G2/G3 arcs in G17/G18/G19, absolute
-and relative coordinates, and metric/imperial files. The download limit is
-2 MiB. Macros, canned cycles, R arcs and offset-changing codes are unsupported
-for preview; those files can still be run directly from controller SD.
-The preview does not simulate collisions or controller execution.
+The PC renderer accepts files up to 512 MiB and 15 million segments. It handles
+linear moves and IJK/R arcs in all three planes, including helical arcs, metric
+or imperial units and absolute or relative positioning. Unsupported geometry
+fails explicitly; Run remains a separate action. Previews do not simulate stock,
+collisions or controller execution.
+
+See the [HTTP endpoint reference](docs/http-api.md) for gCAM upload and the read-only actuator page.
 
 ## Settings and Wi-Fi
 
 Choose metric or imperial display units, configure the controller UART, and
-adjust probe geometry and feeds. Display units are converted locally; generated
+adjust probe geometry and feeds. Configure the PC preview server address here too. Display units are converted locally; generated
 motion commands and internal geometry remain in millimetres.
 
 **Machine settings** opens the connected grblHAL controller's complete settings
@@ -85,7 +121,7 @@ for reconnection. The header shows the connected SSID and IP address.
 
 ## Hardware and project status
 
-- VIEWESMART 7-inch 1024×600 ESP32-P4 display with ESP32-C6 Wi-Fi coprocessor.
+- VIEWESMART 7-inch 1024Ã—600 ESP32-P4 display with ESP32-C6 Wi-Fi coprocessor.
 - Native LVGL interface, built with ESP-IDF 5.3.4 and LVGL 9.2.2.
 - Controller UART defaults: TX GPIO37, RX GPIO38, 115200 baud; configurable in Settings.
 - USB UART for programming and development tools.
@@ -93,9 +129,14 @@ for reconnection. The header shows the connected SSID and IP address.
 This is firmware under development. The interface and Wi-Fi have been exercised
 on the display. Physical controller motion, probing and SD transfers still need
 hardware validation. RS485 and the grblHAL panel plugin are being investigated.
-The source also includes an experimental Wi-Fi G-code handoff and controller-SD
-upload implementation; end-to-end transfer validation and its user interface
-are pending.
+Settings > File location selects Onboard SD or Controller SD for both Files and
+Wi-Fi gCAM uploads, and persists across reboots.
+Display-SD uploads, status and duplicate-file protection have been checked on
+the display; controller-SD transfers still need a connected controller.
+
+Settings includes a persistent screen-brightness slider. The onboard RGB LED
+provides a supplementary machine-status indication. See the
+[interface colour roles and hardware indicators](docs/color-scheme.md).
 
 ## Build and development
 
@@ -108,7 +149,7 @@ idf.py build
 idf.py -p COM12 app-flash
 ```
 
-Replace COM12 with your display’s port. The checked-in `sdkconfig` contains the
+Replace COM12 with your displayâ€™s port. The checked-in `sdkconfig` contains the
 tested board configuration. ESP-IDF downloads the managed components listed in
 the dependency manifests and lock file.
 
@@ -119,233 +160,131 @@ supplies sample machine feedback for UI checks.
 - [Development instructions and source map](AGENTS.md)
 - [Screenshot, touch injection and test guide](docs/device-ui-development.md)
 - [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)
+- [Inputs, spindle/coolant and macros](docs/inputs-accessories-macros.md)
+- [Display SD, streaming and cached previews](docs/display-sd-and-previews.md)
 
 ## Screenshots
 
-Screens from the 1024×600 display. Machine data and SD files shown here are
-sample data from demonstration mode; Wi-Fi uses the onboard radio.
-
-**Jog — metric, incremental**
-
-![Metric jog screen with axis-coloured controls](docs/screenshots/panel-jog.png)
-
-<details>
-<summary>Actuator controls and configuration</summary>
-
-**Buttons, position slider and presets**
-
-![Four independent actuator controls](docs/screenshots/panel-actuators.png)
-
-**Rotary A with degree readout and angular position dial**
-
-![Actuator controls with rotary A](docs/screenshots/panel-actuator-rotary.png)
-
-**Repeated endpoint travel with speed control**
-
-![Actuator repeat control](docs/screenshots/panel-actuator-repeat.png)
-
-![Rotary A configuration](docs/screenshots/panel-actuator-rotary-config.png)
-
-**Mode selection**
-
-![CNC and Actuator mode selection](docs/screenshots/panel-settings-actuator-mode.png)
-
-**Per-actuator settings**
-
-![Actuator configuration rows in Settings](docs/screenshots/panel-actuator-settings.png)
-
-**Names, endpoint labels, positions and speed**
-
-![Actuator settings with LVGL keyboard](docs/screenshots/panel-actuator-config.png)
-
-</details>
-
-<details>
-<summary>Jog modes, probing and confirmations</summary>
-
-**Continuous jog**
-
-![Continuous jog with distance disabled](docs/screenshots/panel-jog-continuous.png)
-
-**Disconnected**
-
-![Disconnected Jog controls](docs/screenshots/panel-jog-disconnected.png)
-
-**Disabled controls during Hold**
-
-![Readable disabled jog arrows during Hold](docs/screenshots/panel-jog-disabled.png)
-
-**Inch display**
-
-![Inch coordinates and jog distances](docs/screenshots/panel-jog-inch.png)
-
-**Corner probing**
-
-![Corner probe geometry and contact check](docs/screenshots/panel-probe.png)
-
-**Numeric input**
-
-![Tool diameter numeric keypad](docs/screenshots/panel-numpad.png)
-
-**Homing confirmation**
-
-![Home all confirmation](docs/screenshots/panel-home-confirm.png)
-
-**Zeroing confirmation**
-
-![Set work zero confirmation](docs/screenshots/panel-zero-confirm.png)
-
-</details>
-
-<details>
-<summary>Settings</summary>
-
-**Display units and Wi-Fi**
-
-![Settings units and network](docs/screenshots/panel-settings.png)
-
-**Probe configuration**
-
-![Probe configuration rows](docs/screenshots/panel-settings-probe.png)
-
-**Probe feed and corner start inset**
-
-![Lower probe configuration rows](docs/screenshots/panel-settings-probe-lower.png)
-
-**Controller UART configuration**
-
-![Controller TX RX baud and preview controls](docs/screenshots/panel-settings-uart.png)
-
-**Inch display setting**
-
-![Inch units selected in settings](docs/screenshots/panel-settings-inch.png)
-
-</details>
-
-<details>
-<summary>grblHAL machine settings</summary>
-
-**Groups and current values**
-
-![Grouped grblHAL settings](docs/screenshots/panel-machine-settings.png)
-
-**Homing group**
-
-![Controller homing settings](docs/screenshots/panel-machine-settings-homing.png)
-
-**Paged settings list**
-
-![Further controller settings](docs/screenshots/panel-machine-settings-page2.png)
-
-**Numeric value, description and controller limits**
-
-![Numeric setting editor](docs/screenshots/panel-machine-setting-number.png)
-
-**Switches and option lists**
-
-![Boolean setting editor](docs/screenshots/panel-machine-setting-switch.png)
-
-![Controller option list](docs/screenshots/panel-machine-setting-options.png)
-
-**Bitfields and axis masks**
-
-![Homing options](docs/screenshots/panel-machine-setting-mask.png)
-
-![Homing axis mask](docs/screenshots/panel-machine-setting-axes.png)
-
-**Text, masked passwords and addresses**
-
-![Controller text setting](docs/screenshots/panel-machine-setting-text.png)
-
-![Masked controller password editor](docs/screenshots/panel-machine-setting-password.png)
-
-![Controller IP address editor](docs/screenshots/panel-machine-setting-ip.png)
-
-</details>
-
-<details>
-<summary>Controller files and toolpath preview</summary>
-
-**Controller SD listing — sample files**
-
-![Simulated controller file listing](docs/screenshots/panel-files.png)
-
-**3D view**
-
-![Controller file toolpath in 3D](docs/screenshots/sd-preview-3d.png)
-
-**Top view**
-
-![Controller file toolpath from above](docs/screenshots/sd-preview-top.png)
-
-**Run confirmation**
-
-![Confirm running a controller SD file](docs/screenshots/panel-run-confirm.png)
-
-</details>
-
-<details>
-<summary>Running, paused and completed jobs</summary>
-
-**Running**
-
-![Job progress DRO and overrides](docs/screenshots/panel-job.png)
-
-**Paused**
-
-![Paused job with Resume control](docs/screenshots/panel-job-paused.png)
-
-**Stop confirmation**
-
-![Confirm stopping a job](docs/screenshots/panel-stop-confirm.png)
-
-**Complete**
-
-![Successful job completion](docs/screenshots/panel-complete.png)
-
-</details>
-
-<details>
-<summary>Alarms and command errors</summary>
-
-**Controller alarm**
-
-![Red alarm dialog](docs/screenshots/panel-alarm.png)
-
-**Command error**
-
-![Red unsupported-command error dialog](docs/screenshots/panel-error.png)
-
-</details>
-
-<details>
-<summary>Wi-Fi scan, password entry and connection results</summary>
-
-**Scan in progress**
-
-![Wi-Fi scan progress spinner](docs/screenshots/wifi-scanning.png)
-
-**Scanned networks**
-
-![Networks with signal strength and lock icons](docs/screenshots/wifi-networks.png)
-
-**Password entry**
-
-![Empty Wi-Fi password field and keyboard](docs/screenshots/wifi-password.png)
-
-**Password validation**
-
-![Minimum password length validation](docs/screenshots/wifi-password-validation.png)
-
-**Connection failed**
-
-![Wi-Fi connection failure notification](docs/screenshots/wifi-failed.png)
-
-**Connected**
-
-![Wi-Fi successful connection notification](docs/screenshots/wifi-connected.png)
-
-</details>
+Screens from the actual 1024 x 600 display. Controller feedback and controller-SD
+listings use demonstration data. Display-SD examples are real card files, and
+Wi-Fi uses the onboard radio.
+Click a screenshot to open it at full size.
+
+### Jog
+
+| Features and use | Preview |
+| --- | --- |
+| **Jog â€” metric, incremental**<br><br>Home the machine, set the work zero and jog from one screen. Machine and work positions stay beside the per-axis controls. | [<img src="docs/screenshots/panel-jog.png" alt="Metric jog screen with axis-coloured controls" width="640">](docs/screenshots/panel-jog.png) |
+
+### Spindle, coolant and macros
+
+| Features and use | Preview |
+| --- | --- |
+| **Spindle and coolant controls**<br><br>Enter an RPM, choose CW or CCW, or switch the spindle off. Mist and flood controls share this popup. | [<img src="docs/screenshots/panel-accessories.png" alt="Manual spindle and coolant controls with numeric keyboard" width="640">](docs/screenshots/panel-accessories.png) |
+| **Available spindle selection**<br><br>Choose from the spindles reported by the controller. The active spindle is identified; entries not enabled in controller settings remain unavailable. | [<img src="docs/screenshots/panel-spindles.png" alt="Available spindle selection" width="640">](docs/screenshots/panel-spindles.png) |
+| **Spindle activation confirmation**<br><br>Confirm the spindle to activate. Selection is available while idle with stopped-spindle feedback, and the controller is queried again afterward. | [<img src="docs/screenshots/panel-spindle-activate.png" alt="Spindle activation confirmation" width="640">](docs/screenshots/panel-spindle-activate.png) |
+| **Spindle start confirmation**<br><br>Check the direction and requested RPM before starting. The entered speed must fit the controller-reported range. | [<img src="docs/screenshots/panel-spindle-confirm.png" alt="Spindle start confirmation" width="640">](docs/screenshots/panel-spindle-confirm.png) |
+| **Twenty macro positions**<br><br>Keep up to twenty named sequences in a four-column grid. Tap a name to run it or the pencil to edit; Add macro stays in the header. | [<img src="docs/screenshots/panel-macros-full.png" alt="Four by five macro grid with sample entries" width="640">](docs/screenshots/panel-macros-full.png) |
+| **Add or edit a macro**<br><br>Enter a name and G-code, then choose a tile colour. Saved macros remain available after restarting the display. | [<img src="docs/screenshots/panel-macro-editor.png" alt="Macro name colour and G-code editor" width="640">](docs/screenshots/panel-macro-editor.png) |
+| **Run, stop and error recovery**<br><br>Confirm the selected macro before execution. Each command waits for acknowledgement before the next is sent. | [<img src="docs/screenshots/panel-macro-confirm.png" alt="Macro run confirmation" width="640">](docs/screenshots/panel-macro-confirm.png) |
+| **Macro stop confirmation**<br><br>Stop asks for confirmation before resetting the controller. An interrupted macro cannot resume. | [<img src="docs/screenshots/panel-macro-stop.png" alt="Macro stop confirmation" width="640">](docs/screenshots/panel-macro-stop.png) |
+| **Interrupted macro with error and confirmed stop**<br><br>A command error cancels the remaining sequence and requests feed hold. Confirm Stop to reset the controller before continuing. | [<img src="docs/screenshots/panel-macro-error.png" alt="Interrupted macro with error and confirmed stop" width="640">](docs/screenshots/panel-macro-error.png) |
+
+### Actuator controls and configuration
+
+| Features and use | Preview |
+| --- | --- |
+| **Buttons, position slider and presets**<br><br>Control X, Y, Z and A as separate mechanisms. Each column can use endpoint buttons, a position slider, presets or repeat motion. | [<img src="docs/screenshots/panel-actuators.png" alt="Four independent actuator controls" width="640">](docs/screenshots/panel-actuators.png) |
+| **Rotary A with degree readout and angular position dial**<br><br>Rotary A uses degrees and an angular position dial. Position changes apply when the finger is released. | [<img src="docs/screenshots/panel-actuator-rotary.png" alt="Actuator controls with rotary A" width="640">](docs/screenshots/panel-actuator-rotary.png) |
+| **Repeated endpoint travel with speed control**<br><br>Repeat travels between the two configured endpoints until Stop. The vertical slider sets the travel speed. | [<img src="docs/screenshots/panel-actuator-repeat.png" alt="Actuator repeat control" width="640">](docs/screenshots/panel-actuator-repeat.png) |
+| **Rotary A configuration**<br><br>Set A to Linear or Rotary. Saving updates only the controller bit for A and checks its reported type before permitting movement. | [<img src="docs/screenshots/panel-actuator-rotary-config.png" alt="Rotary A configuration" width="640">](docs/screenshots/panel-actuator-rotary-config.png) |
+| **Mode selection**<br><br>Choose CNC or Actuator mode. Actuator mode replaces the CNC tabs with Actuators and Settings. | [<img src="docs/screenshots/panel-settings-actuator-mode.png" alt="CNC and Actuator mode selection" width="640">](docs/screenshots/panel-settings-actuator-mode.png) |
+| **Per-actuator settings**<br><br>Open the settings for each actuator independently. Labels and layout choices stay here rather than crowding the control screen. | [<img src="docs/screenshots/panel-actuator-settings.png" alt="Actuator configuration rows in Settings" width="640">](docs/screenshots/panel-actuator-settings.png) |
+| **Names, endpoint labels, positions and speed**<br><br>Edit the actuator name, endpoint labels, positions and speed with the onscreen keyboard. Labels can suit doors, camera sliders or other mechanisms. | [<img src="docs/screenshots/panel-actuator-config.png" alt="Actuator settings with LVGL keyboard" width="640">](docs/screenshots/panel-actuator-config.png) |
+
+### Jog modes, probing and confirmations
+
+| Features and use | Preview |
+| --- | --- |
+| **Continuous jog**<br><br>Hold a direction to keep moving and lift the finger to stop. The distance selector is disabled in continuous mode. | [<img src="docs/screenshots/panel-jog-continuous.png" alt="Continuous jog with distance disabled" width="640">](docs/screenshots/panel-jog-continuous.png) |
+| **Disconnected**<br><br>Machine controls remain disabled until the controller is connected and usable feedback is available. | [<img src="docs/screenshots/panel-jog-disconnected.png" alt="Disconnected Jog controls" width="640">](docs/screenshots/panel-jog-disconnected.png) |
+| **Disabled controls during Hold**<br><br>Hold and other controller interlocks disable setup movements. Disabled arrow and Z controls remain readable. | [<img src="docs/screenshots/panel-jog-disabled.png" alt="Readable disabled jog arrows during Hold" width="640">](docs/screenshots/panel-jog-disabled.png) |
+| **Inch display**<br><br>Display positions and jog increments in inches. Generated movement commands are converted to millimetres locally. | [<img src="docs/screenshots/panel-jog-inch.png" alt="Inch coordinates and jog distances" width="640">](docs/screenshots/panel-jog-inch.png) |
+| **Z surface probing**<br><br>Probe the stock top using plate thickness. A quick touch and release enables the separate confirmed probe action. | [<img src="docs/screenshots/panel-probe-z.png" alt="Z surface probe" width="640">](docs/screenshots/panel-probe-z.png) |
+| **X/Y surface probing**<br><br>Choose the approached surface and enter tool diameter. Only the selected work axis is zeroed, using its plate offset and tool radius. | [<img src="docs/screenshots/panel-probe-surface.png" alt="Single X surface probe" width="640">](docs/screenshots/panel-probe-surface.png) |
+| **Corner probing**<br><br>Choose the stock corner and tool diameter, then verify probe contact before starting the XYZ corner sequence. | [<img src="docs/screenshots/panel-probe.png" alt="Corner probe geometry and contact check" width="640">](docs/screenshots/panel-probe.png) |
+| **Numeric input**<br><br>Enter dimensions using the numeric keypad. Displayed dimensions are rounded to three decimal places. | [<img src="docs/screenshots/panel-numpad.png" alt="Dimension numeric keypad" width="640">](docs/screenshots/panel-numpad.png) |
+| **Homing confirmation**<br><br>Confirm homing before the machine starts its homing cycle. Individual-axis homing is also available beside the position readout. | [<img src="docs/screenshots/panel-home-confirm.png" alt="Home all confirmation" width="640">](docs/screenshots/panel-home-confirm.png) |
+| **Zeroing confirmation**<br><br>Confirm changes to the current work zero. Per-axis zero buttons and Set Zero All are on Jog. | [<img src="docs/screenshots/panel-zero-confirm.png" alt="Set work zero confirmation" width="640">](docs/screenshots/panel-zero-confirm.png) |
+
+### Settings
+
+| Features and use | Preview |
+| --- | --- |
+| **Live input LEDs**<br><br>Check limits, probes, door, E-stop and other controller inputs live. Each LED sits directly beside its label: red is active, green inactive and grey unknown. | [<img src="docs/screenshots/panel-inputs.png" alt="Controller input diagnostics with active inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs.png) |
+| **Inactive input LEDs**<br><br>Inputs return to green when released. Unavailable or unknown inputs stay grey rather than implying a healthy signal. | [<img src="docs/screenshots/panel-inputs-inactive.png" alt="Controller input diagnostics with inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs-inactive.png) |
+| **Display units and Wi-Fi**<br><br>Choose display units and open Wi-Fi, input diagnostics or the controller settings browser. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
+| **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Probe configuration rows" width="640">](docs/screenshots/panel-settings-probe.png) |
+| **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Lower probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
+| **Controller UART configuration**<br><br>Configure the controller UART transmit pin, receive pin and baud rate. The display uses the full grblHAL serial protocol. | [<img src="docs/screenshots/panel-settings-uart.png" alt="Controller TX RX baud and preview controls" width="640">](docs/screenshots/panel-settings-uart.png) |
+| **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
+
+### grblHAL machine settings
+
+| Features and use | Preview |
+| --- | --- |
+| **Groups and current values**<br><br>Browse the connected controller settings by their reported groups. Search by name, description or setting number. | [<img src="docs/screenshots/panel-machine-settings.png" alt="Grouped grblHAL settings" width="640">](docs/screenshots/panel-machine-settings.png) |
+| **Homing group**<br><br>Select a group to focus on related settings, such as the controller homing configuration. | [<img src="docs/screenshots/panel-machine-settings-homing.png" alt="Controller homing settings" width="640">](docs/screenshots/panel-machine-settings-homing.png) |
+| **Paged settings list**<br><br>Move through the settings list without needing a fixed catalogue built into the display. | [<img src="docs/screenshots/panel-machine-settings-page2.png" alt="Further controller settings" width="640">](docs/screenshots/panel-machine-settings-page2.png) |
+| **Numeric value, description and controller limits**<br><br>Read the controller description, units and limits before changing a numeric value. Save writes the setting and checks its readback. | [<img src="docs/screenshots/panel-machine-setting-number.png" alt="Numeric setting editor" width="640">](docs/screenshots/panel-machine-setting-number.png) |
+| **Switches and option lists**<br><br>Boolean settings use a switch instead of a numeric entry. | [<img src="docs/screenshots/panel-machine-setting-switch.png" alt="Boolean setting editor" width="640">](docs/screenshots/panel-machine-setting-switch.png) |
+| **Controller option list**<br><br>Choose an option using the names supplied by the controller. | [<img src="docs/screenshots/panel-machine-setting-options.png" alt="Controller option list" width="640">](docs/screenshots/panel-machine-setting-options.png) |
+| **Bitfields and axis masks**<br><br>Set individual flags using checkboxes rather than calculating a combined number. | [<img src="docs/screenshots/panel-machine-setting-mask.png" alt="Homing options" width="640">](docs/screenshots/panel-machine-setting-mask.png) |
+| **Homing axis mask**<br><br>Choose the axes included in an axis-mask setting. The available choices come from controller metadata. | [<img src="docs/screenshots/panel-machine-setting-axes.png" alt="Homing axis mask" width="640">](docs/screenshots/panel-machine-setting-axes.png) |
+| **Text, masked passwords and addresses**<br><br>Edit text settings with the onscreen keyboard. Changes are written only when saved. | [<img src="docs/screenshots/panel-machine-setting-text.png" alt="Controller text setting" width="640">](docs/screenshots/panel-machine-setting-text.png) |
+| **Masked controller password editor**<br><br>Password settings use a masked entry field. The controller may also mask the value returned during readback. | [<img src="docs/screenshots/panel-machine-setting-password.png" alt="Masked controller password editor" width="640">](docs/screenshots/panel-machine-setting-password.png) |
+| **Controller IP address editor**<br><br>Edit controller address settings in the same settings browser. | [<img src="docs/screenshots/panel-machine-setting-ip.png" alt="Controller IP address editor" width="640">](docs/screenshots/panel-machine-setting-ip.png) |
+
+### Files and cached toolpath views
+
+| Features and use | Preview |
+| --- | --- |
+| **Display SD files**<br><br>Browse the display card in pages, with sizes and separate Preview and Run actions. | [<img src="docs/screenshots/panel-display-files.png" alt="Display SD files" width="640">](docs/screenshots/panel-display-files.png) |
+| **Controller SD files**<br><br>Browse and run files on the controller without preview downloads. | [<img src="docs/screenshots/panel-controller-files.png" alt="Controller SD files" width="640">](docs/screenshots/panel-controller-files.png) |
+| **File-start fallback**<br><br>If an image is unavailable, review the first 14 G-code lines directly from onboard SD. Headers and comments stay visible while the server is offline or preparing an image. | [<img src="docs/screenshots/panel-preview-text.png" alt="G-code file-start fallback" width="640">](docs/screenshots/panel-preview-text.png) |
+| **Preview preparation**<br><br>Stage, percentage, elapsed time and an animated activity indicator keep long preparations visible. | [<img src="docs/screenshots/panel-preview-progress.png" alt="Preview preparation" width="640">](docs/screenshots/panel-preview-progress.png) |
+| **Isometric preview**<br><br>Inspect the cached toolpath from an isometric angle. The PC is needed only to generate new previews. | [<img src="docs/screenshots/panel-preview-isometric.png" alt="Isometric preview" width="640">](docs/screenshots/panel-preview-isometric.png) |
+| **Perspective preview**<br><br>Choose among eight fixed views. Drag to pan and use a physical pinch to zoom. | [<img src="docs/screenshots/panel-preview-perspective.png" alt="Perspective preview" width="640">](docs/screenshots/panel-preview-perspective.png) |
+| **Top preview**<br><br>Inspect the XY toolpath before confirming a separate Run action. | [<img src="docs/screenshots/panel-preview-top.png" alt="Top preview" width="640">](docs/screenshots/panel-preview-top.png) |
+| **Preview server**<br><br>Set the PC service address. It generates PNG exports and native bitmap caches for fast LCD display. | [<img src="docs/screenshots/panel-preview-server.png" alt="Preview server" width="640">](docs/screenshots/panel-preview-server.png) |
+| **Run confirmation**<br><br>Confirm the selected SD file before starting it. Opening a preview does not start a job. | [<img src="docs/screenshots/panel-run-confirm.png" alt="Run confirmation" width="640">](docs/screenshots/panel-run-confirm.png) |
+
+### Running, paused and completed jobs
+
+| Features and use | Preview |
+| --- | --- |
+| **Running**<br><br>Follow positions, percentage and elapsed time while a job runs. Pause, Stop and feed or spindle overrides are available here. | [<img src="docs/screenshots/panel-job.png" alt="Job progress DRO and overrides" width="640">](docs/screenshots/panel-job.png) |
+| **Paused**<br><br>Resume a paused job from the run screen. Setup and jog controls stay out of the running-job workflow. | [<img src="docs/screenshots/panel-job-paused.png" alt="Paused job with Resume control" width="640">](docs/screenshots/panel-job-paused.png) |
+| **Stop confirmation**<br><br>Confirm Stop before the controller resets. Check machine position and re-home as needed afterward. | [<img src="docs/screenshots/panel-stop-confirm.png" alt="Confirm stopping a job" width="640">](docs/screenshots/panel-stop-confirm.png) |
+| **Complete**<br><br>Acknowledge completion to return to Jog, ready to move the machine away and prepare the next stock. | [<img src="docs/screenshots/panel-complete.png" alt="Successful job completion" width="640">](docs/screenshots/panel-complete.png) |
+
+### Alarms and command errors
+
+| Features and use | Preview |
+| --- | --- |
+| **Controller alarm**<br><br>Controller alarms appear in a red dialog. The header fault indicator can reopen the current alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Red alarm dialog" width="640">](docs/screenshots/panel-alarm.png) |
+| **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error dialog" width="640">](docs/screenshots/panel-error.png) |
+
+### Wi-Fi scan, password entry and connection results
+
+| Features and use | Preview |
+| --- | --- |
+| **Scan in progress**<br><br>A progress indicator stays visible while the onboard Wi-Fi radio scans for networks. | [<img src="docs/screenshots/wifi-scanning.png" alt="Wi-Fi scan progress spinner" width="640">](docs/screenshots/wifi-scanning.png) |
+| **Scanned networks**<br><br>Select a scanned network. Rows show signal strength and a lock for secured networks. | [<img src="docs/screenshots/wifi-networks.png" alt="Networks with signal strength and lock icons" width="640">](docs/screenshots/wifi-networks.png) |
+| **Password entry**<br><br>Enter the password for the selected SSID using the onscreen keyboard. | [<img src="docs/screenshots/wifi-password.png" alt="Empty Wi-Fi password field and keyboard" width="640">](docs/screenshots/wifi-password.png) |
+| **Password validation**<br><br>The entry dialog checks the minimum password length before attempting the connection. | [<img src="docs/screenshots/wifi-password-validation.png" alt="Minimum password length validation" width="640">](docs/screenshots/wifi-password-validation.png) |
+| **Connection failed**<br><br>The result popup reports a failed connection. OK closes both the notification and the Wi-Fi window. | [<img src="docs/screenshots/wifi-failed.png" alt="Wi-Fi connection failure notification" width="640">](docs/screenshots/wifi-failed.png) |
+| **Connected**<br><br>A successful connection saves credentials for automatic reconnection. The header shows the SSID and IP address. | [<img src="docs/screenshots/wifi-connected.png" alt="Wi-Fi successful connection notification" width="640">](docs/screenshots/wifi-connected.png) |
 
 Board source and documentation:
 [VIEWESMART hardware](https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY).
