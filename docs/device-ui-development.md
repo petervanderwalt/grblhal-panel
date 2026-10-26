@@ -104,43 +104,42 @@ UART-disconnected demonstration mode, restoring physical touch afterward.
 From the repository root, using Python with pyserial:
 
 ```powershell
-python tools/capture-gallery.py --section core
+python tools/check-theme-gallery.py
+python tools/check-fullscreen.py
 ```
 
-Cached views and the Preview server dialog are captured by `tools/check-preview.py`.
+Start in metric, incremental CNC mode with no job running. The theme gallery
+captures Jog modes and disabled controls, both SD listings, cached views and the
+14-line text fallback. The development SD card must contain `/mb_83.nc` with
+current cached views and the uncached `/rotary/3D_Finish_1_1.gcode` example.
+Run **Update previews** from
+Files first when the cache is missing. The pan capture exposes the image frame
+so a light canvas backing cannot go unnoticed.
 
-This captures Jog modes and disabled controls, metric/inch settings, probing and
-numeric input, Home/Zero confirmations, controller file listing,
-Run confirmation, running/paused/completed jobs, alarms and command errors.
-It restores the original display-unit preference and physical touch, and leaves
-preview on the simulated Files list. Home/Zero confirmations are cancelled; no
-real controller is connected by the script.
-Start on Jog, Files or Settings with no dialog open. A failed run leaves its
-current screen available for inspection; dismiss that dialog before rerunning.
-
-Wi-Fi captures use the actual C6 radio. They scan, show the empty password field
-and its validation, deliberately try an invalid password, then reconnect to the
-supplied network and capture success. Choose a target among the first four scan
-results. Supply its password only through a temporary environment variable:
+The full-screen check covers Wi-Fi, Probe, Tools, confirmations, controller
+settings, macro editing, actuator configuration and job/error pages. It uses
+UART-disconnected feedback, cancels motion and settings changes, and restores
+physical touch. Wi-Fi checks use the actual C6 radio and the approved development
+network, Braai-Fi. Supply its password only when testing a successful connection:
 
 ```powershell
 $galleryPassword = Read-Host 'Wi-Fi password' -AsSecureString
-$env:PANEL_WIFI_PASSWORD = [System.Net.NetworkCredential]::new('', $galleryPassword).Password
+$env:PANEL_TEST_WIFI_PASSWORD = [System.Net.NetworkCredential]::new('', $galleryPassword).Password
 try {
-    python tools/capture-gallery.py --section wifi --ssid 'Your SSID'
+    python tools/check-fullscreen.py
 } finally {
-    Remove-Item Env:PANEL_WIFI_PASSWORD
+    Remove-Item Env:PANEL_TEST_WIFI_PASSWORD
 }
 ```
 
-Use `--section all` for both sequences, or `--output PATH` to choose the capture
-folder. The default is ignored `captures/gallery/`. Check the process exit code,
-open every PNG and check its intended screen before copying accepted images into
-`docs/screenshots/`. The script deliberately does not publish unchecked images.
-Password-entry images use an empty field; credentials are not saved in the script
-or printed by the password injection hook.
-Raw serial output is retained in the ignored capture folder's `serial.log` for
-diagnosing rejected frames. Publish only the inspected PNGs, not these logs.
+Both tools support `--port`, `--captures PATH` and `--only NAME ...`. Their default
+folders are ignored `captures/readme-refresh/` and `captures/fullscreen/`.
+Check the exit code, open every PNG and confirm the intended state before copying
+accepted images into `docs/screenshots/`. Inspect every image linked by README,
+including alternate Jog states and renderer exports; refreshing the main screens
+alone leaves stale images in the gallery. Publish only inspected images, not
+serial logs or credentials. The earlier `capture-gallery.py` sequence uses the
+previous layout; use the current tools above for this interface.
 
 ## Capture failures and input cleanup
 
@@ -226,7 +225,7 @@ It uses UART-off demo mode, never runs the job, and restores physical touch.
 Restart the preview service after this check.
 ## Capturing selected documentation states
 
-Use `--only <screenshot-name> ...` with `capture-gallery.py`,
+Use `--only <screenshot-name> ...` with `check-theme-gallery.py`, `check-fullscreen.py`,
 `check-machine-settings.py` or `check-tools.py` to retry interrupted images
 without transferring completed captures again. Navigation and checks still run.
 `capture-readme-extras.py --scene <name> ...` captures the remaining UI states, cached large-file views and actuator

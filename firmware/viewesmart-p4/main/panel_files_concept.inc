@@ -60,7 +60,7 @@ static void concept_files_layout() {
         if (!state.file_count) { enable(file_previous, false); enable(file_next, false); }
         concept_library_card();
     } else {
-        // Preview bitmap stays white; the frame and controls follow the library card.
+        // Exposed canvas edges keep the renderer's dark background while panning.
         for (unsigned i = 0; i < lv_obj_get_child_count(body); ++i) {
             auto o = lv_obj_get_child(body, i);
             if (lv_obj_check_type(o, &lv_label_class)) concept_text(o, CONCEPT_INK, font(20));
@@ -71,6 +71,7 @@ static void concept_files_layout() {
             concept_button(start_btn, CONCEPT_AXES[1], CONCEPT_CARD);
         }
         if (local_preview_show) {
+            concept_skin(lv_obj_get_parent(cached_image), CONCEPT_CARD, 0);
             concept_skin(cached_text_panel, 0x14191D, 0);
             for (unsigned i = 0; i < lv_obj_get_child_count(cached_text_panel); ++i)
                 concept_text(lv_obj_get_child(cached_text_panel, i), i ? CONCEPT_INK : CONCEPT_MUTED, font(i ? 16 : 14));

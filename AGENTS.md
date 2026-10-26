@@ -75,8 +75,10 @@ it restores UART-disconnected demo mode and physical touch afterward.
 
 For the complete command reference, console protocol, failure handling and
 reproduction steps, read [docs/device-ui-development.md](docs/device-ui-development.md).
-`tools/capture-gallery.py` is the repeatable page/dialog capture sequence. It
-captures into ignored `captures/gallery/`; inspect every PNG before copying it to
+`tools/check-theme-gallery.py` captures current Jog states, both SD sources and
+cached previews into ignored `captures/readme-refresh/`. Use
+`tools/check-fullscreen.py` for secondary pages in `captures/fullscreen/`.
+Inspect every PNG before copying it to
 `docs/screenshots/`. The README gallery must show this firmware's actual LCD,
 not mockups or reconstructed layouts.
 
