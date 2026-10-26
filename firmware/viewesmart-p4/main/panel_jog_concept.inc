@@ -227,10 +227,13 @@ static void concept_aux_layout() {
         concept_place(axis_work[i],80,14,342,60); concept_text(axis_work[i],CONCEPT_INK,&panel_dro_52);
         concept_place(axis_machine[i],184,76,238,22); concept_text(axis_machine[i],CONCEPT_MUTED,font(16));
     }
-    concept_place(job_controls,32,432,212,80); lv_obj_set_width(job_pause,212);
-    concept_place(stop_btn,260,432,210,80);
+    concept_place(job_controls,32,432,211,80); lv_obj_set_width(job_pause,211);
+    concept_place(stop_btn,259,432,211,80);
     concept_place(body,526,100,466,414); form_control_style(body);
     lv_obj_set_width(file_title,466);
+    lv_obj_set_x(progress,87); lv_obj_set_x(progress_text,219); lv_obj_set_x(time_text,219);
+    for(auto slider:{feed_slider,spindle_slider}) lv_obj_set_width(slider,426);
+    lv_obj_set_width(feed_text,466); lv_obj_set_width(spindle_text,466);
     form_control_style(job_pause); form_control_style(stop_btn);
 }
 static void concept_layout() {

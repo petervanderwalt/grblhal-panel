@@ -27,7 +27,7 @@ def form(kind):
 def shot(name):
  print('CHECK',name,flush=True)
  if args.only is not None and name not in args.only:return
- time.sleep(.4);r.exchange(p,'shot',args.captures/(name+'.png'))
+ time.sleep(1.5);r.exchange(p,'shot',args.captures/(name+'.png'))
 
 def clear_form():
  for _ in range(20):
@@ -106,7 +106,7 @@ try:
   if data('STATE')['settings_result']==1:break
   time.sleep(.5)
  assert data('STATE')['settings_result']==1;shot('panel-machine-settings')
- for setting_id,name in ((100,'number'),(13,'switch'),(22,'mask'),(32,'options'),(74,'text')):
+ for setting_id,name in ((100,'number'),(13,'switch'),(22,'mask'),(32,'options'),(74,'text'),(23,'axes'),(75,'password'),(302,'ip')):
   find(setting_id);shot('panel-machine-setting-'+name);tap(976,32);form('machine-settings')
  tap(266,120);form('machine-search');shot('panel-machine-setting-search');tap(976,32);form('machine-settings');tap(976,32)
  page(2);scroll(650);setting(938);form('numeric');shot('panel-settings-number');tap(712,132)

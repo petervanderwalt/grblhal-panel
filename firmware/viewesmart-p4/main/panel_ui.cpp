@@ -518,7 +518,7 @@ static void modal_close_button(lv_obj_t *card, int width = 1024, lv_event_cb_t c
 
 static void notify(const char *s) {
     auto c = open_modal("Notice");
-    auto text = label(c, s, 80, 164, 864, 24);
+    auto text = label(c, s, 80, 164, 864, 22);
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
     button(c, "OK", 660, 488, 324, 64, cancelled, 0, GREEN);
     finish_modal(c);
@@ -526,7 +526,7 @@ static void notify(const char *s) {
 static void confirm(const char *title, const char *text, bool (*fn)(), uint32_t accent = AMBER,
                     const char *action = "Confirm", uint32_t action_color = GREEN) {
     auto c = open_modal(title, 1024, 600, accent);
-    auto message = label(c, text, 80, 150, 864, 24, MUTED);
+    auto message = label(c, text, 80, 150, 864, 22, MUTED);
     lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
     confirmation = fn;
     button(c, "Cancel", 40, 488, 448, 64, cancelled, 0, RED);
@@ -1137,7 +1137,7 @@ static void wifi_notification() {
     char message[192];
     if(wifi.connected) snprintf(message,sizeof message,"%s\nIP address: %s",wifi.ssid,wifi.ip);
     else snprintf(message,sizeof message,"%s\n%s",wifi.ssid,wifi.status);
-    auto text=label(c,message,80,164,864,26,wifi.connected?GREEN:RED);
+    auto text=label(c,message,80,164,864,28,wifi.connected?GREEN:RED);
     lv_obj_set_style_text_align(text,LV_TEXT_ALIGN_CENTER,0);
     button(c,"OK",660,488,324,64,wifi_result_ok,0,GREEN);finish_modal(c);
 }

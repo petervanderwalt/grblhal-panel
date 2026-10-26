@@ -39,6 +39,13 @@ static void form_control_style(lv_obj_t *obj) {
         lv_obj_set_style_border_color(obj, lv_color_hex(CONCEPT_AXES[2]), LV_PART_CURSOR);
         lv_obj_set_style_bg_color(obj, lv_color_hex(0x171C20), LV_STATE_DISABLED);
         lv_obj_set_style_text_color(obj, lv_color_hex(CONCEPT_MUTED), LV_STATE_DISABLED);
+        if (lv_obj_check_type(obj,&lv_textarea_class)) {
+            auto type=lv_obj_get_style_text_font(obj,0);
+            if(type->line_height<20) { lv_obj_set_style_text_font(obj,font(22),0); type=font(22); }
+            int height=lv_obj_get_style_height(obj,0);
+            if(lv_textarea_get_one_line(obj) && height>=54 && height<=80)
+                lv_obj_set_style_pad_ver(obj,(height-type->line_height-2)/2,0);
+        }
         if (lv_obj_check_type(obj, &lv_dropdown_class)) {
             auto list = lv_dropdown_get_list(obj);
             lv_obj_set_style_bg_color(list, lv_color_hex(CONCEPT_PAD), 0);

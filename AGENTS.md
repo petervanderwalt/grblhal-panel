@@ -498,3 +498,9 @@ UG PREFS exposes form_kind and actual form_w/form_h for reliable checks. Use
 check-fullscreen.py in UART-off demo mode; it never confirms motion or saves
 machine settings/macros. PANEL_TEST_WIFI_PASSWORD optionally reconnects only
 to the approved Braai-Fi network; never commit or print its value.
+
+The screenshot RLE packet buffer is reserved statically in internal RAM (8240
+bytes) so dense settings pages cannot fragment away its allocation. Retain the
+existing framebuffer staging and volatile byte-copy workarounds unchanged.
+Full-screen pages poll only their visible controls; do not repeatedly restyle
+whole lists from enable() or redraw hidden Jog controls behind an opaque page.

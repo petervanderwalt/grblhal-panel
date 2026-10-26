@@ -174,6 +174,7 @@ static void show_preview_server(lv_event_t *) {
     lv_obj_set_size(server_field, 416, 64);
     lv_obj_set_style_text_font(server_field, font(20), 0);
     lv_textarea_set_one_line(server_field, true);
+    lv_obj_set_height(server_field,64);
     lv_textarea_set_max_length(server_field, 127);
     char url[128];
     storage_server(url, sizeof url);
