@@ -523,3 +523,5 @@ Probe Configuration keeps five labelled 64 px fields on the left and a large num
 Controller TTL UART pins are fixed TX37/RX38 in panel_runtime.h; only baud rate is editable. Retain legacy preference fields for NVS compatibility and ignore saved pin overrides. Tool Diameter and UART baud use the two-card numeric layout with Cancel/Apply below the input and a right-hand keypad.
 
 The dependency patch also removes unsupported RGB565_SWAPPED format checks from esp_lvgl_port 2.8 for pinned LVGL 9.2. Fresh release builds must compile managed components rather than rely on local objects.
+
+The browser installer must pulse reset explicitly with `loader.after('custom_reset', false, 'D0|R1|W100|R0|W100')`. Pinned esptool-js 0.7.0's default HardReset releases RTS without asserting it, leaving this CH340-connected board in the flasher stub after a verified write. Keep DTR released before the RTS pulse. Verify a browser install by reading firmware status afterward without another host reset.
