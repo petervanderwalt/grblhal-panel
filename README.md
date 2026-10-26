@@ -9,7 +9,7 @@ or rotary A.
 The CNC landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
 screens keep the common machine operations within reach. Bottom tabs switch
-between Jog, Files, Macros and Settings with a short sliding transition.
+between Jog, Files, Macros, Diag and Settings with a short sliding transition.
 
 Settings also offers an **Actuator** mode for independent X/Y/Z/A
 mechanisms. It replaces Jog, Files and Macros with an **Actuators** screen. Configure
@@ -42,7 +42,7 @@ browser motion commands and Home Assistant control are planned. See the
 - **Spindle / coolant:** a Jog-screen button opens RPM, CW/CCW, spindle Off,
   mist and flood controls, plus discovery and activation of enabled spindles. Starting or switching the spindle requires confirmation. Controls
   use the controller's reported state and RPM limits and are available while idle.
-- **Input diagnostics:** Settings â†’ Inputs shows live limits, probes, door,
+- **Diag:** a dedicated tab shows live limits, probes, door,
   E-stop and other standard controller inputs. LEDs show red for active, green
   for inactive and grey for unknown or stale feedback.
 
@@ -87,7 +87,7 @@ Pause/Resume and Stop below the readout. Feed and spindle overrides use the
 controllerâ€™s reported values. Setup navigation is hidden until the job ends.
 After Job Complete is acknowledged, the pendant returns to Jog.
 
-Alarms and command errors appear in red dialogs. The header fault indicator
+Alarms and command errors appear in red full-screen pages. The header fault indicator
 reopens the current fault. Job Stop asks for confirmation before sending a controller reset; check position
 and re-home as needed afterward. Emergency stopping remains a hardware function.
 
@@ -113,10 +113,13 @@ Save writes one setting and checks the controller's reported value. Settings
 marked as requiring a restart are identified before saving; the pendant does
 not restart the controller automatically. See [Machine settings](docs/machine-settings.md).
 
+Wi-Fi, Probe, Tools, confirmations and controller settings use full-screen pages
+with the same graphite background and dark cards as Jog.
+
 Open Wi-Fi from Settings or the header icon. Scan, select a network and enter
 its password using the onscreen keyboard. Each network row shows signal strength
-and a lock for secured networks. The connection result appears in a popup;
-OK closes both the popup and network window. Successful credentials are saved
+and a lock for secured networks. The connection result appears on a full-screen page;
+OK closes both the result and network page. Successful credentials are saved
 for reconnection. The header shows the connected SSID and IP address.
 
 ## Hardware and project status
@@ -180,15 +183,14 @@ Click a screenshot to open it at full size.
 
 | Features and use | Preview |
 | --- | --- |
-| **Spindle and coolant controls**<br><br>Enter an RPM, choose CW or CCW, or switch the spindle off. Mist and flood controls share this popup. | [<img src="docs/screenshots/panel-accessories.png" alt="Manual spindle and coolant controls with numeric keyboard" width="640">](docs/screenshots/panel-accessories.png) |
+| **Spindle and coolant controls**<br><br>Enter an RPM, choose CW or CCW, or switch the spindle off. Mist and flood controls share this page. | [<img src="docs/screenshots/panel-accessories.png" alt="Manual spindle and coolant controls with numeric keyboard" width="640">](docs/screenshots/panel-accessories.png) |
 | **Available spindle selection**<br><br>Choose from the spindles reported by the controller. The active spindle is identified; entries not enabled in controller settings remain unavailable. | [<img src="docs/screenshots/panel-spindles.png" alt="Available spindle selection" width="640">](docs/screenshots/panel-spindles.png) |
 | **Spindle activation confirmation**<br><br>Confirm the spindle to activate. Selection is available while idle with stopped-spindle feedback, and the controller is queried again afterward. | [<img src="docs/screenshots/panel-spindle-activate.png" alt="Spindle activation confirmation" width="640">](docs/screenshots/panel-spindle-activate.png) |
 | **Spindle start confirmation**<br><br>Check the direction and requested RPM before starting. The entered speed must fit the controller-reported range. | [<img src="docs/screenshots/panel-spindle-confirm.png" alt="Spindle start confirmation" width="640">](docs/screenshots/panel-spindle-confirm.png) |
-| **Twenty macro positions**<br><br>Keep up to twenty named sequences in a four-column grid. Tap a name to run it or the pencil to edit; Add macro stays in the header. | [<img src="docs/screenshots/panel-macros-full.png" alt="Four by five macro grid with sample entries" width="640">](docs/screenshots/panel-macros-full.png) |
+| **Twenty macro positions**<br><br>Keep up to twenty named sequences in a four-column grid. Tap a name to run it or the pencil to edit; Add macro stays in the header. | [<img src="docs/screenshots/panel-macros.png" alt="Macro library with Add and per-macro editing" width="640">](docs/screenshots/panel-macros.png) |
 | **Add or edit a macro**<br><br>Enter a name and G-code, then choose a tile colour. Saved macros remain available after restarting the display. | [<img src="docs/screenshots/panel-macro-editor.png" alt="Macro name colour and G-code editor" width="640">](docs/screenshots/panel-macro-editor.png) |
 | **Run, stop and error recovery**<br><br>Confirm the selected macro before execution. Each command waits for acknowledgement before the next is sent. | [<img src="docs/screenshots/panel-macro-confirm.png" alt="Macro run confirmation" width="640">](docs/screenshots/panel-macro-confirm.png) |
-| **Macro stop confirmation**<br><br>Stop asks for confirmation before resetting the controller. An interrupted macro cannot resume. | [<img src="docs/screenshots/panel-macro-stop.png" alt="Macro stop confirmation" width="640">](docs/screenshots/panel-macro-stop.png) |
-| **Interrupted macro with error and confirmed stop**<br><br>A command error cancels the remaining sequence and requests feed hold. Confirm Stop to reset the controller before continuing. | [<img src="docs/screenshots/panel-macro-error.png" alt="Interrupted macro with error and confirmed stop" width="640">](docs/screenshots/panel-macro-error.png) |
+| **Delete confirmation**<br><br>Delete asks for confirmation before removing a saved macro. Cancel keeps the macro unchanged. | [<img src="docs/screenshots/panel-macro-delete.png" alt="Macro delete confirmation" width="640">](docs/screenshots/panel-macro-delete.png) |
 
 ### Actuator controls and configuration
 
@@ -198,7 +200,7 @@ Click a screenshot to open it at full size.
 | **Rotary A with degree readout and angular position dial**<br><br>Rotary A uses degrees and an angular position dial. Position changes apply when the finger is released. | [<img src="docs/screenshots/panel-actuator-rotary.png" alt="Actuator controls with rotary A" width="640">](docs/screenshots/panel-actuator-rotary.png) |
 | **Repeated endpoint travel with speed control**<br><br>Repeat travels between the two configured endpoints until Stop. The vertical slider sets the travel speed. | [<img src="docs/screenshots/panel-actuator-repeat.png" alt="Actuator repeat control" width="640">](docs/screenshots/panel-actuator-repeat.png) |
 | **Rotary A configuration**<br><br>Set A to Linear or Rotary. Saving updates only the controller bit for A and checks its reported type before permitting movement. | [<img src="docs/screenshots/panel-actuator-rotary-config.png" alt="Rotary A configuration" width="640">](docs/screenshots/panel-actuator-rotary-config.png) |
-| **Mode selection**<br><br>Choose CNC or Actuator mode. Actuator mode replaces the CNC tabs with Actuators and Settings. | [<img src="docs/screenshots/panel-settings-actuator-mode.png" alt="CNC and Actuator mode selection" width="640">](docs/screenshots/panel-settings-actuator-mode.png) |
+| **Mode selection**<br><br>Choose CNC or Actuator mode. Actuator mode replaces the CNC tabs with Actuators, Diag and Settings. | [<img src="docs/screenshots/panel-settings-actuator-mode.png" alt="CNC and Actuator mode selection" width="640">](docs/screenshots/panel-settings-actuator-mode.png) |
 | **Per-actuator settings**<br><br>Open the settings for each actuator independently. Labels and layout choices stay here rather than crowding the control screen. | [<img src="docs/screenshots/panel-actuator-settings.png" alt="Actuator configuration rows in Settings" width="640">](docs/screenshots/panel-actuator-settings.png) |
 | **Names, endpoint labels, positions and speed**<br><br>Edit the actuator name, endpoint labels, positions and speed with the onscreen keyboard. Labels can suit doors, camera sliders or other mechanisms. | [<img src="docs/screenshots/panel-actuator-config.png" alt="Actuator settings with LVGL keyboard" width="640">](docs/screenshots/panel-actuator-config.png) |
 
@@ -214,18 +216,24 @@ Click a screenshot to open it at full size.
 | **X/Y surface probing**<br><br>Choose the approached surface and enter tool diameter. Only the selected work axis is zeroed, using its plate offset and tool radius. | [<img src="docs/screenshots/panel-probe-surface.png" alt="Single X surface probe" width="640">](docs/screenshots/panel-probe-surface.png) |
 | **Corner probing**<br><br>Choose the stock corner and tool diameter, then verify probe contact before starting the XYZ corner sequence. | [<img src="docs/screenshots/panel-probe.png" alt="Corner probe geometry and contact check" width="640">](docs/screenshots/panel-probe.png) |
 | **Numeric input**<br><br>Enter dimensions using the numeric keypad. Displayed dimensions are rounded to three decimal places. | [<img src="docs/screenshots/panel-numpad.png" alt="Dimension numeric keypad" width="640">](docs/screenshots/panel-numpad.png) |
-| **Homing confirmation**<br><br>Confirm homing before the machine starts its homing cycle. Individual-axis homing is also available beside the position readout. | [<img src="docs/screenshots/panel-home-confirm.png" alt="Home all confirmation" width="640">](docs/screenshots/panel-home-confirm.png) |
+| **Homing confirmation**<br><br>Confirm homing before the machine starts its homing cycle. Individual-axis homing is also available beside the position readout. | [<img src="docs/screenshots/panel-home-confirm.png" alt="Individual-axis homing confirmation" width="640">](docs/screenshots/panel-home-confirm.png) |
 | **Zeroing confirmation**<br><br>Confirm changes to the current work zero. Per-axis zero buttons and Set Zero All are on Jog. | [<img src="docs/screenshots/panel-zero-confirm.png" alt="Set work zero confirmation" width="640">](docs/screenshots/panel-zero-confirm.png) |
 
-### Settings
+### Diagnostics
 
 | Features and use | Preview |
 | --- | --- |
 | **Live input LEDs**<br><br>Check limits, probes, door, E-stop and other controller inputs live. Each LED sits directly beside its label: red is active, green inactive and grey unknown. | [<img src="docs/screenshots/panel-inputs.png" alt="Controller input diagnostics with active inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs.png) |
 | **Inactive input LEDs**<br><br>Inputs return to green when released. Unavailable or unknown inputs stay grey rather than implying a healthy signal. | [<img src="docs/screenshots/panel-inputs-inactive.png" alt="Controller input diagnostics with inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs-inactive.png) |
-| **Display units and Wi-Fi**<br><br>Choose display units and open Wi-Fi, input diagnostics or the controller settings browser. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
-| **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Probe configuration rows" width="640">](docs/screenshots/panel-settings-probe.png) |
-| **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Lower probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
+| **Unavailable signals**<br><br>Grey LEDs indicate unknown feedback. Diagnostics identifies disabled controller pin reporting without changing controller settings. | [<img src="docs/screenshots/panel-inputs-unknown.png" alt="Diagnostics with pin reporting disabled" width="640">](docs/screenshots/panel-inputs-unknown.png) |
+
+### Settings
+
+| Features and use | Preview |
+| --- | --- |
+| **Display units and Wi-Fi**<br><br>Choose display units, file location, brightness and Wi-Fi; configure probing, previews and the controller. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
+| **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Combined probe geometry and feed editor" width="640">](docs/screenshots/panel-settings-probe.png) |
+| **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Settings service and probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
 | **Controller UART configuration**<br><br>Configure the controller UART transmit pin, receive pin and baud rate. The display uses the full grblHAL serial protocol. | [<img src="docs/screenshots/panel-settings-uart.png" alt="Controller TX RX baud and preview controls" width="640">](docs/screenshots/panel-settings-uart.png) |
 | **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
 
@@ -234,6 +242,7 @@ Click a screenshot to open it at full size.
 | Features and use | Preview |
 | --- | --- |
 | **Groups and current values**<br><br>Browse the connected controller settings by their reported groups. Search by name, description or setting number. | [<img src="docs/screenshots/panel-machine-settings.png" alt="Grouped grblHAL settings" width="640">](docs/screenshots/panel-machine-settings.png) |
+| **Find a setting**<br><br>Search by name, description or setting number using the onscreen keyboard. | [<img src="docs/screenshots/panel-machine-setting-search.png" alt="Search controller settings" width="640">](docs/screenshots/panel-machine-setting-search.png) |
 | **Homing group**<br><br>Select a group to focus on related settings, such as the controller homing configuration. | [<img src="docs/screenshots/panel-machine-settings-homing.png" alt="Controller homing settings" width="640">](docs/screenshots/panel-machine-settings-homing.png) |
 | **Paged settings list**<br><br>Move through the settings list without needing a fixed catalogue built into the display. | [<img src="docs/screenshots/panel-machine-settings-page2.png" alt="Further controller settings" width="640">](docs/screenshots/panel-machine-settings-page2.png) |
 | **Numeric value, description and controller limits**<br><br>Read the controller description, units and limits before changing a numeric value. Save writes the setting and checks its readback. | [<img src="docs/screenshots/panel-machine-setting-number.png" alt="Numeric setting editor" width="640">](docs/screenshots/panel-machine-setting-number.png) |
@@ -257,7 +266,7 @@ lines and a `0,0,0` marker locate the file's work origin.
 | **Display SD files**<br><br>Browse the display card in pages, with sizes and separate Preview and Run actions. | [<img src="docs/screenshots/panel-display-files.png" alt="Display SD files" width="640">](docs/screenshots/panel-display-files.png) |
 | **Controller SD files**<br><br>Browse and run files on the controller without preview downloads. | [<img src="docs/screenshots/panel-controller-files.png" alt="Controller SD files" width="640">](docs/screenshots/panel-controller-files.png) |
 | **File-start fallback**<br><br>If an image is unavailable, review the first 14 G-code lines directly from onboard SD. Headers and comments stay visible while the server is offline or preparing an image. | [<img src="docs/screenshots/panel-preview-text.png" alt="G-code file-start fallback" width="640">](docs/screenshots/panel-preview-text.png) |
-| **Preview preparation**<br><br>Stage, percentage, elapsed time and an animated activity indicator keep long preparations visible. | [<img src="docs/screenshots/panel-preview-progress.png" alt="Preview preparation" width="640">](docs/screenshots/panel-preview-progress.png) |
+| **Update previews**<br><br>Run a deliberate cache update from Files. The page shows the current filename, progress and a Cancel button. | [<img src="docs/screenshots/panel-preview-update.png" alt="Preview cache update page" width="640">](docs/screenshots/panel-preview-update.png) |
 | **Isometric preview**<br><br>Inspect the cached toolpath from an isometric angle. The PC is needed only to generate new previews. | [<img src="docs/screenshots/panel-preview-isometric.png" alt="Isometric preview" width="640">](docs/screenshots/panel-preview-isometric.png) |
 | **Server-generated perspective view**<br><br>The preview service exports the same image as PNG and native RGB565. X/Y reference lines pass through the work origin. | [<img src="docs/screenshots/mb83-server-perspective.png" alt="Server-generated perspective view of mb_83.nc with origin references" width="640">](docs/screenshots/mb83-server-perspective.png) |
 | **Server-generated top view**<br><br>Review the XY toolpath with the file origin marked 0,0,0. These exports are generated from the large example file. | [<img src="docs/screenshots/mb83-server-top.png" alt="Server-generated top view of mb_83.nc with origin references" width="640">](docs/screenshots/mb83-server-top.png) |
@@ -277,8 +286,8 @@ lines and a `0,0,0` marker locate the file's work origin.
 
 | Features and use | Preview |
 | --- | --- |
-| **Controller alarm**<br><br>Controller alarms appear in a red dialog. The header fault indicator can reopen the current alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Red alarm dialog" width="640">](docs/screenshots/panel-alarm.png) |
-| **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error dialog" width="640">](docs/screenshots/panel-error.png) |
+| **Controller alarm**<br><br>Controller alarms appear on a red full-screen page. The header fault indicator can reopen the current alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Red alarm page" width="640">](docs/screenshots/panel-alarm.png) |
+| **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error page" width="640">](docs/screenshots/panel-error.png) |
 
 ### Wi-Fi scan, password entry and connection results
 
@@ -286,9 +295,8 @@ lines and a `0,0,0` marker locate the file's work origin.
 | --- | --- |
 | **Scan in progress**<br><br>A progress indicator stays visible while the onboard Wi-Fi radio scans for networks. | [<img src="docs/screenshots/wifi-scanning.png" alt="Wi-Fi scan progress spinner" width="640">](docs/screenshots/wifi-scanning.png) |
 | **Scanned networks**<br><br>Select a scanned network. Rows show signal strength and a lock for secured networks. | [<img src="docs/screenshots/wifi-networks.png" alt="Networks with signal strength and lock icons" width="640">](docs/screenshots/wifi-networks.png) |
-| **Password entry**<br><br>Enter the password for the selected SSID using the onscreen keyboard. | [<img src="docs/screenshots/wifi-password.png" alt="Empty Wi-Fi password field and keyboard" width="640">](docs/screenshots/wifi-password.png) |
-| **Password validation**<br><br>The entry dialog checks the minimum password length before attempting the connection. | [<img src="docs/screenshots/wifi-password-validation.png" alt="Minimum password length validation" width="640">](docs/screenshots/wifi-password-validation.png) |
-| **Connection failed**<br><br>The result popup reports a failed connection. OK closes both the notification and the Wi-Fi window. | [<img src="docs/screenshots/wifi-failed.png" alt="Wi-Fi connection failure notification" width="640">](docs/screenshots/wifi-failed.png) |
+| **Password entry**<br><br>Enter the password for the selected SSID using the onscreen keyboard. Charcoal function keys keep the keyboard quiet and readable. | [<img src="docs/screenshots/wifi-password.png" alt="Empty Wi-Fi password field and keyboard" width="640">](docs/screenshots/wifi-password.png) |
+| **Password validation**<br><br>The entry page checks the minimum password length before attempting the connection. | [<img src="docs/screenshots/wifi-password-validation.png" alt="Minimum password length validation" width="640">](docs/screenshots/wifi-password-validation.png) |
 | **Connected**<br><br>A successful connection saves credentials for automatic reconnection. The header shows the SSID and IP address. | [<img src="docs/screenshots/wifi-connected.png" alt="Wi-Fi successful connection notification" width="640">](docs/screenshots/wifi-connected.png) |
 
 Board source and documentation:

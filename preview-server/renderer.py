@@ -6,9 +6,13 @@ import re
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-VERSION = 3
+VERSION = 4
 VIEWS = ('top', 'bottom', 'front', 'back', 'left', 'right', 'isometric', 'perspective')
 WIDTH, HEIGHT = 740, 328
+BACKGROUND, FOREGROUND = (8, 11, 13), (242, 245, 244)
+AXIS_COLORS = ((255, 131, 121), (131, 230, 176))
+MOVE_COLORS = ((66, 79, 88),) * 2 + tuple(
+    (44 + 76 * i // 15, 95 + 127 * i // 15, 115 + 124 * i // 15) for i in range(16))
 WORD = re.compile(r'([A-Z])([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
 
 class PreviewError(ValueError):
@@ -155,9 +159,9 @@ def render(source, directory, progress=None):
         all_low = np.minimum(all_low, reference_xy.min(0))
         all_high = np.maximum(all_high, reference_xy.max(0))
         extent=np.maximum(all_high-all_low,1e-6); scale=min((WIDTH-32)/extent[0],(HEIGHT-32)/extent[1]); mid=(all_low+all_high)/2
-        image=Image.new('RGB',(WIDTH,HEIGHT),'#ffffff'); draw=ImageDraw.Draw(image)
+        image=Image.new('RGB',(WIDTH,HEIGHT),BACKGROUND); draw=ImageDraw.Draw(image)
         reference_pixels = np.rint((reference_xy-mid)*[scale,-scale]+[WIDTH/2,HEIGHT/2]).astype(int)
-        for axis, color in enumerate(('#BD6666', '#5E9467')):
+        for axis, color in enumerate(AXIS_COLORS):
             start, end = reference_pixels[axis*2:axis*2+2]
             if np.linalg.norm(end-start) < 2:
                 continue  # This axis points into the screen in an orthographic side view.
@@ -177,17 +181,17 @@ def render(source, directory, progress=None):
                 key=(int(x0),int(y0),int(x1),int(y1),int(k))
                 if key in seen: continue
                 seen.add(key)
-                color=(215,220,228) if k<2 else (int(170-(k-2)*9),int(185-(k-2)*8),int(230-(k-2)*3))
+                color=MOVE_COLORS[k]
                 draw.line((int(x0),int(y0),int(x1),int(y1)),fill=color,width=1)
             if len(seen)>2000000: seen.clear()
             if progress: progress(phase="rendering", percent=min(99,20+(i+65536)*79//len(segments)), view=view, views=len(VIEWS))
         ox, oy = reference_pixels[4]
-        draw.ellipse((ox-3,oy-3,ox+3,oy+3), fill='white', outline='#30363B', width=1)
+        draw.ellipse((ox-3,oy-3,ox+3,oy+3), fill=BACKGROUND, outline=FOREGROUND, width=1)
         label = '0,0,0'
         lx = max(2,min(WIDTH-42,ox+7)); ly = max(2,min(HEIGHT-18,oy+5))
         bounds = draw.textbbox((lx,ly),label,font=reference_font)
-        draw.rectangle((bounds[0]-1,bounds[1]-1,bounds[2]+1,bounds[3]+1),fill='white')
-        draw.text((lx,ly),label,fill='#30363B',font=reference_font)
+        draw.rectangle((bounds[0]-1,bounds[1]-1,bounds[2]+1,bounds[3]+1),fill=BACKGROUND)
+        draw.text((lx,ly),label,fill=FOREGROUND,font=reference_font)
         image.save(directory/(name+'.png'),optimize=False)
         rgb=np.asarray(image,dtype=np.uint16)
         rgb565=((rgb[:,:,0]>>3)<<11)|((rgb[:,:,1]>>2)<<5)|(rgb[:,:,2]>>3)

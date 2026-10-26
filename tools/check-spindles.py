@@ -47,7 +47,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         time.sleep(1)
         cmd('TEST')
         tap(128, 564)
-        tap(248, 432)
+        tap(254, 482)
         cmd('RX <Idle|FS:0,0|A:>')
         shot('panel-accessories')
         tap(770, 57)
@@ -55,25 +55,25 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         shot('panel-spindles')
         tap(720, 188)
         shot('panel-spindle-activate')
-        tap(342, 409)  # Cancel must not activate.
+        tap(264, 520)  # Cancel must not activate.
         assert data()['active_spindle'] == 0
-        tap(248, 432)
+        tap(254, 482)
         tap(770, 57)
         tap(720, 188)
-        tap(630, 409)
+        tap(760, 520)
         assert data()['active_spindle'] == 1 and not data()['error']
         shot('panel-accessories-vfd')
         tap(770, 57)
         shot('panel-spindles-active')
         tap(916, 57)
-        tap(248, 432)
+        tap(254, 482)
         cmd('RX <Idle|FS:0,1000|A:S>')
         tap(770, 57)
         tap(280, 188)  # Running spindle must block switching.
         assert data()['active_spindle'] == 1
         cmd('RX <Idle|FS:0,0|A:>')
         tap(280, 188)
-        tap(630, 409)
+        tap(760, 520)
         assert data()['active_spindle'] == 0
         tap(916, 57)
         tap(384, 564)

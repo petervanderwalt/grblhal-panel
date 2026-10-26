@@ -12,7 +12,7 @@ import time
 from renderer import render, VERSION
 
 MAX_BYTES = 512*1024*1024
-KEY = re.compile(r'^/v3/jobs/([a-f0-9]{64})(?:/(manifest\.json|(?:top|bottom|front|back|left|right|isometric|perspective)\.(?:png|bin)))?$')
+KEY = re.compile(r'^/v4/jobs/([a-f0-9]{64})(?:/(manifest\.json|(?:top|bottom|front|back|left|right|isometric|perspective)\.(?:png|bin)))?$')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -20,7 +20,7 @@ def main():
     parser.add_argument('--port',type=int,default=47821)
     parser.add_argument('--allow-client',action='append',default=[],type=lambda value:str(ipaddress.ip_address(value)),help='Permit this display IP; may be repeated')
     parser.add_argument('--cache',type=Path,default=Path(__file__).parent/'cache')
-    args=parser.parse_args();args.cache=args.cache/'v3';args.cache.mkdir(parents=True,exist_ok=True)
+    args=parser.parse_args();args.cache=args.cache/'v4';args.cache.mkdir(parents=True,exist_ok=True)
     allowed={'127.0.0.1',args.bind,*args.allow_client}
     executor=ThreadPoolExecutor(max_workers=1)
     busy=set();progress={};lock=threading.Lock()

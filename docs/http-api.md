@@ -49,10 +49,10 @@ Its address is configured in the pendant's Preview server settings.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Service and renderer version. |
-| POST | `/v3/jobs/<sha256>` | Raw G-code upload with Content-Length; SHA-256 must match the body. |
-| GET | `/v3/jobs/<sha256>/manifest.json` | Pending, ready or error result. |
-| GET | `/v3/jobs/<sha256>/<view>.bin` | Native RGB565 bitmap for the pendant. |
-| GET | `/v3/jobs/<sha256>/<view>.png` | PNG export of the same view. |
+| POST | `/v4/jobs/<sha256>` | Raw G-code upload with Content-Length; SHA-256 must match the body. |
+| GET | `/v4/jobs/<sha256>/manifest.json` | Pending, ready or error result. |
+| GET | `/v4/jobs/<sha256>/<view>.bin` | Native RGB565 bitmap for the pendant. |
+| GET | `/v4/jobs/<sha256>/<view>.png` | PNG export of the same view. |
 
 Views are `top`, `bottom`, `front`, `back`, `left`, `right`, `isometric` and
 `perspective`. See [Display SD and cached previews](display-sd-and-previews.md)

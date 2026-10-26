@@ -19,6 +19,8 @@ idf_component_register(
         panel_runtime.cpp
         panel_ui.cpp
         assets/wifi_lock.c
+        assets/panel_dro_52.c
+        assets/panel_action_icons_22.c
         gcode_viewer.cpp
         tests/panel_model_test.cpp
         tests/panel_actuators_test.cpp

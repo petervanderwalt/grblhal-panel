@@ -6,6 +6,7 @@
 #include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
@@ -45,21 +46,22 @@ static void reply(const char *text)
     fflush(stdout);
 }
 
+// The console owns this packet buffer; reserve it before UI heap fragmentation.
+static DRAM_ATTR char screenshot_line[BSP_LCD_H_RES * 8 + 48];
+
 static void screenshot_frame(void)
 {
     const size_t size = BSP_LCD_H_RES * BSP_LCD_V_RES * 2;
     uint16_t *pixels = heap_caps_aligned_alloc(128, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    char *line = heap_caps_malloc(BSP_LCD_H_RES * 8 + 48, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (!pixels || !line) {
+    char *line = screenshot_line;
+    if (!pixels) {
         reply("\n@UGERR memory\n");
         free(pixels);
-        free(line);
         return;
     }
     if (!bsp_display_lock(2000)) {
         reply("\n@UGERR display_busy\n");
         free(pixels);
-        free(line);
         return;
     }
     /* Copy the last displayed frame; rendering stays on the LVGL task. */
@@ -106,7 +108,6 @@ static void screenshot_frame(void)
         }
         reply("@UGEND\n");
     }
-    free(line);
     free(pixels);
 }
 

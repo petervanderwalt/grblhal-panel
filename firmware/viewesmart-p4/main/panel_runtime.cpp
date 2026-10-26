@@ -441,7 +441,7 @@ bool runtime_action(Action a, const char *text, float x, float y) {
         } else ok = model.run(text);
         break;
     case Action::Preview:
-        if (storage_source()) { storage_prioritize(text); ok=true; break; }
+        if (storage_source()) { storage_lookup_preview(text); ok=true; break; }
         if (!preview_locked && model.idle()) {
             if (!preview_data)
                 preview_data =

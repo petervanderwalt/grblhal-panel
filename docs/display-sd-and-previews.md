@@ -23,6 +23,9 @@ python -m pip install -r preview-server/requirements.txt
 python preview-server/server.py --bind 192.168.0.100 --port 47821 --allow-client 192.168.0.34
 ```
 
+Stop older service instances before starting an updated copy. `/health` should
+report renderer `4` for the dark previews.
+
 Replace the address with the PC's address on the same network as the pendant.
 The default bind address is localhost. Specify the PC LAN address and permit
 the display IP with `--allow-client`. Other remote clients receive HTTP 403. Permit only the intended display through the PC firewall.
@@ -33,12 +36,26 @@ An empty address disables new server requests; already cached images still work.
 The address persists across restarts. The PC must be running while generating
 new previews. It is not required for browsing cached images or running jobs.
 
-While the machine is idle, the pendant hashes each file and checks its cache.
-Missing previews are uploaded to the PC as a streaming HTTP body. The server
-checks the SHA-256, generates eight views, and the pendant downloads native RGB565 bitmaps
-into `.panel-previews/v3-<sha256>/` on the display card. A completion marker is
-written only after every bitmap arrives. Original G-code is read-only throughout.
-A changed file gets a different cache key. Incomplete caches are retried.
+Choose **Files > Update previews** when ready to prepare images. The progress
+window shows the filename, current stage and percentage, and files checked.
+Cancel stops further work; completed previews remain on the card. Updates require
+an idle machine. Opening Files, reconnecting Wi-Fi and opening a preview never
+start generation or downloads.
+
+The explicit update hashes each file and checks its cache. Missing previews are
+uploaded to the PC as a streaming HTTP body. The server checks SHA-256, generates
+eight views, and the pendant downloads native RGB565 bitmaps into
+`.panel-previews/v4-<sha256>/`. A completion marker is written only after all
+views arrive. Original G-code stays read-only.
+
+Small `.panel-previews/v4-path-<path hash>` index files map job paths to completed
+caches. Browsing checks file size and modification time against this index without
+reading the full G-code. Update recomputes the content hash, including changes
+that retain the same size and timestamp. Existing caches are indexed on their
+first explicit update; unchanged cached images need no download.
+
+Renderer 4 uses black cards, cyan toolpaths, coral X and mint Y origin axes, and
+a light origin marker. Update the service and pendant firmware together.
 
 Available views: Top, Bottom, Front, Back, Left, Right, Isometric and Perspective.
 Images are 740 x 328 pixels. The server retains PNGs and supplies native LVGL RGB565 files to the pendant, avoiding runtime PNG decoding. Each cached view is 485,452 bytes; eight use about 3.9 MB. Drag an image to pan; use a physical two-finger pinch
@@ -54,9 +71,9 @@ prevent a separate confirmed Run of G-code supported by the controller.
 The server API is deliberately small:
 
 - `GET /health`
-- `POST /v3/jobs/<sha256>` with the raw G-code and Content-Length; returns 202.
-- `GET /v3/jobs/<sha256>/manifest.json`; 202 while working, then ready/error JSON.
-- `GET /v3/jobs/<sha256>/<view>.bin` (or `.png`) for a finished view.
+- `POST /v4/jobs/<sha256>` with the raw G-code and Content-Length; returns 202.
+- `GET /v4/jobs/<sha256>/manifest.json`; 202 while working, then ready/error JSON.
+- `GET /v4/jobs/<sha256>/<view>.bin` (or `.png`) for a finished view.
 
 The service writes only its own `preview-server/cache` directory. It processes
 one generation job at a time. Change the renderer version and firmware cache

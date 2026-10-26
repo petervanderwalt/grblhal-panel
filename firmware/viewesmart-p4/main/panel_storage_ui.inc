@@ -60,7 +60,10 @@ static void cached_refresh() {
     if (storage_preview(preview_path, cached_view, image, sizeof image)) {
         if (strcmp(image, cached_image_path)) {
             snprintf(cached_image_path, sizeof cached_image_path, "%s", image);
+            // Give interactive SD reads priority over other files' cache downloads.
+            storage_preview_viewing(true);
             cached_loaded = storage_read_image(image, cached_pixels, 740*328*2);
+            storage_preview_viewing(cached_loaded);
             if (!cached_loaded) lv_label_set_text(cached_status,"Image unavailable\nShowing file start");
             lv_obj_invalidate(cached_image);
             visibility(cached_image, cached_loaded);
@@ -75,6 +78,7 @@ static void cached_refresh() {
             lv_obj_set_pos(cached_image, 0, 0);
         }
     } else {
+        storage_preview_viewing(false);
         char status[160];
         storage_status(status, sizeof status);
         int percent;
@@ -162,23 +166,28 @@ static void server_save(lv_event_t *) {
     build_page();
 }
 static void show_preview_server(lv_event_t *) {
-    auto c = open_modal("Preview server", 920, 550);
-    modal_close_button(c);
-    label(c, "HTTP address", 24, 84, 850, 18, MUTED);
+    auto c = open_modal("Preview server", 1024, 600);
+    modal_close_button(c, 1024);
+    label(c, "HTTP address", 40, 120, 128, 18, MUTED);
     server_field = lv_textarea_create(c);
-    lv_obj_set_pos(server_field, 24, 116);
-    lv_obj_set_size(server_field, 872, 54);
+    lv_obj_set_pos(server_field, 184, 100);
+    lv_obj_set_size(server_field, 416, 64);
+    lv_obj_set_style_text_font(server_field, font(20), 0);
     lv_textarea_set_one_line(server_field, true);
+    lv_obj_set_height(server_field,64);
     lv_textarea_set_max_length(server_field, 127);
     char url[128];
     storage_server(url, sizeof url);
     lv_textarea_set_text(server_field, url);
     auto keyboard = lv_keyboard_create(c);
     lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(keyboard, 24, 190);
-    lv_obj_set_size(keyboard, 872, 252);
+    lv_obj_set_pos(keyboard, 40, 188);
+    lv_obj_set_size(keyboard, 944, 380);
+    lv_obj_set_style_text_font(keyboard, font(22), LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard, server_field);
-    button(c, "Save", 636, 466, 260, 60, server_save, 0, GREEN);
+    button(c, "Save", 800, 100, 184, 64, server_save, 0, GREEN);
+    button(c, "Cancel", 616, 100, 168, 64, cancelled, 0, CARD, true);
+    concept_form_dialog(c, keyboard, &server_field, 1);
     server_open = true;
 }
 
@@ -195,4 +204,49 @@ static void file_location_changed(lv_event_t *e) {
     local_preview_show = preview_show = preview_pending = false;
     runtime_action(Action::List);
     runtime_snapshot(state);
+}
+
+static void preview_update_refresh() {
+    bool active, busy; unsigned done,total,failed;
+    storage_update_state(active,busy,done,total,failed);
+    char status[160], path[160], text[240]; storage_status(status,sizeof status,path,sizeof path);
+    const char *name=strrchr(path,'/'); name=name?name+1:path;
+    lv_label_set_text(preview_update_name,name);
+    if (preview_update_cancelled) snprintf(text,sizeof text,busy?"Stopping...":"Update cancelled");
+    else snprintf(text,sizeof text,"%s",status);
+    lv_label_set_text(preview_update_status,text);
+    int percent; storage_progress(&percent);
+    lv_bar_set_value(preview_update_bar,percent<0?0:percent,LV_ANIM_OFF);
+    snprintf(text,sizeof text,"%u / %u files%s",done,total,active?"":" checked");
+    lv_label_set_text(preview_update_overall,text);
+    lv_label_set_text(lv_obj_get_child(preview_update_button,0),active?"Cancel":busy?"Stopping...":"OK");
+    lv_obj_set_style_bg_color(preview_update_button,lv_color_hex(active?RED:busy?0x22272B:GREEN),0);
+    enable(preview_update_button,!busy||active);
+    visibility(preview_update_spinner,active||busy);
+}
+static void preview_update_action(lv_event_t *) {
+    bool active,busy; unsigned done,total,failed;
+    storage_update_state(active,busy,done,total,failed);
+    if (active) { preview_update_cancelled=true; storage_update_cancel(); preview_update_refresh(); }
+    else if (!busy) { close_modal(); build_page(); }
+}
+static void show_preview_update(lv_event_t *) {
+    if (!storage_update_start()) { notify("Preview update unavailable. Wait for the SD card and an idle machine."); return; }
+    auto c=open_modal("Update previews");
+
+    lv_obj_set_style_radius(c,0,0);
+    preview_update_name=label(c,"",40,116,944,24,0xF2F5F4);
+    lv_label_set_long_mode(preview_update_name,LV_LABEL_LONG_DOT);
+    preview_update_spinner=lv_spinner_create(c); lv_obj_set_pos(preview_update_spinner,40,196); lv_obj_set_size(preview_update_spinner,30,30);
+    lv_spinner_set_anim_params(preview_update_spinner,1000,220);
+    lv_obj_set_style_arc_color(preview_update_spinner,lv_color_hex(0x34373C),0);
+    lv_obj_set_style_arc_color(preview_update_spinner,lv_color_hex(0x78DEEF),LV_PART_INDICATOR);
+    preview_update_status=label(c,"",96,200,888,18,0x94A0A5);
+    preview_update_bar=lv_bar_create(c); lv_obj_set_pos(preview_update_bar,40,278); lv_obj_set_size(preview_update_bar,944,16);
+    lv_obj_set_style_bg_color(preview_update_bar,lv_color_hex(0x34373C),0); lv_obj_set_style_bg_opa(preview_update_bar,LV_OPA_COVER,0);
+    lv_obj_set_style_bg_color(preview_update_bar,lv_color_hex(0x78DEEF),LV_PART_INDICATOR);
+    preview_update_overall=label(c,"",40,332,944,18,0x94A0A5);
+    preview_update_button=button(c,"Cancel",660,488,324,64,preview_update_action,0,0x22272B);
+    lv_obj_set_style_text_color(lv_obj_get_child(preview_update_button,0),lv_color_hex(0xF2F5F4),0);
+    preview_update_cancelled=false; preview_update_open=true; preview_update_refresh(); finish_modal(c);
 }

@@ -146,12 +146,12 @@ Filter realtime characters from filenames and honour `UNUSABLE` entries.
 
 Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
 rows on the left and group the entire XYZ pad on the right, with Z immediately
-beside XY and a blank centre. Use Jog / Files / Macros / Settings navigation.
+beside XY and a blank centre. Use Jog / Files / Macros / Diag / Settings navigation.
 Jog work coordinates use 28 px type and DRO rows have no coloured borders.
 Do not show protocol command bytes or a redundant units/WCS footer to end users.
 The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
 duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
-Jog / Files / Macros / Settings tab accents are blue / green / teal / orange, with opaque
+Jog / Files / Macros / Diag / Settings tab accents are blue / green / teal / orange, with opaque
 backgrounds and a solid selected fill; no top selection line. Tab taps slide the
 shared page_layer horizontally for 220 ms; keep the header and tab bar stationary.
 The animation layer holds controls only during the slide; restore their root
@@ -162,7 +162,7 @@ Command-busy locks input immediately but keeps setup colours steady for the firs
 Speed/mode selectors retain their checked palette throughout Idle/Jog while input
 is unavailable; they still grey out for disconnect, Hold, alarms and errors.
 Use subtle button
-gradients and card shadows. Fault dialogs have square edges and red title bands; successful
+gradients and card shadows. Fault pages use red accents on the full-screen graphite/card layout; successful
 completion uses green. Include simulated alarms and errors in workflow checks.
 Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero
 use quiet flat backgrounds with subtle axis-coloured outlines; DRO action buttons
@@ -180,12 +180,13 @@ File preview controls and filename are inset inside the card. Use the eight
 cached views and physical pinch zoom, without +/- buttons or success notices.
 The file-list interior is white; the main grey background separates the cards.
 Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
-All modal frames have square corners. Probe and Wi-Fi scan share the same white
-header close icon with a transparent background. Keep touch buttons rounded.
+Secondary screens fill the LCD with graphite, a title/close control above a rounded
+black content card, and rounded dark controls. No floating or translucent overlays.
+Probe Configuration is the explicit unchanged black-editor exception.
 Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
 Scan rows show signal strength followed by a lock icon for secured networks; open
 networks have no lock. The Font Awesome glyph and license are in main/assets/.
-Files and Settings have no DRO. Probe is a modal launched from Jog; remove Probe and Zero /
+Files and Settings have no DRO. Probe is a full-screen page launched from Jog; remove Probe and Zero /
 Home tabs. G54-G59 uses a dropdown on Jog. Keep labels short; omit instructional
 filler such as "tap once" and "move the set distance". Settings uses labelled rows.
 
@@ -217,7 +218,7 @@ contact, geometry and spindle interlocks.
 
 On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
 Resume after hold feedback. Dialogs cover these controls and have their own close
-or Cancel action. Jog / Files / Macros / Settings use the native LVGL bottom tabview,
+or Cancel action. Jog / Files / Macros / Diag / Settings use the native LVGL bottom tabview,
 with no content swiping; hide it during jobs and until completion is acknowledged.
 
 `tools/check-workflow.py` checks LCD units, settings swipes, the Probe modal,
@@ -288,7 +289,7 @@ accept `PANEL_PORT` to override COM12.
 
 ## Inputs, accessories and macros
 
-Settings ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ Inputs is read-only and works in both modes. Preserve the distinction
+Diagnostics is read-only and works in both modes. Preserve the distinction
 between `Pn:` control/limit snapshots and extended I/J/K probe deltas. Missing
 or stale feedback must not look active or safely released. Never enable `$10`
 automatically. The Jog Spindle / coolant button opens manual controls; use
@@ -296,7 +297,7 @@ controller `$30`/`$31` limits and explicit spindle-start confirmation. `A:` is
 reported accessory state, not a prediction from a click. Retain spindle-direction
 interlocks for probing and actuators, including controllers without `FS:` RPM.
 
-CNC tab order is Jog / Files / Macros / Settings. Internal page IDs remain
+CNC tab order is Jog / Files / Macros / Diag / Settings. Internal page IDs remain
 Jog=0, Files=1, Settings=2, Macros=3; map native tab indices explicitly. Actuator
 mode hides Files and Macros. `panel_tools_ui.inc` and `panel_macros.h` contain
 the screens and bounded NVS store. Macros use the acknowledged model queue,
@@ -354,7 +355,7 @@ listing and Run only. `panel_storage.cpp` mounts the inserted card without
 formatting, scans up to 512 jobs into a PSRAM catalogue, and exposes four rows
 per page. Initialise each sort index before publishing a scan entry; the LVGL
 snapshot may run during scanning. Never render hundreds of LVGL rows at once.
-Cache files belong only in `.panel-previews/v3-<sha256>/`; never rewrite original
+Cache files belong only in `.panel-previews/v4-<sha256>/`; never rewrite original
 G-code. Shared SDMMC cleanup must release slot 0 only, preserving C6 slot 1.
 Long FAT filenames are enabled in sdkconfig. `panel_fs.cpp` validates native
 bitmap headers and reads through a 1 KiB internal staging buffer into a single
@@ -380,9 +381,13 @@ copies use the same explicit byte-loop precaution as capture on this P4.
 
 `preview-server/server.py` accepts hash-addressed raw uploads and generates the
 eight 740x328 PNGs and native RGB565 bitmaps using `renderer.py`. It checks the upload hash, serialises
-rendering work and publishes a ready/error manifest. The pendant only prepares
-previews while idle, checks for configuration/network changes and caches every native
-view before writing its completion marker. Keep HTTP and SD work off LVGL.
+rendering work and publishes a ready/error manifest. The pendant prepares
+previews only through Files > Update previews, while idle, and caches every native
+view before writing its completion marker. No generation or content hashing on
+page entry, Wi-Fi reconnect or preview selection. Small v4-path indexes restore
+cache mappings by path, size and timestamp after reboot; explicit Update hashes
+content. Keep HTTP and preparation work off LVGL.
+`tools/check-preview-update.py` checks idle browsing, explicit start and Cancel.
 The service binds localhost by default; LAN use needs an explicit bind address.
 Do not add or broaden host firewall rules without user approval. See
 `docs/display-sd-and-previews.md` for limits, setup and validation.
@@ -442,3 +447,60 @@ the checked item. Keep callbacks on release; running refresh during press left
 Continuous active while Incremental remained highlighted. PREFS exposes
 continuous/mode_checked for the real-touch check and scroll_y for capture
 coordinates after Settings rows change.
+
+Settings actions (Preview server, Input diagnostics, Machine settings) belong in
+scrollable label/button rows, not the title area. Probe Configuration has one Edit row
+opening a full-screen XYZ/feed/inset form and shared numeric keypad, with one
+decimal in mm and three in inches. Validate all five fields before saving. Never
+round saved geometry on open or Cancel. Dialogs use an opaque full-screen backing without dimming or floating shadows; preserve
+background input blocking and fully restore the page on close. Keep the internal
+LCD drawing buffer; do not add PSRAM rendering experiments on this early P4. See tools/check-settings-rows.py and the dialog diagnostics in
+UG PREFS before changing popup rendering.
+
+Full-screen editors (Macro Add/Edit and Preview Server)
+use solid red Cancel/Delete on the left and mint Save on the right. Keep these
+roles consistent in both concept_macro_dialog and concept_form_dialog. Settings
+uses flat opaque list rows with bottom dividers; do not restore per-row shadows
+or rounded card clipping. Probe Configuration groups XYZ, feed and corner inset
+in one editor and validates all five before saving. Tool diameter stays on Probe.
+
+Settings uses the same graphite background, black list and dark neutral controls
+as the refreshed main screens. Keep rows flat, with simple bottom separators.
+When restoring source backups, touch their timestamps or clean the build; a newer
+object can otherwise retain reverted PSRAM buffer experiments.
+
+Settings keeps its heading above the rounded outer card, matching Files/Macros.
+The flat scrollable list is inset inside that card; keep the heading stationary
+while scrolling and include it in the normal page slide.
+
+The main CNC dock is Jog / Files / Macros / Diag / Settings. Preserve
+page IDs Jog=0, Files=1, Settings=2, Macros=3, Job=4, Complete=5; Diagnostics=6.
+Use tab_pages/tab_for_page instead of page-number comparisons for navigation.
+CNC dock centres are x=116/314/512/710/908 at y=566. Actuator mode hides Files
+and Macros but keeps Diagnostics. Input diagnostics lives on this read-only
+page, not a Settings row or modal. Retain unknown/stale and pin-reporting states.
+
+The shared status/Wi-Fi card is a native rounded rectangle at (502,-36),
+506x96 with radius 28. Its upper corners sit off-screen so it joins the bezel.
+Keep its bottom edge at y=60; the status and Wi-Fi contents sit 8 px above their
+original positions. The bottom dock is (16,540), 992x96 with radius 26 and 49 px
+bottom padding, extending off-screen while its pills remain at y=545, height 42;
+use normal screen clipping, without a canvas or custom raster drawing.
+
+Full-screen form implementation: panel_fullscreen.inc styles secondary controls;
+open_modal now builds a full 1024x600 page with a rounded (16,76,992,508) content
+card. The internal name remains for existing return callbacks. finish_modal runs
+before drawing each page, including dynamic Wi-Fi and machine-setting lists.
+Keep validation/confirmation/Cancel behavior intact. Only Probe Configuration
+passes plain=true; do not restyle it during this pass. New keyboard function keys
+use subdued charcoal, not cyan. Update/OK and Cancel retain semantic colours.
+UG PREFS exposes form_kind and actual form_w/form_h for reliable checks. Use
+check-fullscreen.py in UART-off demo mode; it never confirms motion or saves
+machine settings/macros. PANEL_TEST_WIFI_PASSWORD optionally reconnects only
+to the approved Braai-Fi network; never commit or print its value.
+
+The screenshot RLE packet buffer is reserved statically in internal RAM (8240
+bytes) so dense settings pages cannot fragment away its allocation. Retain the
+existing framebuffer staging and volatile byte-copy workarounds unchanged.
+Full-screen pages poll only their visible controls; do not repeatedly restyle
+whole lists from enable() or redraw hidden Jog controls behind an opaque page.

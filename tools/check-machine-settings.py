@@ -23,6 +23,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
     p.dtr = p.rts = False
     p.port = args.port
     p.open()
+    r.buffered_lines(p)
     for _ in range(20):
         p.write(b'\nUG SYNC\n')
         deadline = time.monotonic() + 1
@@ -77,9 +78,14 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         cmd('DEMO ON')
         cmd('TOUCH OFF')
         time.sleep(1)
-        tap(848, 564)
+        tap(870, 566)
         shot('panel-settings-root')
-        tap(831, 96)
+        cmd("SWIPE 940 450 940 150")
+        time.sleep(.4)
+        cmd("SWIPE 940 400 940 220")
+        time.sleep(.4)
+        prefs = json.loads(cmd("PREFS").removeprefix("@UGDATA "))
+        tap(850, 70 + 658 - prefs["scroll_y"])
         time.sleep(2)
         s = state()
         assert s['settings_result'] == 1 and s['settings_groups'] >= 8, s
@@ -141,7 +147,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         saved()
         tap(956, 48)
         tap(256, 564)
-        tap(848, 564)
+        tap(870, 566)
         print('PASS: groups, pagination, search, typed editors, validation and save/readback')
     finally:
         cmd('TOUCH ON')

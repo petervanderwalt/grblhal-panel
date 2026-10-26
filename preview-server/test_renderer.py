@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import numpy as np
-from renderer import geometry, render, PreviewError, WIDTH, HEIGHT
+from renderer import geometry, render, PreviewError, WIDTH, HEIGHT, BACKGROUND, FOREGROUND, AXIS_COLORS, MOVE_COLORS
 from PIL import Image
 import struct
 
@@ -25,6 +25,11 @@ class GeometryTests(unittest.TestCase):
                 self.assertEqual(struct.unpack('<BBHHHHH',data[:12]),(0x19,0x12,0,WIDTH,HEIGHT,WIDTH*2,0))
                 self.assertEqual(len(data),12+WIDTH*HEIGHT*2)
                 self.assertTrue((p/(view+'.png')).is_file())
+                pixels=np.asarray(Image.open(p/(view+'.png')),dtype=np.uint16)
+                self.assertTrue(np.array_equal(pixels[0,0],BACKGROUND))
+                self.assertGreater(np.all(pixels==MOVE_COLORS[-1],axis=2).sum(),10,view)
+                expected=((pixels[:,:,0]>>3)<<11)|((pixels[:,:,1]>>2)<<5)|(pixels[:,:,2]>>3)
+                np.testing.assert_array_equal(np.frombuffer(data[12:],dtype='<u2').reshape(HEIGHT,WIDTH),expected)
     def test_origin_reference_lines(self):
         base=Path(__file__).resolve().parent.parent/'captures'/'renderer-tests'
         base.mkdir(parents=True,exist_ok=True)
@@ -32,14 +37,13 @@ class GeometryTests(unittest.TestCase):
             p=Path(directory);source=p/'in.nc'
             source.write_text('G0 X20 Y20\nG1 X40 Y30 Z5\n',encoding='ascii')
             render(source,p)
-            for name, colors in [('top',[(189,102,102),(94,148,103)]),
-                                 ('front',[(189,102,102)]),('left',[(94,148,103)]),
-                                 ('isometric',[(189,102,102),(94,148,103)]),
-                                 ('perspective',[(189,102,102),(94,148,103)])]:
+            for name, colors in [('top',AXIS_COLORS), ('front',AXIS_COLORS[:1]),
+                                 ('left',AXIS_COLORS[1:]), ('isometric',AXIS_COLORS),
+                                 ('perspective',AXIS_COLORS)]:
                 pixels=np.asarray(Image.open(p/(name+'.png')))
                 for color in colors:
                     self.assertGreater(np.all(pixels==color,axis=2).sum(),10,(name,color))
-                self.assertGreater(np.all(pixels==(48,54,59),axis=2).sum(),10,name)
+                self.assertGreater(np.all(pixels==FOREGROUND,axis=2).sum(),10,name)
     def parse(self, code):
         base=Path(__file__).resolve().parent.parent/"captures"/"renderer-tests"
         base.mkdir(parents=True,exist_ok=True)

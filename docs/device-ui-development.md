@@ -244,3 +244,62 @@ frame-row logging and flushes at protocol boundaries rather than after every
 row. Keep these paths buffered; per-byte reads and per-row disk flushes made
 large captures exceed the host deadline. `check-macro-grid.py --short-samples`
 uses compact G21/G90 fixtures for photos; its empty-library safeguard remains.
+
+### Manual preview preparation
+
+`UG SD STATE` exposes `update_active`, `update_done` and `update_failed` as well
+as `preparing`, `working` and `percent`. Normal Files browsing leaves both active
+flags false. Use Files > Update previews to start a batch; Cancel stops it.
+Cached preview selection uses a small persistent path index and does not start
+hashing or networking. `tools/check-preview-update.py` exercises this on the LCD
+in UART-disconnected demo mode and restores physical touch afterward.
+
+### Dialog checks
+
+`UG PREFS` reports `dialog` and `number_value`. Assert dialog identity before
+injecting keypad or popup actions. Dialogs use opaque full-screen backing without
+translucent dimming or floating shadows, and block background machine actions.
+
+When restoring source backups, update their modification times or run `idf.py clean`
+before building. Preserved older timestamps can leave a newer experimental object
+in the firmware even though the source has been restored. Keep the LCD draw buffer
+in internal DMA RAM (1024 x 50 pixels); no full-frame PSRAM drawing buffer.
+
+The full-screen Probe Configuration editor has one shared numeric keyboard for
+X/Y/Z, feed and corner inset.
+`UG SETTING FIELD <ASCII-hex>` fills its currently focused field without applying;
+it still fills machine-setting/search fields when that editor is open. `UG PREFS`
+reports `dialog=probe-offsets` and the draft values as `probe_edit_x/y/z`. Saved
+values remain in `x/y/z`, `feed` and `inset`; draft feed/inset use
+`probe_edit_feed` and `probe_edit_inset`. Validate all five before changing any.
+
+### Diagnostics page
+
+The Diag pill opens the read-only Diagnostics page (page ID 6), immediately
+before Settings. Its LEDs use the existing input parser; missing or stale input
+reports stay unknown. No input-diagnostics row remains in Settings.
+
+`python tools/check-diagnostics.py --port COM12` checks all five tabs, extended
+probe retention/release, standard limits, disabled pin reporting, Probe Cancel
+and unchanged preferences. It captures the main screens and input states into
+`captures/diagnostics/` with UART1 disconnected, then restores physical touch.
+Inspect those real framebuffer images before publishing them to the README.
+
+### Full-screen secondary pages
+
+Wi-Fi scan/password/result, Probe, Tools/spindle choice, numeric input,
+confirmations, machine settings/search/editors, actuator configuration, macro
+editing, preview server and preview-update progress use the main graphite/card
+palette. Probe Configuration retains its existing black editor until its redesign.
+The old `modal` variable hosts a fully opaque page; it is not a floating overlay.
+
+`UG PREFS` includes `form_kind` and the actual content page `form_w`/`form_h`.
+Assert these before interacting or capturing; a tap alone does not prove that the
+expected page opened. `tools/check-fullscreen.py` checks return paths and Cancel,
+keeps controller UART off, and restores physical touch and application mode.
+`--only NAME...` limits captures while retaining functional checks. Optional
+`PANEL_TEST_WIFI_PASSWORD` is read only from the environment and never logged;
+connection checks target Braai-Fi only. No macro or machine setting is saved.
+
+The Wi-Fi worker defers a scan queued during saved-network startup until the
+connection attempt finishes; an early scan must not cancel the startup reconnect.

@@ -146,6 +146,7 @@ static void connect_network(const request_t *r) {
 static void worker(void *arg) {
     (void)arg;
     uint32_t signal_at = 0;
+    bool scan_pending = false;
     request_t r = {.type = CONNECT};
     nvs_handle_t h;
     if (nvs_open("panelwifi", NVS_READONLY, &h) == ESP_OK) {
@@ -160,6 +161,10 @@ static void worker(void *arg) {
     for (;;) {
         if (xQueueReceive(queue, &r, pdMS_TO_TICKS(100))) {
             if (r.type == SCAN) {
+                wifi_bridge_state_t current;
+                wifi_bridge_snapshot(&current);
+                // An early UI scan can be queued before saved-network startup sets connecting.
+                if (current.connecting) { scan_pending = true; continue; }
                 esp_err_t err = start();
                 if (err == ESP_OK) {
                     wifi_scan_config_t scan = {.show_hidden = false};
@@ -248,6 +253,13 @@ static void worker(void *arg) {
         }
         wifi_bridge_state_t current;
         wifi_bridge_snapshot(&current);
+        if (scan_pending && !current.connecting) {
+            scan_pending = false;
+            request_t scan = {.type = SCAN};
+            LOCK(); state.scanning = true; started = now(); UNLOCK();
+            status("Scanning...");
+            if (xQueueSend(queue,&scan,0) != pdTRUE) failure(ESP_ERR_NO_MEM);
+        }
         if (retry_pending && !current.scanning && now() - retry_since >= 1000 &&
             now() - started <= 30000) {
             retry_pending = false;
