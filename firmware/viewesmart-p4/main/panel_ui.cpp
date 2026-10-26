@@ -238,6 +238,7 @@ static void load() {
             actuator_prefs = actuators;
         nvs_close(h);
     }
+    prefs.tx=ControllerTxPin; prefs.rx=ControllerRxPin;
 }
 static const lv_font_t *font(int size) {
     switch (size) {
@@ -579,36 +580,45 @@ static void edit(Edit e) {
     e.converted = !e.integer;
     editing = e;
     lv_obj_t *c = open_modal(e.title);
+    lv_obj_set_width(lv_obj_get_child(c,0),600);
+    auto keypad_card=box(c,632,76,376,508);
+    lv_obj_set_style_radius(keypad_card,28,0);
+    lv_obj_set_style_border_width(keypad_card,0,0);
     modal_close_button(c);
+    label(c,e.integer?"Baud rate":"Tool diameter",40,108,200,22,TEXT);
+    label(c,e.integer?"baud":(inches?"in":"mm"),40,136,200,14,MUTED);
     number = lv_textarea_create(c);
-    lv_obj_set_pos(number, 40, 100);
-    lv_obj_set_size(number, 400, 64);
-    lv_textarea_set_one_line(number, true);
-    lv_obj_set_height(number, 64);
-    lv_textarea_set_max_length(number, 10);
-    lv_textarea_set_accepted_chars(number, "0123456789.");
+    lv_obj_set_pos(number,264,100); lv_obj_set_size(number,328,64);
+    lv_textarea_set_one_line(number,true); lv_obj_set_height(number,64);
+    lv_textarea_set_max_length(number,10);
+    lv_textarea_set_accepted_chars(number,e.integer?"0123456789":"0123456789.");
     char value[24];
-    snprintf(value, sizeof value, e.integer ? "%.0f" : "%.3f",
-             *e.value / (e.converted ? display_scale(inches) : 1));
-    snprintf(edit_initial, sizeof edit_initial, "%s", value);
-    lv_textarea_set_text(number, value);
-    lv_obj_set_style_text_font(number, font(28), 0);
-    lv_obj_set_style_bg_color(number, lv_color_hex(BG), 0);
-    lv_obj_set_style_text_color(number, lv_color_hex(TEXT), 0);
-    const char *keys[] = {"7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "Back"};
-    for (int i = 0; i < 12; i++) {
-        lv_obj_t *b = button(c, keys[i], 40 + (i % 3) * 320, 224 + (i / 3) * 82, 304, 72, nullptr);
-        lv_obj_add_event_cb(b, key, LV_EVENT_CLICKED, (void *)keys[i]);
-    }
-    button(c, "Cancel", 632, 100, 160, 64, cancelled, 0, CARD, true);
-    lv_obj_t *clear = button(c, "Clear", 456, 100, 160, 64, nullptr);
-    lv_obj_add_event_cb(clear, key, LV_EVENT_CLICKED, (void *)"Clear");
-    button(c, "Apply", 808, 100, 176, 64, apply_number, 0, GREEN);
+    snprintf(value,sizeof value,e.integer?"%.0f":"%.3f",*e.value/(e.converted?display_scale(inches):1));
+    snprintf(edit_initial,sizeof edit_initial,"%s",value);
+    lv_textarea_set_text(number,value);
+    lv_obj_set_style_text_font(number,font(22),0);
+    lv_obj_set_style_text_align(number,LV_TEXT_ALIGN_RIGHT,0);
+    auto clear=button(c,"Clear",424,180,168,48,nullptr);
+    lv_obj_add_event_cb(clear,key,LV_EVENT_CLICKED,(void *)"Clear");
     char limits[80];
-    snprintf(limits, sizeof limits, "Range %.3f to %.3f", e.min / (e.converted ? display_scale(inches) : 1),
-             e.max / (e.converted ? display_scale(inches) : 1));
-    number_error = label(c, limits, 40, 184, 944, 16, MUTED);
+    snprintf(limits,sizeof limits,"Range %.3f to %.3f",e.min/(e.converted?display_scale(inches):1),e.max/(e.converted?display_scale(inches):1));
+    label(c,limits,40,192,368,16,MUTED);
+    number_error=label(c,"",40,244,552,20,RED);
+    button(c,"Cancel",40,496,268,64,cancelled,0,RED);
+    button(c,"Apply",324,496,268,64,apply_number,0,GREEN);
+    auto keyboard=lv_keyboard_create(c);
+    lv_obj_set_align(keyboard,LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(keyboard,656,100); lv_obj_set_size(keyboard,328,460);
+    static const char *const decimal_keys[]={"1","2","3","\n","4","5","6","\n","7","8","9","\n",".","0",LV_SYMBOL_BACKSPACE,""};
+    static const char *const integer_keys[]={"1","2","3","\n","4","5","6","\n","7","8","9","\n","00","0",LV_SYMBOL_BACKSPACE,""};
+    static constexpr auto digit=(lv_buttonmatrix_ctrl_t)(1|LV_BUTTONMATRIX_CTRL_NO_REPEAT);
+    static const lv_buttonmatrix_ctrl_t controls[]={digit,digit,digit,digit,digit,digit,digit,digit,digit,digit,digit,(lv_buttonmatrix_ctrl_t)(1|LV_BUTTONMATRIX_CTRL_CHECKED)};
+    lv_keyboard_set_map(keyboard,LV_KEYBOARD_MODE_NUMBER,e.integer?integer_keys:decimal_keys,controls);
+    lv_keyboard_set_mode(keyboard,LV_KEYBOARD_MODE_NUMBER);
+    lv_keyboard_set_textarea(keyboard,number);
     finish_modal(c);
+    lv_obj_set_style_text_font(keyboard,font(28),LV_PART_ITEMS);
+    lv_obj_add_state(number,LV_STATE_FOCUSED);
 }
 static void edit_value(lv_event_t *e) {
     if (state.probing) {
@@ -630,12 +640,6 @@ static void edit_value(lv_event_t *e) {
         if (probe_offsets_keyboard) lv_obj_send_event(probe_offset_fields[index],LV_EVENT_FOCUSED,nullptr);
         break;
     }
-    case 8:
-        edit({&prefs.tx, 0, 54, "UART TX pin", true});
-        break;
-    case 9:
-        edit({&prefs.rx, 0, 54, "UART RX pin", true});
-        break;
     case 10:
         edit({&prefs.baud, 9600, 921600, "UART baud rate", true});
         break;
@@ -939,7 +943,7 @@ static void connect_click(lv_event_t *) {
     if (runtime_link_active() || state.online)
         runtime_disconnect();
     else
-        result(runtime_connect((int)prefs.tx, (int)prefs.rx, (int)prefs.baud, usb_connection));
+        result(runtime_connect((int)prefs.baud, usb_connection));
 }
 static void demo_click(lv_event_t *) { runtime_demo(!runtime_is_demo()); }
 static bool unlock() { return runtime_action(Action::Unlock); }
@@ -1419,11 +1423,9 @@ static void build_page() {
             usb_connection_status = label(row, status, 460, 25, 490, 18, MUTED);
             lv_obj_set_style_text_align(usb_connection_status, LV_TEXT_ALIGN_RIGHT, 0);
         } else {
-            setting_row(body, "TX pin", prefs.tx, controller_y + 120, 8);
-            setting_row(body, "RX pin", prefs.rx, controller_y + 208, 9);
-            setting_row(body, "Baud rate", prefs.baud, controller_y + 296, 10);
+            setting_row(body, "Baud rate", prefs.baud, controller_y + 120, 10);
         }
-        int buttons_y = controller_y + (usb_connection ? 216 : 392);
+        int buttons_y = controller_y + 216;
         controller_connect = button(body, runtime_link_active() || state.online ? "Disconnect" : "Connect controller", 0, buttons_y, 472, 64, connect_click);
         controller_demo = button(body, runtime_is_demo() ? "Exit preview" : "Preview / controller off", 498, buttons_y, 472, 64, demo_click);
     } else if (page == JobPage) {
@@ -1803,7 +1805,7 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
     lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
     build_page();
-    runtime_connect((int)prefs.tx, (int)prefs.rx, (int)prefs.baud, usb_connection);
+    runtime_connect((int)prefs.baud, usb_connection);
     lv_timer_create(refresh, 100, nullptr);
 }
 extern "C" void panel_ui_settings(char *buffer, size_t size) {

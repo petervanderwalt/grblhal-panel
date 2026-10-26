@@ -519,3 +519,5 @@ CNC Jog caches control appearance by availability/mode flags. Idle/Jog updates c
 Machine Settings uses the standard full-screen page with a 24 px content inset: toolbar at (40,100), lists at y=164 and footer at y=512. Reserve a scrollbar gutter beside setting values; keep these explicit browser coordinates instead of relying on legacy modal-size insetting.
 
 Probe Configuration keeps five labelled 64 px fields on the left and a large numeric keypad on the right. Save/Cancel sit below the settings; use the common header/close control. Probe feed, thickness and inset entry points open this same editor and focus the relevant field. Preserve validation, metric/inch conversion, precise unchanged values and return-to-Probe behaviour.
+
+Controller TTL UART pins are fixed TX37/RX38 in panel_runtime.h; only baud rate is editable. Retain legacy preference fields for NVS compatibility and ignore saved pin overrides. Tool Diameter and UART baud use the two-card numeric layout with Cancel/Apply below the input and a right-hand keypad.

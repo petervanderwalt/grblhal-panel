@@ -377,8 +377,9 @@ void runtime_init() {
     BaseType_t ok = xTaskCreate(worker, "panel_link", 8192, nullptr, 5, nullptr);
     ESP_ERROR_CHECK(ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
-bool runtime_connect(int tx, int rx, int baud, bool use_usb) {
-    if (!use_usb && (tx < 0 || tx > 54 || rx < 0 || rx > 54 || tx == rx || baud < 9600 || baud > 921600))
+bool runtime_connect(int baud, bool use_usb) {
+    constexpr int tx=ControllerTxPin, rx=ControllerRxPin;
+    if (!use_usb && (baud < 9600 || baud > 921600))
         return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
     cancel_upload("SD upload cancelled by reconnect");

@@ -51,7 +51,7 @@ with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p:
   if data('PREFS')['diameter']>0:run(0)
   tap(916,82);tap(130,432);tap(720,154)
   assert not data('PREFS')['single_probe'];touch_release();shot('panel-probe')
-  tap(280,295);shot('panel-numpad');tap(380,459)
+  tap(280,295);shot('panel-numpad');tap(174,528)
   tap(280,154);surface(0)
   assert data('PREFS')['single_probe'] and data('PREFS')['probe_surface']==0
   print('PASS Z default, auto-armed touch/release, disabled start, all five surfaces, Z/X probe completion, Corner and numeric editor',flush=True)

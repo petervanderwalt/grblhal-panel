@@ -17,7 +17,7 @@ before wiring and testing.
 
 ## Full grblHAL serial on IO37 / IO38
 
-The user's proposed alternative is TX37 / RX38 to the controller's UART header.
+The TTL UART transport uses fixed TX37 / RX38 to the controller's UART header. Only baud rate is editable; legacy saved pin values are ignored without changing the preferences layout.
 This should use the full grblHAL sender protocol: commands, responses, status,
 settings, alarms, realtime controls and flow control as required by the panel.
 

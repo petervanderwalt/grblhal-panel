@@ -95,7 +95,7 @@ try:
   tap(379,42);form('preview-update');shot('panel-preview-update');clear_form()
  page(0);tap(100,480);form('probe');shot('panel-probe-single-z')
  tap(740,128);form('probe');shot('panel-probe')
- tap(240,272);form('numeric');shot('panel-numpad');tap(712,132);form('probe');tap(270 if original['single_probe'] else 740,128);tap(976,32)
+ tap(240,272);form('numeric');shot('panel-numpad');tap(174,528);form('probe');tap(270 if original['single_probe'] else 740,128);tap(976,32)
  page(0);tap(254,482);form('tools');shot('panel-accessories')
  tap(718,32);form('spindles');time.sleep(2);shot('panel-spindles');tap(976,32)
  page(0);tap(64,96);form('confirmation');shot('panel-home-confirm');tap(264,520)
@@ -110,7 +110,7 @@ try:
   find(setting_id);shot('panel-machine-setting-'+name);tap(976,32);form('machine-settings')
  tap(266,120);form('machine-search');shot('panel-machine-setting-search');tap(976,32);form('machine-settings');tap(976,32)
  if not original.get('usb_connection',0):
-  page(2);scroll(800);setting(1026);form('numeric');shot('panel-settings-number');tap(712,132)
+  page(2);scroll(800);setting(1026);form('numeric');shot('panel-settings-number');tap(174,528)
  page(3)
  if original['macro_count']:
   tap(236,134);form('macro-editor');shot('panel-macro-editor');tap(976,32)

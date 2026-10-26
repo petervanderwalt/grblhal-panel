@@ -28,7 +28,8 @@ enum class Action {
     JobAcknowledged
 };
 void runtime_init();
-bool runtime_connect(int tx = 37, int rx = 38, int baud = 115200, bool usb = false);
+constexpr int ControllerTxPin=37, ControllerRxPin=38;
+bool runtime_connect(int baud = 115200, bool usb = false);
 bool runtime_link_active();
 void runtime_disconnect();
 void runtime_snapshot(State &state);

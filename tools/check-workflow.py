@@ -47,14 +47,12 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         assert data("PREFS")["page"] == expected
 
     def number(value):
-        tap(512, 459)  # Clear
-        keys = {"7": (380, 195), "8": (512, 195), "9": (644, 195),
-                "4": (380, 259), "5": (512, 259), "6": (644, 259),
-                "1": (380, 323), "2": (512, 323), "3": (644, 323),
-                ".": (380, 387), "0": (512, 387)}
+        tap(508, 204)  # Clear
+        keys = {str(i+1): (710+(i%3)*110,155+(i//3)*115) for i in range(9)}
+        keys.update({".": (710, 502), "0": (820, 502)})
         for digit in str(value):
             tap(*keys[digit])
-        tap(644, 459)  # Apply
+        tap(458, 528)  # Apply
 
     try:
         command("TOUCH OFF")

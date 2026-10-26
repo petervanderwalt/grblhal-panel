@@ -59,7 +59,7 @@ def settings_bottom():
  page(2);scroll(1300)
 
 def connect_button():
- d=data();y=94+868+(216 if d['usb_connection'] else 392)+32-d['scroll_y']
+ d=data();y=94+868+216+32-d['scroll_y']
  assert 110<y<510,(y,d)
  tap(264,round(y))
 

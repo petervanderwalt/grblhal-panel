@@ -128,7 +128,7 @@ for reconnection. The header shows the connected SSID and IP address.
 
 - VIEWESMART 7-inch 1024Ã—600 ESP32-P4 display with ESP32-C6 Wi-Fi coprocessor.
 - Native LVGL interface, built with ESP-IDF 5.3.4 and LVGL 9.2.2.
-- Controller UART defaults: TX GPIO37, RX GPIO38, 115200 baud; configurable in Settings.
+- Controller UART: fixed TX GPIO37 / RX GPIO38; baud rate is configurable in Settings (115200 initially).
 - USB3 CDC ACM host connection: tested with an RP2350 grblHAL controller (2E8A:000A). USB UART remains available for programming and development tools.
 - Startup alarms open an Unlock confirmation; unlocking does not establish a homed position.
 - The selected controller connection starts on boot and reconnects after USB re-enumeration. Interrupted jobs do not resume automatically.
@@ -240,6 +240,7 @@ Click a screenshot to open it at full size.
 | **Probe configuration**<br><br>Edit plate dimensions, probe feed and corner inset beside a large numeric keypad. Probe-page shortcuts open the same editor with the relevant field selected. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Combined probe geometry and feed editor" width="640">](docs/screenshots/panel-settings-probe.png) |
 | **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Settings service and probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
 | **USB controller connection**<br><br>Connect a CDC ACM grblHAL controller to USB3. UART remains selectable for wired serial connections. | [<img src="docs/screenshots/panel-settings-usb.png" alt="USB3 controller connected" width="640">](docs/screenshots/panel-settings-usb.png) |
+| **UART controller connection**<br><br>TX37 and RX38 are fixed for the hardware. Set the controller baud rate here. | [<img src="docs/screenshots/panel-settings-uart.png" alt="UART connection and baud setting" width="640">](docs/screenshots/panel-settings-uart.png) |
 | **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
 
 ### grblHAL machine settings

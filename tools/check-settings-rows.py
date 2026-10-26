@@ -60,7 +60,7 @@ try:
  for key in keys:assert data()[key]==original[key]
  if not original.get('usb_connection',0):
   scroll_to(800);tap(850,y(1026));assert data()['dialog']=='number-keypad'
-  tap(712,132);assert data()['dialog']=='none'
+  tap(174,528);assert data()['dialog']=='none'
  shot('settings-popup-closed')
  for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','step','actuator_mode','a_rotary','macro_count','brightness','usb_connection'):
   assert data()[key]==original[key],key
