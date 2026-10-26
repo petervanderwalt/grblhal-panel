@@ -1268,8 +1268,7 @@ static void build_page() {
         static const char *const applications[] = {"CNC", "Actuator", ""};
         choices(application, applications, actuator_mode, 680, 16, 270, 48, application_changed);
         auto location = settings_list_row(body, 140, 80);
-        label(location, "File location", 20, 12, 600, 20);
-        label(location, "Files and gCAM uploads", 20, 44, 600, 14, MUTED);
+        label(location, "File location", 20, 28, 600, 20);
         dropdown(location, "Onboard SD\nController SD", storage_source() ? 0 : 1,
                  680, 16, 270, file_location_changed);
         auto light = settings_list_row(body, 236, 80);
