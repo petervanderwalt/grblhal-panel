@@ -215,9 +215,9 @@ static void machine_render() {
     if (!machine_browser) return;
     int32_t scroll = lv_obj_get_scroll_y(machine_groups);
     lv_obj_clean(machine_groups); lv_obj_clean(machine_rows); machine_row_buttons.clear();
-    int y = 4;
+    int y = 0;
     auto group_button = [&](int id, const std::string &name) {
-        auto b = button(machine_groups, name.c_str(), 4, y, 224, 44, machine_group_click, (uintptr_t)(intptr_t)id, CARD);
+        auto b = button(machine_groups, name.c_str(), 0, y, 224, 44, machine_group_click, (uintptr_t)(intptr_t)id, CARD);
         lv_obj_set_style_bg_color(b, lv_color_hex(CARD), 0);
         lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(id == machine_group ? PRIMARY : TEXT), 0);
         lv_obj_set_style_border_width(b, id == machine_group ? 2 : 0, 0);
@@ -247,14 +247,14 @@ static void machine_render() {
     int start = machine_page * 20, end = std::min(start + 20, int(ids.size()));
     for (int i = start; i < end; i++) {
         const auto &s = *machine_catalog.find(ids[i]);
-        auto row = surface(machine_rows, 0, (i - start) * 74, 680, 68);
+        auto row = surface(machine_rows, 0, (i - start) * 74, 672, 68);
         auto title = label(row, s.name.c_str(), 12, 8, 444, 18);
         lv_label_set_long_mode(title, LV_LABEL_LONG_CLIP); lv_obj_set_height(title, 24);
         std::string detail = "$" + std::to_string(s.id) + (s.unit.empty() ? "" : "  /  " + s.unit);
         label(row, detail.c_str(), 12, 38, 444, 14, MUTED);
         auto value = machine_display(s);
         if (value.size() > 22) value = value.substr(0, 19) + "...";
-        auto b = button(row, value.c_str(), 470, 8, 194, 52, machine_edit_click, s.id);
+        auto b = button(row, value.c_str(), 478, 8, 194, 52, machine_edit_click, s.id);
         lv_label_set_long_mode(lv_obj_get_child(b, 0), LV_LABEL_LONG_CLIP); lv_obj_set_height(lv_obj_get_child(b, 0), 24);
         machine_row_buttons.push_back(b);
     }
@@ -274,24 +274,24 @@ static void machine_reload(lv_event_t *) {
 }
 static void machine_browser_open(bool reload) {
     runtime_snapshot(state);
-    auto c = open_modal("Machine settings", 1000, 568);
+    auto c = open_modal("Machine settings");
     machine_browser = true;
-    modal_close_button(c, 1000);
-    machine_refresh_btn = button(c, "Refresh", 20, 80, 140, 48, machine_reload);
-    button(c, "Find", 176, 80, 140, 48, machine_search_open);
-    machine_caption = label(c, "", 340, 78, 540, 20);
+    modal_close_button(c);
+    machine_refresh_btn = button(c, "Refresh", 40, 100, 140, 48, machine_reload);
+    button(c, "Find", 196, 100, 140, 48, machine_search_open);
+    machine_caption = label(c, "", 360, 100, 540, 20);
     lv_label_set_long_mode(machine_caption, LV_LABEL_LONG_CLIP); lv_obj_set_height(machine_caption, 26);
-    machine_status = label(c, "", 340, 108, 570, 14, MUTED);
-    machine_spinner = lv_spinner_create(c); lv_obj_set_pos(machine_spinner, 928, 86); lv_obj_set_size(machine_spinner, 32, 32);
-    machine_groups = box(c, 20, 144, 240, 340, CARD);
-    machine_rows = box(c, 280, 144, 700, 340, CARD);
+    machine_status = label(c, "", 360, 130, 570, 14, MUTED);
+    machine_spinner = lv_spinner_create(c); lv_obj_set_pos(machine_spinner, 948, 108); lv_obj_set_size(machine_spinner, 32, 32);
+    machine_groups = box(c, 40, 164, 240, 332, CARD);
+    machine_rows = box(c, 300, 164, 684, 332, CARD);
     for (auto p : {machine_groups, machine_rows}) {
         lv_obj_set_style_border_width(p, 0, 0); lv_obj_set_style_radius(p, 0, 0);
         lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE); lv_obj_set_scroll_dir(p, LV_DIR_VER);
     }
-    machine_previous = button(c, "Previous", 280, 500, 140, 48, machine_page_click, (uintptr_t)(intptr_t)-1);
-    machine_next = button(c, "Next", 840, 500, 140, 48, machine_page_click, 1);
-    machine_page_text = label(c, "", 460, 514, 340, 18, MUTED);
+    machine_previous = button(c, "Previous", 300, 512, 140, 48, machine_page_click, (uintptr_t)(intptr_t)-1);
+    machine_next = button(c, "Next", 844, 512, 140, 48, machine_page_click, 1);
+    machine_page_text = label(c, "", 472, 526, 340, 18, MUTED);
     lv_obj_set_style_text_align(machine_page_text, LV_TEXT_ALIGN_CENTER, 0);
     if (reload) { machine_group = -1; machine_page = 0; machine_scroll = 0; machine_query.clear(); runtime_settings_load(); runtime_snapshot(state); }
     if (!state.settings_loading && !state.settings_saving) runtime_settings_snapshot(machine_catalog);
