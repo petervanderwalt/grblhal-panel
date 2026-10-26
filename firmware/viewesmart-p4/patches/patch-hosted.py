@@ -75,3 +75,13 @@ replacement = '''void *hosted_malloc_align(size_t size, size_t align)
 '''
 if text[start:end] != replacement:
     os_source.write_text(text[:start] + replacement + text[end:], encoding="utf8")
+
+# esp_lvgl_port 2.8 also supports newer LVGL; 9.2 has no swapped-format enum.
+lvgl_port = Path(__file__).resolve().parents[1] / "managed_components/espressif__esp_lvgl_port/src/lvgl9/esp_lvgl_port_disp.c"
+text = lvgl_port.read_text(encoding="utf8")
+if "LV_COLOR_FORMAT_RGB565_SWAPPED" in text:
+    assert text.count("LV_COLOR_FORMAT_RGB565_SWAPPED") == 3, "LVGL port format checks changed"
+    text = text.replace("\n                        || disp_cfg->color_format == LV_COLOR_FORMAT_RGB565_SWAPPED", "")
+    text = text.replace("\n                            || display_color_format == LV_COLOR_FORMAT_RGB565_SWAPPED", "")
+    lvgl_port.write_text(text, encoding="utf8")
+    print("Applied LVGL 9.2 display-format compatibility")

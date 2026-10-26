@@ -521,3 +521,5 @@ Machine Settings uses the standard full-screen page with a 24 px content inset: 
 Probe Configuration keeps five labelled 64 px fields on the left and a large numeric keypad on the right. Save/Cancel sit below the settings; use the common header/close control. Probe feed, thickness and inset entry points open this same editor and focus the relevant field. Preserve validation, metric/inch conversion, precise unchanged values and return-to-Probe behaviour.
 
 Controller TTL UART pins are fixed TX37/RX38 in panel_runtime.h; only baud rate is editable. Retain legacy preference fields for NVS compatibility and ignore saved pin overrides. Tool Diameter and UART baud use the two-card numeric layout with Cancel/Apply below the input and a right-hand keypad.
+
+The dependency patch also removes unsupported RGB565_SWAPPED format checks from esp_lvgl_port 2.8 for pinned LVGL 9.2. Fresh release builds must compile managed components rather than rely on local objects.
