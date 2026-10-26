@@ -184,7 +184,7 @@ The file-list interior is white; the main grey background separates the cards.
 Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
 Secondary screens fill the LCD with graphite, a title/close control above a rounded
 black content card, and rounded dark controls. No floating or translucent overlays.
-Probe Configuration is the explicit unchanged black-editor exception.
+Probe Configuration uses separate rounded settings and numeric-keypad cards, matching Jog.
 Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
 Scan rows show signal strength followed by a lock icon for secured networks; open
 networks have no lock. The Font Awesome glyph and license are in main/assets/.
@@ -496,8 +496,8 @@ Full-screen form implementation: panel_fullscreen.inc styles secondary controls;
 open_modal now builds a full 1024x600 page with a rounded (16,76,992,508) content
 card. The internal name remains for existing return callbacks. finish_modal runs
 before drawing each page, including dynamic Wi-Fi and machine-setting lists.
-Keep validation/confirmation/Cancel behavior intact. Only Probe Configuration
-passes plain=true; do not restyle it during this pass. New keyboard function keys
+Keep validation/confirmation/Cancel behavior intact. Probe Configuration now uses
+the shared graphite backdrop with separate settings/keypad cards. New keyboard function keys
 use subdued charcoal, not cyan. Update/OK and Cancel retain semantic colours.
 UG PREFS exposes form_kind and actual form_w/form_h for reliable checks. Use
 check-fullscreen.py in UART-off demo mode; it never confirms motion or saves
@@ -517,3 +517,5 @@ The selected controller transport connects on pendant boot. Explicit Disconnect 
 CNC Jog caches control appearance by availability/mode flags. Idle/Jog updates change DRO, status and Wi-Fi data only; do not restyle or grey all controls around each jog. The model still rejects busy/non-idle commands; busy direction taps are ignored without queuing work or opening a popup. Alarms, disconnects, jobs and other machine modes still disable controls. Invalidate the appearance key on page rebuild and faults. UG PREFS exposes jog_speed, jog_hold_ms, jog_control_updates and native jog_enabled. tools/check-jog-response.py checks continuous/incremental stability, release timing, busy rejection and fault/disconnect disabling in demo mode; it leaves demo isolated. Zeroing confirmation has a neutral title/card and Cancel with a green Set zero action; USER_2 marks its explicitly neutral Cancel so the full-screen styling does not force it red. Fault dialogs retain their red styling.
 
 Machine Settings uses the standard full-screen page with a 24 px content inset: toolbar at (40,100), lists at y=164 and footer at y=512. Reserve a scrollbar gutter beside setting values; keep these explicit browser coordinates instead of relying on legacy modal-size insetting.
+
+Probe Configuration keeps five labelled 64 px fields on the left and a large numeric keypad on the right. Save/Cancel sit below the settings; use the common header/close control. Probe feed, thickness and inset entry points open this same editor and focus the relevant field. Preserve validation, metric/inch conversion, precise unchanged values and return-to-Probe behaviour.

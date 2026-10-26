@@ -15,9 +15,9 @@ keyboard. Cancel discards unsaved typing.
 
 ## Probe configuration
 
-![Shared probe configuration editor](settings-probe-offsets-large.png)
+![Shared probe configuration editor](../screenshots/panel-settings-probe.png)
 
-X, Y, Z, probe feed and corner inset share a full-screen editor and one numeric keypad. Fields match the
+X, Y, Z, probe feed and corner inset occupy the left card, with a large numeric keypad in the right card. Fields match the
 Save/Cancel button height, use normal text, and show one decimal in mm or three
 in inches. The keypad has digits, decimal and Backspace; there are no duplicate
 Done/Cancel keys. All five fields are validated before any saved probe settings change.
@@ -31,7 +31,7 @@ blocking background controls. Closing restores the underlying page.
 keyboard focus and typing, all-or-nothing probe-configuration validation, Save/Cancel, unchanged
 preferences and navigation in UART-disconnected demo mode.
 
-## Black editor actions
+## Editor actions
 
 Macro Add/Edit, Preview Server and Probe Configuration share the same action rules:
 solid red Cancel/Delete on the left, mint Save on the right. Macro confirmations

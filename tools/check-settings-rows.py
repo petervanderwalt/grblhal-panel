@@ -41,22 +41,22 @@ try:
  tap(976,32);assert data()['dialog']=='none'
  scroll_to(650);row_y=y(794);assert 110<row_y<475
  keys=('x','y','z','feed','inset')
- points=((118,108),(310,108),(502,108),(258,184),(770,184))
+ points=((428,132),(428,208),(428,284),(428,360),(428,436))
  def field(axis,text):
   tap(*points[axis]);cmd('SETTING FIELD '+text.encode('ascii').hex())
  tap(850,row_y);assert data()['dialog']=='probe-offsets'
  for axis,key in enumerate(keys):field(axis,'0' if axis==1 else f"{original[key]+.1:.1f}")
- tap(906,108);assert data()['dialog']=='probe-offsets'
+ tap(458,528);assert data()['dialog']=='probe-offsets'
  for key in keys:assert data()[key]==original[key]
  for axis,key in enumerate(keys):field(axis,f"{original[key]:.1f}")
- tap(906,108);assert data()['dialog']=='none'
+ tap(458,528);assert data()['dialog']=='none'
  scroll_to(650);row_y=y(794);tap(850,row_y);assert data()['dialog']=='probe-offsets'
  delta=(.1,.2,.3,1,.5)
  for axis,key in enumerate(keys):field(axis,f"{original[key]+delta[axis]:.1f}")
  for axis,key in enumerate(keys):assert abs(data()['probe_edit_'+key]-(original[key]+delta[axis]))<.001
- tap(116,294);assert abs(data()['probe_edit_inset']-float(f"{original['inset']+.5:.1f}"+'1'))<.001
+ tap(710,155);assert abs(data()['probe_edit_inset']-float(f"{original['inset']+.5:.1f}"+'1'))<.001
  field(4,f"{original['inset']+.5:.1f}")
- shot('settings-probe-offsets-large');tap(690,108);assert data()['dialog']=='none'
+ shot('settings-probe-offsets-large');tap(174,528);assert data()['dialog']=='none'
  for key in keys:assert data()[key]==original[key]
  if not original.get('usb_connection',0):
   scroll_to(800);tap(850,y(1026));assert data()['dialog']=='number-keypad'

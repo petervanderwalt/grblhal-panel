@@ -264,8 +264,10 @@ before building. Preserved older timestamps can leave a newer experimental objec
 in the firmware even though the source has been restored. Keep the LCD draw buffer
 in internal DMA RAM (1024 x 50 pixels); no full-frame PSRAM drawing buffer.
 
-The full-screen Probe Configuration editor has one shared numeric keyboard for
-X/Y/Z, feed and corner inset.
+The full-screen Probe Configuration editor has a left settings card for X/Y/Z,
+feed and corner inset, and a right card with the shared numeric keypad. Each
+probe-setting entry point focuses its field; Cancel returns to the Probe page
+when opened there.
 `UG SETTING FIELD <ASCII-hex>` fills its currently focused field without applying;
 it still fills machine-setting/search fields when that editor is open. `UG PREFS`
 reports `dialog=probe-offsets` and the draft values as `probe_edit_x/y/z`. Saved
@@ -289,7 +291,7 @@ Inspect those real framebuffer images before publishing them to the README.
 Wi-Fi scan/password/result, Probe, Tools/spindle choice, numeric input,
 confirmations, machine settings/search/editors, actuator configuration, macro
 editing, preview server and preview-update progress use the main graphite/card
-palette. Probe Configuration retains its existing black editor until its redesign.
+palette. Probe Configuration uses separate settings and keypad cards in that same theme.
 The old `modal` variable hosts a fully opaque page; it is not a floating overlay.
 
 `UG PREFS` includes `form_kind` and the actual content page `form_w`/`form_h`.

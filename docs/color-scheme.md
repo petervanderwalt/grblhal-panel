@@ -76,7 +76,7 @@ These are framebuffer captures from the pendant, with simulated controller feedb
 | ![Empty macro page](screenshots/panel-macros-empty.png) | ![Disabled actuator controls](screenshots/panel-actuators-disabled.png) |
 | ![Wi-Fi](screenshots/wifi-networks.png) | ![Single surface probe](screenshots/panel-probe-surface.png) |
 
-## Full-screen black editors
+## Full-screen editors
 
 Macro Add/Edit, Preview Server and Probe Configuration use solid red Cancel/Delete
 (`#D3343B`, light text) on the left and mint Save (`#83E6B0`, dark text) on the
@@ -88,4 +88,4 @@ Secondary pages use graphite outside rounded black cards, with dark charcoal
 fields and controls. Positive actions use mint with dark text; Cancel, Delete,
 Stop and Disconnect use red. Warning actions keep amber. Keyboard function keys
 are charcoal (`30383D`, pressed `465157`) with white text rather than bright cyan.
-Probe Configuration remains unchanged pending its separate layout update.
+Probe Configuration uses a left settings card and right numeric-keypad card, with the same graphite backdrop, charcoal inputs and semantic actions.

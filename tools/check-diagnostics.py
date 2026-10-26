@@ -98,7 +98,7 @@ try:
     tap(850, round(y))
     assert data()['dialog'] == 'probe-offsets'
     shot('panel-probe-configuration')
-    tap(690, 108)
+    tap(174, 528)
     tap(154, 566)
     tap(691, 566)
     assert data()['page'] == 6 and data()['dialog'] == 'none'

@@ -623,14 +623,13 @@ static void edit_value(lv_event_t *e) {
     case 3:
     case 4:
     case 5:
-        show_probe_offsets(nullptr);
-        break;
     case 6:
-        edit({&prefs.probe.feed, 25, 500, inches ? "Probe feed (in/min)" : "Probe feed (mm/min)"});
+    case 7: {
+        unsigned index=(uintptr_t)lv_event_get_user_data(e)-3;
+        show_probe_offsets(nullptr);
+        if (probe_offsets_keyboard) lv_obj_send_event(probe_offset_fields[index],LV_EVENT_FOCUSED,nullptr);
         break;
-    case 7:
-        edit({&prefs.probe.inset, 1, 100, inches ? "Corner start inset (in)" : "Corner start inset (mm)"});
-        break;
+    }
     case 8:
         edit({&prefs.tx, 0, 54, "UART TX pin", true});
         break;
