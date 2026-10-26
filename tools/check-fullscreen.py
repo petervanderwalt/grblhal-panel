@@ -109,7 +109,8 @@ try:
  for setting_id,name in ((100,'number'),(13,'switch'),(22,'mask'),(32,'options'),(74,'text'),(23,'axes'),(75,'password'),(302,'ip')):
   find(setting_id);shot('panel-machine-setting-'+name);tap(976,32);form('machine-settings')
  tap(266,120);form('machine-search');shot('panel-machine-setting-search');tap(976,32);form('machine-settings');tap(976,32)
- page(2);scroll(650);setting(938);form('numeric');shot('panel-settings-number');tap(712,132)
+ if not original.get('usb_connection',0):
+  page(2);scroll(800);setting(1026);form('numeric');shot('panel-settings-number');tap(712,132)
  page(3)
  if original['macro_count']:
   tap(236,134);form('macro-editor');shot('panel-macro-editor');tap(976,32)
@@ -123,10 +124,11 @@ try:
  cmd('RX <Idle|SD:100,/bracket.nc>');cmd('RX [MSG:Program End]');idle();time.sleep(.5)
  assert data()['page']==5;shot('panel-job-complete');tap(512,366)
  cmd('DEMO ON');idle();clear_form();page(0)
+ cmd('RX <Alarm|MPos:0,0,0|WCO:0,0,0>');time.sleep(.4);form('confirmation');shot('panel-startup-alarm');tap(264,520)
  cmd('RX ALARM:1');time.sleep(.4);form('confirmation');shot('panel-alarm');tap(264,520)
  cmd('DEMO ON');idle();cmd('RX error:20');time.sleep(.4);form('confirmation');shot('panel-error');tap(264,520)
  cmd('DEMO ON');idle();page(0)
- for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','macro_count','brightness','a_rotary','actuator_mode'):
+ for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','macro_count','brightness','a_rotary','actuator_mode','usb_connection'):
   assert data()[key]==original[key],key
  cmd('TEST');print('PASS full-screen forms, Cancel/navigation, Wi-Fi, interlocks and unchanged preferences',flush=True)
 finally:

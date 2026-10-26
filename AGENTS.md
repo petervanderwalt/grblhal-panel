@@ -60,7 +60,7 @@ touch on
 quit
 ```
 
-`demo on` disconnects the real controller UART before injecting feedback. Always
+`demo on` disconnects both real controller transports before injecting feedback. Always
 send it before automated machine-control tests. Wi-Fi remains a real C6 connection.
 Use `hold X Y MS` for continuous-jog press/release, `swipe X1 Y1 X2 Y2` for
 scrolling/sliders, and `rx <Idle|MPos:125,84.5,-12|WCO:100,50,-20|FS:0,0>` for
@@ -134,7 +134,7 @@ little-endian RGB565 image.
 
 - `main/panel_model.cpp/.h`: portable protocol parser, command queue, jog/zero/home,
   SD jobs, faults and acknowledged corner-probe sequence.
-- `main/panel_runtime.cpp/.h`: UART1 worker, mutex and explicit UART-off preview.
+- `main/panel_runtime.cpp/.h`: UART1/USB worker, mutex and isolated preview.
 - `main/panel_ui.cpp/.h`: LVGL pages, jog press/release handling, numeric inputs,
   NVS preferences and confirmations.
 - `main/tests/panel_model_test.cpp`: embedded protocol tests (`UG TEST`).
@@ -506,3 +506,5 @@ bytes) so dense settings pages cannot fragment away its allocation. Retain the
 existing framebuffer staging and volatile byte-copy workarounds unchanged.
 Full-screen pages poll only their visible controls; do not repeatedly restyle
 whole lists from enable() or redraw hidden Jog controls behind an opaque page.
+
+USB3 CDC ACM host uses peripheral_map bit 1 and GPIO24/25, routed with usb_serial_jtag_ll_phy_select(1). Reserve the USB host/class tasks before UI widgets; keep CDC buffers at 256 bytes and usb_host_cdc_acm 2.4.1 for safe allocation-failure cleanup. Demo mode disables both controller transports. UG USB STATE reports enumeration and traffic. RP2350 2E8A:000A identification, feedback and reconnect were verified; motion remains untested. Normal boot locks unlock with $X, as in Ooznest performUnlock; do not reset or home automatically.

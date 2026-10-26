@@ -17,6 +17,7 @@ idf_component_register(
         panel_settings.cpp
         tests/panel_settings_test.cpp
         panel_runtime.cpp
+        panel_usb.cpp
         panel_ui.cpp
         assets/wifi_lock.c
         assets/panel_dro_52.c

@@ -1,4 +1,5 @@
 #include "panel_runtime.h"
+#include "panel_usb.h"
 #include "esp_system.h"
 #include "driver/uart.h"
 #include "esp_check.h"
@@ -21,7 +22,14 @@ namespace panel {
 static SemaphoreHandle_t mutex;
 static QueueHandle_t uart_events;
 static bool installed = false, demo = false, pending = false;
+static bool usb_selected = false;
+static uint32_t usb_seen = 0;
 static unsigned pending_count = 0;
+static bool link_ready() { return usb_selected ? usb_connected() : installed; }
+static bool link_write(const uint8_t *data, size_t size) {
+    if (usb_selected) return usb_write(data, size);
+    return installed && uart_write_bytes(UART_NUM_1, data, size) == (int)size;
+}
 static unsigned demo_rotary_mask = 0;
 static char last_tx[640], pending_line[640];
 static size_t rx_used = 0;
@@ -51,11 +59,11 @@ static bool send_line(void *, const char *s) {
         pending = true; pending_count++;
         return true;
     }
-    if (!installed)
+    if (!link_ready())
         return false;
     char command[644];
     int n = snprintf(command, sizeof command, "%s\n", s);
-    return uart_write_bytes(UART_NUM_1, command, n) == n;
+    return link_write((const uint8_t *)command, n);
 }
 extern "C" bool panel_debug_test() {
     bool ok = panel_memory_test();
@@ -93,7 +101,7 @@ static bool send_rt(void *, uint8_t b) {
         snprintf(last_tx, sizeof last_tx, "0x%02X", b);
     if (demo)
         return true;
-    return installed && uart_write_bytes(UART_NUM_1, &b, 1) == 1;
+    return link_ready() && link_write(&b, 1);
 }
 static Model *model_instance;
 #define model (*model_instance)
@@ -101,7 +109,7 @@ static char *upload_data;
 static uint32_t upload_revision;
 static bool relist;
 static bool send_raw(void *, const uint8_t *bytes, size_t size) {
-    return installed && !demo && uart_write_bytes(UART_NUM_1, bytes, size) == (int)size;
+    return !demo && link_ready() && link_write(bytes, size);
 }
 static Upload upload(send_raw, nullptr);
 static void finish_upload() {
@@ -262,10 +270,18 @@ static void worker(void *) {
     bool &overflow = rx_overflow;
     uint32_t demo_status = 0;
     for (;;) {
+        usb_poll();
         xSemaphoreTake(mutex, portMAX_DELAY);
-        if (installed && !demo) {
+        if (usb_selected && !demo && usb_seen != usb_generation()) {
+            usb_seen = usb_generation();
+            cancel_upload("USB connection changed during SD upload");
+            used = 0; overflow = false; pending = false; pending_count = 0;
+            if (usb_connected()) model.begin(now());
+            else model.disconnect();
+        }
+        if (link_ready() && !demo) {
             uart_event_t event;
-            while (xQueueReceive(uart_events, &event, 0) == pdTRUE) {
+            while (!usb_selected && xQueueReceive(uart_events, &event, 0) == pdTRUE) {
                 if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL) {
                     cancel_upload("UART overflow during SD upload");
                     model.disconnect();
@@ -278,7 +294,7 @@ static void worker(void *) {
             }
             uint8_t bytes[1024];
             for (int batch = 0; batch < 8; batch++) {
-                int n = uart_read_bytes(UART_NUM_1, bytes, sizeof bytes, 0);
+                int n = usb_selected ? usb_read(bytes, sizeof bytes) : uart_read_bytes(UART_NUM_1, bytes, sizeof bytes, 0);
                 if (!n)
                     break;
                 for (int i = 0; i < n; i++) {
@@ -336,7 +352,7 @@ static void worker(void *) {
             } else if(model.local_stream_done()&&strncmp(model.state.mode,"Hold",4))model.receive("<Idle|FS:0,0>",t);
         } else if (demo) mock_reply();
         xSemaphoreGive(mutex);
-        vTaskDelay(pdMS_TO_TICKS(model.state.local_job ? 1 : 20));
+        vTaskDelay(pdMS_TO_TICKS(model.state.local_job || (usb_selected && usb_connected()) ? 1 : 20));
     }
 }
 void runtime_init() {
@@ -346,15 +362,19 @@ void runtime_init() {
     assert(mutex);
     void *memory=heap_caps_malloc(sizeof(Model),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     assert(memory);model_instance=new(memory) Model(send_line,send_rt,nullptr);
+    // Reserve USB task stacks before the settings/widgets fragment internal RAM.
+    usb_prepare();
     storage_init();
     BaseType_t ok = xTaskCreate(worker, "panel_link", 8192, nullptr, 5, nullptr);
     ESP_ERROR_CHECK(ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
-bool runtime_connect(int tx, int rx, int baud) {
-    if (tx < 0 || tx > 54 || rx < 0 || rx > 54 || tx == rx || baud < 9600 || baud > 921600)
+bool runtime_connect(int tx, int rx, int baud, bool use_usb) {
+    if (!use_usb && (tx < 0 || tx > 54 || rx < 0 || rx > 54 || tx == rx || baud < 9600 || baud > 921600))
         return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
     cancel_upload("SD upload cancelled by reconnect");
+    usb_enable(false);
+    usb_selected = use_usb;
     if (installed) {
         uart_driver_delete(UART_NUM_1);
         installed = false;
@@ -364,6 +384,13 @@ bool runtime_connect(int tx, int rx, int baud) {
     rx_used = 0;
     rx_overflow = false;
     model.disconnect();
+    if (use_usb) {
+        usb_seen = usb_generation();
+        bool ok = usb_enable(true);
+        snprintf(model.state.message, sizeof model.state.message, "%s", ok ? "Waiting for USB controller" : "USB host unavailable");
+        xSemaphoreGive(mutex);
+        return ok;
+    }
     uart_config_t c = {};
     c.baud_rate = baud;
     c.data_bits = UART_DATA_8_BITS;
@@ -392,6 +419,8 @@ bool runtime_connect(int tx, int rx, int baud) {
 void runtime_disconnect() {
     xSemaphoreTake(mutex, portMAX_DELAY);
     cancel_upload("SD upload disconnected");
+    usb_enable(false);
+    usb_selected = false;
     if (installed)
         uart_driver_delete(UART_NUM_1);
     installed = false;
@@ -401,6 +430,11 @@ void runtime_disconnect() {
     pending = false;
     model.disconnect();
     xSemaphoreGive(mutex);
+}
+bool runtime_link_active() {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool active = !demo && (usb_selected || installed);
+    xSemaphoreGive(mutex); return active;
 }
 bool runtime_background_idle() {
     if(!mutex)return false;
@@ -654,7 +688,7 @@ bool runtime_upload_local(const char *path, const char *data, size_t size) {
 }
 bool runtime_can_upload() {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ready = installed && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    bool ready = link_ready() && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
     xSemaphoreGive(mutex);
     return ready;
 }
@@ -662,7 +696,7 @@ bool runtime_upload(const char *path, const char *data, size_t size) {
     if (!path || !data || !size || size > MaxPreviewBytes)
         return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ready = installed && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    bool ready = link_ready() && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
     if (ready) {
         upload_data = (char *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         ready = upload_data != nullptr;
@@ -676,7 +710,7 @@ bool runtime_upload(const char *path, const char *data, size_t size) {
             snprintf(model.state.upload_path, sizeof model.state.upload_path, "%s", path);
             rx_used = 0;
             rx_overflow = false;
-            uart_flush_input(UART_NUM_1);
+            if (usb_selected) usb_flush(); else uart_flush_input(UART_NUM_1);
             ready = upload.start(path, upload_data, size, now());
             if (!ready)
                 finish_upload();

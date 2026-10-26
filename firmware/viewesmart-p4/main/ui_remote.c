@@ -17,6 +17,7 @@
 #include "lvgl.h"
 #include "panel_debug.h"
 extern void panel_debug_storage(char *,size_t);
+extern void panel_debug_usb(char *,size_t);
 extern bool panel_ui_preview_server_field(const char *);
 extern bool panel_storage_capture_pause(bool);
 #include "panel_ui.h"
@@ -165,6 +166,8 @@ static void command(const char *line)
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strncmp(line,"UG PREVIEW SERVER ",18)) {
         bsp_display_lock(0);bool ok=panel_ui_preview_server_field(line+18);bsp_display_unlock();reply(ok?"@UGOK PREVIEW\n":"@UGERR server_field\n");
+    } else if (!strcmp(line,"UG USB STATE")) {
+        panel_debug_usb(payload,sizeof payload);snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG SD STATE")) {
         panel_debug_storage(payload,sizeof payload);snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG WIFI STATE")) {

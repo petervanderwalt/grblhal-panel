@@ -54,3 +54,13 @@ Next practical steps: review the register map and schematic, choose UART sender
 or RS485 panel operation, establish a read-only connection, then test status
 display before enabling any machine action. Neither controller path has been
 hardware-tested in this initial screenshot work.
+
+## USB3 controller link
+
+Settings can select USB3 CDC ACM instead of UART. USB3 uses the full-speed OTG host routed to GPIO24/25; keep the display UART connector connected to the PC for development. RP2350 2E8A:000A identification, status and grouped settings were read on the bare controller. Motion has not been tested. Software disconnect/reconnect and USB isolation in demo mode passed. `tools/check-usb.py` repeats these checks on the isolated RP2350 development board; confirm machine isolation before running it.
+
+A normal startup alarm is released by explicit Unlock (`$X`), following Ooznest Control `performUnlock()` in `js/ui/alarms_and_errors.js`. Unlock does not home the machine or establish its position. The panel automatically opens a fault confirmation when an alarm first appears; a generic `<Alarm>` report is shown as Machine locked rather than a fabricated alarm number.
+
+USB3 was built against this workstation's ESP-IDF 5.3.4 tree with P4 full-speed host support. Stock older SDK support and other CDC ACM controllers have not been verified. The CH340 UART socket remains separate from the native USB host.
+
+Logical Disconnect disables application TX/RX and lowers DTR while retaining the claimed CDC interface. Reconnect starts a fresh model identification without recreating USB endpoints. Physical loss or a transport error closes the handle. This avoids the intermittent reopen failure observed during repeated logical sessions.

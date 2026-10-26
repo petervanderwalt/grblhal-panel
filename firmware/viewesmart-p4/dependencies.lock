@@ -54,7 +54,7 @@ dependencies:
       require: private
       version: '>=5.2'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.1.5
   espressif/esp_codec_dev:
@@ -189,6 +189,30 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.6.1
+  espressif/usb_host_cdc_acm:
+    component_hash: 5bc1372b46de79ccae1dd17de48e30dfa1e8ab75269c2ebf54da01370f9e42fb
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    - name: espressif/usb
+      registry_url: https://components.espressif.com
+      require: public
+      rules:
+      - if: idf_version >=6.0
+      - if: target not in ["linux"]
+      version: ^1.0.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    - linux
+    version: 2.4.1
   espressif/wifi_remote_over_eppp:
     component_hash: 06d8bc15348bbd21f1390daace36ed5adcf6026c93c5b69decc55fa04df2711a
     dependencies:
@@ -200,7 +224,7 @@ dependencies:
       require: private
       version: '>=0.1'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 0.3.2
   idf:
@@ -217,6 +241,7 @@ dependencies:
 direct_dependencies:
 - chmorgan/esp-audio-player
 - chmorgan/esp-file-iterator
+- espressif/eppp_link
 - espressif/esp_codec_dev
 - espressif/esp_hosted
 - espressif/esp_lcd_ek79007
@@ -225,8 +250,10 @@ direct_dependencies:
 - espressif/esp_lcd_touch_gt911
 - espressif/esp_lvgl_port
 - espressif/esp_wifi_remote
+- espressif/usb_host_cdc_acm
+- espressif/wifi_remote_over_eppp
 - idf
 - lvgl/lvgl
-manifest_hash: 9aef345cefea7bfcdb7d92549db48e2793173df62949c9cb72f90e1b9912d427
+manifest_hash: a01db54280f72dad57c175107525e40c731786b01d12654493046bc0e426a773
 target: esp32p4
 version: 2.0.0

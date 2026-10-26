@@ -3,7 +3,7 @@
 A touchscreen pendant for grblHAL controllers, built for the VIEWESMART
 7-inch ESP32-P4/C6 display. CNC mode handles machine setup, controller SD files
 and job progress. Display-SD jobs include cached image previews and buffered
-UART streaming; controller-SD execution remains available. Actuator mode provides individual X/Y/Z/A controls, with linear
+USB or UART streaming; controller-SD execution remains available. Actuator mode provides individual X/Y/Z/A controls, with linear
 or rotary A.
 
 The CNC landscape layout puts the position readout on the left and the jog controls
@@ -101,7 +101,7 @@ See the [HTTP endpoint reference](docs/http-api.md) for gCAM upload and the read
 
 ## Settings and Wi-Fi
 
-Choose metric or imperial display units, configure the controller UART, and
+Choose metric or imperial display units, choose USB3 or configure the controller UART, and
 adjust probe geometry and feeds. Configure the PC preview server address here too. Display units are converted locally; generated
 motion commands and internal geometry remain in millimetres.
 
@@ -127,7 +127,8 @@ for reconnection. The header shows the connected SSID and IP address.
 - VIEWESMART 7-inch 1024Ã—600 ESP32-P4 display with ESP32-C6 Wi-Fi coprocessor.
 - Native LVGL interface, built with ESP-IDF 5.3.4 and LVGL 9.2.2.
 - Controller UART defaults: TX GPIO37, RX GPIO38, 115200 baud; configurable in Settings.
-- USB UART for programming and development tools.
+- USB3 CDC ACM host connection: tested with an RP2350 grblHAL controller (2E8A:000A). USB UART remains available for programming and development tools.
+- Startup alarms open an Unlock confirmation; unlocking does not establish a homed position.
 
 This is firmware under development. The interface and Wi-Fi have been exercised
 on the display. Physical controller motion, probing and SD transfers still need
@@ -157,10 +158,11 @@ tested board configuration. ESP-IDF downloads the managed components listed in
 the dependency manifests and lock file.
 
 Development tools capture the actual LCD framebuffer and inject taps, holds and
-swipes over USB UART. Demonstration mode disconnects the controller UART and
+swipes over USB UART. Demonstration mode disconnects both controller USB and UART and
 supplies sample machine feedback for UI checks.
 
 - [Development instructions and source map](AGENTS.md)
+- [Live controller test plan](docs/live-controller-test-plan.md)
 - [Screenshot, touch injection and test guide](docs/device-ui-development.md)
 - [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)
 - [Inputs, spindle/coolant and macros](docs/inputs-accessories-macros.md)
@@ -234,7 +236,7 @@ Click a screenshot to open it at full size.
 | **Display units and Wi-Fi**<br><br>Choose display units, file location, brightness and Wi-Fi; configure probing, previews and the controller. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
 | **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Combined probe geometry and feed editor" width="640">](docs/screenshots/panel-settings-probe.png) |
 | **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Settings service and probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
-| **Controller UART configuration**<br><br>Configure the controller UART transmit pin, receive pin and baud rate. The display uses the full grblHAL serial protocol. | [<img src="docs/screenshots/panel-settings-uart.png" alt="Controller TX RX baud and preview controls" width="640">](docs/screenshots/panel-settings-uart.png) |
+| **USB controller connection**<br><br>Connect a CDC ACM grblHAL controller to USB3. UART remains selectable for wired serial connections. | [<img src="docs/screenshots/panel-settings-usb.png" alt="USB3 controller connected" width="640">](docs/screenshots/panel-settings-usb.png) |
 | **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
 
 ### grblHAL machine settings
@@ -286,6 +288,7 @@ lines and a `0,0,0` marker locate the file's work origin.
 
 | Features and use | Preview |
 | --- | --- |
+| **Startup lock**<br><br>A startup alarm opens Unlock automatically. Unlock releases the lock without establishing a homed position. | [<img src="docs/screenshots/panel-startup-alarm.png" alt="Machine locked with Unlock and Cancel" width="640">](docs/screenshots/panel-startup-alarm.png) |
 | **Controller alarm**<br><br>Controller alarms appear on a red full-screen page. The header fault indicator can reopen the current alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Red alarm page" width="640">](docs/screenshots/panel-alarm.png) |
 | **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error page" width="640">](docs/screenshots/panel-error.png) |
 

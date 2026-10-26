@@ -5,6 +5,7 @@
 #include "lvgl.h"
 #include "nvs.h"
 #include "panel_runtime.h"
+#include "panel_usb.h"
 #include "panel_storage.h"
 #include "panel_hardware.h"
 #include "bsp/touch.h"
@@ -46,6 +47,8 @@ struct Preferences {
 static Preferences prefs;
 static ActuatorPreferences actuator_prefs;
 static bool actuator_mode = false;
+static bool usb_connection = false;
+static lv_obj_t *usb_connection_status, *controller_connect, *controller_demo;
 static bool a_rotary = false;
 static bool actuator_config_open = false;
 static State state;
@@ -181,6 +184,7 @@ static void save() {
         nvs_set_u8(h, "inches", inches);
         nvs_set_u8(h, "stepidx", step_index);
         nvs_set_u8(h, "application", actuator_mode);
+        nvs_set_u8(h, "usb", usb_connection);
         nvs_set_u8(h, "arotary", a_rotary);
         nvs_set_blob(h, "actuators", &actuator_prefs, sizeof actuator_prefs);
         nvs_commit(h);
@@ -216,6 +220,8 @@ static void load() {
             inches = unit == 1;
         if (nvs_get_u8(h, "stepidx", &step) == ESP_OK && step < 4)
             step_index = step;
+        uint8_t usb = 0;
+        nvs_get_u8(h, "usb", &usb); usb_connection = usb == 1;
         uint8_t application = 0;
         nvs_get_u8(h, "application", &application);
         actuator_mode = application == 1;
@@ -913,11 +919,18 @@ static void units_changed(lv_event_t *e) {
     save();
     build_page();
 }
+static void connection_changed(lv_event_t *e) {
+    bool usb = lv_buttonmatrix_get_selected_button((lv_obj_t *)lv_event_get_target(e)) == 1;
+    if (usb == usb_connection || state.sd_active || state.busy || state.probing || state.uploading || state.cycle_axis >= 0) return;
+    runtime_disconnect(); usb_connection = usb; save();
+    int scroll = lv_obj_get_scroll_y(body); build_page();
+    lv_obj_scroll_to_y(body, scroll, LV_ANIM_OFF);
+}
 static void connect_click(lv_event_t *) {
-    if (state.online)
+    if (runtime_link_active() || state.online)
         runtime_disconnect();
     else
-        result(runtime_connect((int)prefs.tx, (int)prefs.rx, (int)prefs.baud));
+        result(runtime_connect((int)prefs.tx, (int)prefs.rx, (int)prefs.baud, usb_connection));
 }
 static void demo_click(lv_event_t *) { runtime_demo(!runtime_is_demo()); }
 static bool unlock() { return runtime_action(Action::Unlock); }
@@ -930,7 +943,8 @@ static void recover(lv_event_t *) {
         return;
     }
     if (state.alarm) {
-        snprintf(title, sizeof title, "ALARM %d / Unlock?", state.alarm);
+        if (state.alarm < 0) snprintf(title, sizeof title, "Machine locked / Unlock?");
+        else snprintf(title, sizeof title, "ALARM %d / Unlock?", state.alarm);
         confirm(title,
                 "Find and remove the alarm cause first.\n$X unlocks; it does not restore a lost position.",
                 unlock, RED, "Unlock");
@@ -1229,6 +1243,7 @@ static void build_page() {
     release_jog();
     jog_count = 0;
     wifi_row_status = nullptr;
+    usb_connection_status = controller_connect = controller_demo = nullptr;
     memset(file_run_buttons,0,sizeof file_run_buttons);
     file_previous=file_next=file_page_label=nullptr;
     file_box = file_title = progress = progress_text = time_text = start_btn = refresh_btn = nullptr;
@@ -1376,14 +1391,26 @@ static void build_page() {
             setting_action_row(body, "Probe configuration", "Edit", 756, show_probe_offsets);
         }
         int controller_y = actuator_mode ? 1220 : 868;
-        label(body, "Controller UART", 0, controller_y, 960, 18, MUTED);
-        setting_row(body, "TX pin", prefs.tx, controller_y + 32, 8);
-        setting_row(body, "RX pin", prefs.rx, controller_y + 120, 9);
-        setting_row(body, "Baud rate", prefs.baud, controller_y + 208, 10);
-        button(body, state.online ? "Disconnect" : "Connect controller", 0, controller_y + 304, 472, 64, connect_click, 0,
-               state.online ? CARD : GREEN, state.online);
-        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, controller_y + 304, 472, 64,
-               demo_click);
+        label(body, "Controller connection", 0, controller_y, 960, 18, MUTED);
+        auto connection_row = settings_list_row(body, controller_y + 32, 76);
+        label(connection_row, "Connection", 20, 25, 620, 20);
+        static const char *const connections[] = {"UART", "USB3", ""};
+        auto connection = choices(connection_row, connections, usb_connection, 680, 12, 270, 52, connection_changed);
+        enable(connection, !state.sd_active && !state.busy && !state.probing && !state.uploading && state.cycle_axis < 0);
+        if (usb_connection) {
+            auto row = settings_list_row(body, controller_y + 120, 76);
+            label(row, "USB controller", 20, 25, 420, 20);
+            char status[80]; usb_status(status, sizeof status);
+            usb_connection_status = label(row, status, 460, 25, 490, 18, MUTED);
+            lv_obj_set_style_text_align(usb_connection_status, LV_TEXT_ALIGN_RIGHT, 0);
+        } else {
+            setting_row(body, "TX pin", prefs.tx, controller_y + 120, 8);
+            setting_row(body, "RX pin", prefs.rx, controller_y + 208, 9);
+            setting_row(body, "Baud rate", prefs.baud, controller_y + 296, 10);
+        }
+        int buttons_y = controller_y + (usb_connection ? 216 : 392);
+        controller_connect = button(body, runtime_link_active() || state.online ? "Disconnect" : "Connect controller", 0, buttons_y, 472, 64, connect_click);
+        controller_demo = button(body, runtime_is_demo() ? "Exit preview" : "Preview / controller off", 498, buttons_y, 472, 64, demo_click);
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
         lv_obj_set_style_text_align(file_title, LV_TEXT_ALIGN_CENTER, 0);
@@ -1431,7 +1458,7 @@ static void refresh(lv_timer_t *) {
         return;
     }
     if (modal) {
-        int fault = state.alarm ? state.alarm : -state.error;
+        int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
         if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); return; }
     }
@@ -1441,20 +1468,26 @@ static void refresh(lv_timer_t *) {
     if (preview_update_open) { preview_update_refresh(); return; }
     if (server_open || probe_offsets_open) return;
     if (accessories_open || spindles_open || macro_editor_open) {
-        int fault = state.alarm ? state.alarm : -state.error;
+        int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
         if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
         else tools_refresh();
         return;
     }
     if (machine_browser || machine_editor || machine_search) {
-        int fault = state.alarm ? state.alarm : -state.error;
+        int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
         if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
         else machine_refresh();
         return; // The full-screen settings view does not need hidden Jog/Job redraws.
     }
     if (modal) return; // Full-screen notices do not redraw the covered main page.
+    if (page == SettingsPage && !modal && controller_connect) {
+        auto set = [](lv_obj_t *o, const char *text) { if (o && strcmp(lv_label_get_text(o), text)) lv_label_set_text(o, text); };
+        set(lv_obj_get_child(controller_connect,0), runtime_link_active() || state.online ? "Disconnect" : "Connect controller");
+        set(lv_obj_get_child(controller_demo,0), runtime_is_demo() ? "Exit preview" : "Preview / controller off");
+        if (usb_connection_status) { char text[80]; usb_status(text,sizeof text); set(usb_connection_status,text); }
+    }
     int parsed = preview_parsing.load();
     if (parsed == 2 || parsed == 3) {
         preview_parsing.store(0);
@@ -1586,7 +1619,7 @@ static void refresh(lv_timer_t *) {
             lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
     }
     wifi_refresh_ui();
-    int fault = state.alarm ? state.alarm : -state.error;
+    int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
     if (!fault)
         fault_seen = 0;
     if (fault && fault != fault_seen) {
@@ -1735,9 +1768,9 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"inset\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
+             "\"baud\":%.0f,\"usb_connection\":%d,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.probe.inset, prefs.tx,
-             prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
+             prefs.rx, prefs.baud, usb_connection, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
              page == JogPage && !actuator_mode && mode_choices
                  ? (lv_buttonmatrix_has_button_ctrl(mode_choices, 1, LV_BUTTONMATRIX_CTRL_CHECKED) ? 1
                     : lv_buttonmatrix_has_button_ctrl(mode_choices, 0, LV_BUTTONMATRIX_CTRL_CHECKED) ? 0 : -1)

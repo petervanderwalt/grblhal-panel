@@ -58,9 +58,11 @@ try:
  field(4,f"{original['inset']+.5:.1f}")
  shot('settings-probe-offsets-large');tap(690,108);assert data()['dialog']=='none'
  for key in keys:assert data()[key]==original[key]
- scroll_to(650);tap(850,y(938));assert data()['dialog']=='number-keypad'
- tap(712,132);assert data()['dialog']=='none';shot('settings-popup-closed')
- for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','step','actuator_mode','a_rotary','macro_count','brightness'):
+ if not original.get('usb_connection',0):
+  scroll_to(800);tap(850,y(1026));assert data()['dialog']=='number-keypad'
+  tap(712,132);assert data()['dialog']=='none'
+ shot('settings-popup-closed')
+ for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','step','actuator_mode','a_rotary','macro_count','brightness','usb_connection'):
   assert data()[key]==original[key],key
  tap(512, 566);assert data()['page']==3
  if before:
