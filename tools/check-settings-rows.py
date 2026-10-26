@@ -32,7 +32,7 @@ try:
    step=max(-260,min(260,delta));start=440 if step>0 else 150
    cmd(f'SWIPE 940 {start} 940 {start-step}');time.sleep(.5)
  scroll_to(480);shot('settings-service-rows')
- y=lambda local:round(76+local-data()['scroll_y'])
+ y=lambda local:round(70+local-data()['scroll_y'])
  tap(850,y(570));assert data()['dialog']=='preview-server';shot('settings-preview-server-large');tap(943,220);tap(744,108);assert data()['dialog']=='none'
  assert json.loads(cmd('SD STATE').removeprefix('@UGDATA '))['server']==original_server
  scroll_to(480);tap(850,y(658));assert data()['dialog']=='inputs';tap(916,62);assert data()['dialog']=='none'

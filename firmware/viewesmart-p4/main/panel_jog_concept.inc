@@ -183,10 +183,18 @@ static void concept_settings_controls(lv_obj_t *obj) {
     }
 }
 static void concept_settings_layout() {
+    settings_title = label(root, "Settings", 40, 20, 400, 28, CONCEPT_INK);
+    concept_place(right_surface, 16, 76, 992, 450);
+    concept_skin(right_surface, CONCEPT_CARD, 28);
+    visibility(right_surface, true);
+    concept_place(body, 28, 94, 968, 414);
     concept_skin(body, CONCEPT_CARD, 0);
     lv_obj_set_style_bg_opa(body, LV_OPA_COVER, LV_STATE_USER_1);
-    for (unsigned i = 0; i < lv_obj_get_child_count(body); ++i)
-        concept_settings_controls(lv_obj_get_child(body, i));
+    for (unsigned i = 0; i < lv_obj_get_child_count(body); ++i) {
+        auto row = lv_obj_get_child(body, i);
+        lv_obj_set_y(row, lv_obj_get_y(row) - 24);
+        concept_settings_controls(row);
+    }
 }
 static void concept_layout() {
     concept_dock();

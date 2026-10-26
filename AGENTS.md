@@ -467,3 +467,7 @@ Settings uses the same graphite background, black list and dark neutral controls
 as the refreshed main screens. Keep rows flat, with simple bottom separators.
 When restoring source backups, touch their timestamps or clean the build; a newer
 object can otherwise retain reverted PSRAM buffer experiments.
+
+Settings keeps its heading above the rounded outer card, matching Files/Macros.
+The flat scrollable list is inset inside that card; keep the heading stationary
+while scrolling and include it in the normal page slide.

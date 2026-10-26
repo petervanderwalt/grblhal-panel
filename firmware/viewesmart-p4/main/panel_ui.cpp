@@ -74,7 +74,7 @@ static lv_obj_t *left_surface, *right_surface, *tabview, *page_layer;
 static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
 static lv_obj_t *root, *body, *brand_label, *state_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[4];
-static lv_obj_t *accessories_btn;
+static lv_obj_t *accessories_btn, *settings_title;
 static bool inputs_open = false, accessories_open = false, spindles_open = false, macro_editor_open = false;
 static lv_obj_t *macro_fields[2];
 static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause, *probe_btn;
@@ -135,7 +135,7 @@ static void machine_refresh();
 static void show_machine_settings(lv_event_t *);
 static void parent_page_content(lv_obj_t *parent) {
     lv_obj_t *objects[] = {left_surface, right_surface, axis_card[0], axis_card[1], axis_card[2],
-                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn};
+                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn, settings_title};
     for (auto obj : objects)
         if (obj && lv_obj_get_parent(obj) != parent)
             lv_obj_set_parent(obj, parent);
@@ -1162,6 +1162,7 @@ static void build_page() {
     lv_obj_set_x(page_layer, 0);
     parent_page_content(root);
     concept_restore();
+    if (settings_title) { lv_obj_delete(settings_title); settings_title = nullptr; }
     release_jog();
     jog_count = 0;
     wifi_row_status = nullptr;
@@ -1262,7 +1263,6 @@ static void build_page() {
     } else if (page == SettingsPage) {
         lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(body, LV_DIR_VER);
-        label(body, "Settings", 0, 0, 960, 22, TEXT);
         lv_obj_t *application = settings_list_row(body, 44, 80);
         label(application, "Mode", 20, 28, 500, 20);
         static const char *const applications[] = {"CNC", "Actuator", ""};

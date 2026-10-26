@@ -1,7 +1,8 @@
 # Settings refinements
 
 The Settings page uses the shared dark palette and flat list rows with dividers,
-without rounded card backgrounds or shadows. Preview server, Input
+inside a rounded outer card, without individual row shadows. The heading sits
+above the card and stays visible while the list scrolls. Preview server, Input
 diagnostics and Machine settings use the same scrollable label/action rows as
 the other preferences. Probe configuration has one Edit row for XYZ offsets, feed and corner inset.
 
