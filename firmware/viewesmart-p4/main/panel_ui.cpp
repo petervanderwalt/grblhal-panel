@@ -107,6 +107,17 @@ static char preview_path[160], preview_message[192];
 static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *start_btn, *refresh_btn,
     *probe_start, *probe_status, *contact_btn;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
+static bool modal_plain = false, modal_inset_pending = false;
+static void finish_modal(lv_obj_t *);
+static void form_control_style(lv_obj_t *);
+static bool form_object(lv_obj_t *o) {
+    if (page == JobPage && o == stop_btn) return true;
+    for (; o; o = lv_obj_get_parent(o)) {
+        if (modal && !modal_plain && o == modal) return true;
+        if ((page == JobPage || (page == JogPage && actuator_mode)) && (o == body || o == job_controls)) return true;
+    }
+    return false;
+}
 static char selected[160] = "";
 static uint32_t revision = 0;
 static unsigned controller_file_page=0;
@@ -328,6 +339,14 @@ static void brightness_changed(lv_event_t *e) {
 static void enable(lv_obj_t *b, bool on, bool brief_busy = false) {
     if (!b)
         return;
+    if (form_object(b)) {
+        bool changed = lv_obj_has_state(b,LV_STATE_DISABLED) == on;
+        if (changed) {
+            if (on) lv_obj_remove_state(b,LV_STATE_DISABLED); else lv_obj_add_state(b,LV_STATE_DISABLED);
+            form_control_style(b);
+        }
+        return;
+    }
     if (on)
         lv_obj_remove_state(b, LV_STATE_DISABLED);
     else
@@ -453,23 +472,26 @@ static void close_modal() {
     probe_start = probe_status = contact_btn = nullptr;
     layout_stop();
 }
-static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320, uint32_t accent = PRIMARY) {
+static lv_obj_t *open_modal(const char *title, int width = 1024, int height = 600, uint32_t accent = PRIMARY, bool plain = false) {
     close_modal();
-    // Opaque backing avoids blending the page beneath an editor.
-    modal = box(lv_layer_top(), 0, 0, 1024, 600, EDGE);
-    lv_obj_set_style_bg_opa(modal, LV_OPA_COVER, 0);
+    modal_plain = plain;
+    modal_inset_pending = !plain && (width != 1024 || height != 600);
+    modal = box(lv_layer_top(), 0, 0, 1024, 600, 0x34373C);
     lv_obj_set_style_border_width(modal, 0, 0);
     lv_obj_set_style_radius(modal, 0, 0);
-    lv_obj_t *card = surface(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
+    auto card = box(modal, 0, 0, 1024, 600, plain ? CARD : 0x34373C);
+    lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 0, 0);
-    lv_obj_set_style_shadow_width(card,0,0);
-    lv_obj_t *heading = box(card, 0, 0, width, 64, accent);
-    lv_obj_set_style_border_width(heading, 0, 0);
-    lv_obj_set_style_radius(heading, 0, 0);
-    label(card, title, 24, 22, width - 48, 22, button_text(accent));
+    auto panel = box(card, plain ? 0 : 16, plain ? 0 : 76, plain ? width : 992, plain ? 64 : 508, plain ? accent : 0x080B0D);
+    lv_obj_set_style_radius(panel, plain ? 0 : 28, 0);
+    lv_obj_set_style_border_width(panel, !plain && accent != PRIMARY ? 2 : 0, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(accent), 0);
+    label(card, title, plain ? 24 : 40, plain ? 22 : 20, plain ? width - 48 : 864, plain ? 22 : 28,
+          plain ? button_text(accent) : accent == RED ? 0xFF8379 : 0xF2F5F4);
     layout_stop();
     return card;
 }
+
 static void confirmed(lv_event_t *) {
     auto fn = confirmation;
     close_modal();
@@ -487,26 +509,31 @@ static void cancelled(lv_event_t *) {
         show_probe();
     }
 }
-static void modal_close_button(lv_obj_t *card, int width = 920, lv_event_cb_t callback = cancelled) {
-    lv_obj_t *close = button(card, LV_SYMBOL_CLOSE, width - 88, 8, 64, 48, callback, 0, PRIMARY);
-    lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
+static void modal_close_button(lv_obj_t *card, int width = 1024, lv_event_cb_t callback = cancelled) {
+    auto close = button(card, LV_SYMBOL_CLOSE, modal_plain ? width - 88 : 944, 8, 64, 48, callback);
+    lv_obj_set_style_bg_opa(close, modal_plain ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_bg_grad_dir(close, LV_GRAD_DIR_NONE, 0);
-    auto header_color = lv_color_to_u32(lv_obj_get_style_bg_color(lv_obj_get_child(card, 0), 0)) & 0xFFFFFF;
-    lv_obj_set_style_text_color(lv_obj_get_child(close, 0), lv_color_hex(button_text(header_color)), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(close, 0), lv_color_hex(0xF2F5F4), 0);
 }
+
 static void notify(const char *s) {
-    lv_obj_t *c = open_modal("Notice");
-    label(c, s, 24, 90, 552, 18);
-    button(c, "OK", 24, 242, 552, 54, cancelled, 0, GREEN);
+    auto c = open_modal("Notice");
+    auto text = label(c, s, 80, 164, 864, 24);
+    lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
+    button(c, "OK", 660, 488, 324, 64, cancelled, 0, GREEN);
+    finish_modal(c);
 }
 static void confirm(const char *title, const char *text, bool (*fn)(), uint32_t accent = AMBER,
                     const char *action = "Confirm", uint32_t action_color = GREEN) {
-    lv_obj_t *c = open_modal(title, 600, 320, accent);
-    label(c, text, 24, 78, 552, 18, MUTED);
+    auto c = open_modal(title, 1024, 600, accent);
+    auto message = label(c, text, 80, 150, 864, 24, MUTED);
+    lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
     confirmation = fn;
-    button(c, "Cancel", 24, 242, 220, 54, cancelled, 0, CARD, true);
-    button(c, action, 264, 242, 312, 54, confirmed, 0, action_color);
+    button(c, "Cancel", 40, 488, 448, 64, cancelled, 0, RED);
+    button(c, action, 536, 488, 448, 64, confirmed, 0, action_color);
+    finish_modal(c);
 }
+
 static void key(lv_event_t *e) {
     const char *k = (const char *)lv_event_get_user_data(e);
     if (!strcmp(k, "Clear"))
@@ -541,11 +568,13 @@ static void apply_number(lv_event_t *) {
 static void edit(Edit e) {
     e.converted = !e.integer;
     editing = e;
-    lv_obj_t *c = open_modal(e.title, 430, 540, PRIMARY);
+    lv_obj_t *c = open_modal(e.title);
+    modal_close_button(c);
     number = lv_textarea_create(c);
-    lv_obj_set_pos(number, 22, 70);
-    lv_obj_set_size(number, 386, 54);
+    lv_obj_set_pos(number, 40, 100);
+    lv_obj_set_size(number, 400, 64);
     lv_textarea_set_one_line(number, true);
+    lv_obj_set_height(number, 64);
     lv_textarea_set_max_length(number, 10);
     lv_textarea_set_accepted_chars(number, "0123456789.");
     char value[24];
@@ -558,17 +587,18 @@ static void edit(Edit e) {
     lv_obj_set_style_text_color(number, lv_color_hex(TEXT), 0);
     const char *keys[] = {"7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "Back"};
     for (int i = 0; i < 12; i++) {
-        lv_obj_t *b = button(c, keys[i], 22 + (i % 3) * 132, 138 + (i / 3) * 64, 122, 54, nullptr);
+        lv_obj_t *b = button(c, keys[i], 40 + (i % 3) * 320, 224 + (i / 3) * 82, 304, 72, nullptr);
         lv_obj_add_event_cb(b, key, LV_EVENT_CLICKED, (void *)keys[i]);
     }
-    button(c, "Cancel", 22, 404, 122, 50, cancelled, 0, CARD, true);
-    lv_obj_t *clear = button(c, "Clear", 154, 404, 122, 50, nullptr);
+    button(c, "Cancel", 632, 100, 160, 64, cancelled, 0, CARD, true);
+    lv_obj_t *clear = button(c, "Clear", 456, 100, 160, 64, nullptr);
     lv_obj_add_event_cb(clear, key, LV_EVENT_CLICKED, (void *)"Clear");
-    button(c, "Apply", 286, 404, 122, 50, apply_number, 0, GREEN);
+    button(c, "Apply", 808, 100, 176, 64, apply_number, 0, GREEN);
     char limits[80];
     snprintf(limits, sizeof limits, "Range %.3f to %.3f", e.min / (e.converted ? display_scale(inches) : 1),
              e.max / (e.converted ? display_scale(inches) : 1));
-    number_error = label(c, limits, 22, 476, 386, 14, MUTED);
+    number_error = label(c, limits, 40, 184, 944, 16, MUTED);
+    finish_modal(c);
 }
 static void edit_value(lv_event_t *e) {
     if (state.probing) {
@@ -1033,102 +1063,110 @@ static void wifi_password_visible(lv_event_t *e) {
 }
 static void wifi_choose(lv_event_t *e) {
     unsigned i = (uintptr_t)lv_event_get_user_data(e);
-    if (i >= wifi.count || wifi.scanning || wifi.connecting)
-        return;
+    if (i >= wifi.count || wifi.scanning || wifi.connecting) return;
     snprintf(wifi_ssid, sizeof wifi_ssid, "%s", wifi.networks[i].ssid);
     wifi_auth = wifi.networks[i].authmode;
-    char title[64];
-    snprintf(title, sizeof title, "Connect to Wi-Fi: %s", wifi_ssid);
-    lv_obj_t *c = open_modal(title, 920, 500);
+    char title[72]; snprintf(title,sizeof title,"Connect to Wi-Fi: %s",wifi_ssid);
+    auto c = open_modal(title);
+    modal_close_button(c,1024,show_wifi);
+    label(c,"Password",40,120,112,18,MUTED);
     wifi_password = lv_textarea_create(c);
-    lv_obj_set_pos(wifi_password, 24, 108);
-    lv_obj_set_size(wifi_password, 872, 54);
-    lv_textarea_set_one_line(wifi_password, true);
-    lv_textarea_set_password_mode(wifi_password, true);
-    lv_textarea_set_max_length(wifi_password, 64);
-    lv_textarea_set_password_show_time(wifi_password, 0);
-    wifi_password_error = label(c, "", 24, 164, 872, 12, RED);
-    lv_textarea_set_placeholder_text(wifi_password, wifi_auth ? "Password" : "Open network");
-    lv_obj_set_style_bg_color(wifi_password, lv_color_hex(BG), 0);
-    lv_obj_set_style_text_color(wifi_password, lv_color_hex(TEXT), 0);
-    lv_obj_set_style_text_font(wifi_password, font(22), 0);
-    button(c, "Cancel", 24, 182, 200, 54, show_wifi, 0, CARD, true);
-    button(c, "Connect", 688, 182, 208, 54, wifi_connect, 0, GREEN);
-    lv_obj_t *check = lv_checkbox_create(c);
-    lv_obj_set_pos(check, 260, 198);
-    lv_checkbox_set_text(check, "Show password");
-    lv_obj_set_style_text_color(check, lv_color_hex(TEXT), 0);
-    lv_obj_add_event_cb(check, wifi_password_visible, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *keyboard = lv_keyboard_create(c);
-    lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(keyboard, 24, 252);
-    lv_obj_set_size(keyboard, 872, 222);
-    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_textarea(keyboard, wifi_password);
-    lv_obj_set_style_bg_color(keyboard, lv_color_hex(BG), 0);
-    lv_obj_set_style_bg_color(keyboard, lv_color_hex(CARD), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(keyboard, lv_color_hex(TEXT), LV_PART_ITEMS);
+    lv_obj_set_pos(wifi_password,160,100); lv_obj_set_size(wifi_password,440,64);
+    lv_textarea_set_one_line(wifi_password,true); lv_obj_set_height(wifi_password,64);
+    lv_textarea_set_password_mode(wifi_password,true);
+    lv_textarea_set_max_length(wifi_password,64); lv_textarea_set_password_show_time(wifi_password,0);
+    lv_textarea_set_placeholder_text(wifi_password,wifi_auth?"Password":"Open network");
+    lv_obj_set_style_text_font(wifi_password,font(22),0);
+    button(c,"Cancel",616,100,168,64,show_wifi,0,RED);
+    button(c,"Connect",800,100,184,64,wifi_connect,0,GREEN);
+    auto check=lv_checkbox_create(c); lv_obj_set_pos(check,40,184);
+    lv_checkbox_set_text(check,"Show password");
+    lv_obj_add_event_cb(check,wifi_password_visible,LV_EVENT_VALUE_CHANGED,nullptr);
+    wifi_password_error=label(c,"",300,184,684,16,RED);
+    auto keyboard=lv_keyboard_create(c); lv_obj_set_align(keyboard,LV_ALIGN_TOP_LEFT);
+    lv_obj_set_pos(keyboard,40,236); lv_obj_set_size(keyboard,944,324);
+    lv_keyboard_set_mode(keyboard,LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_keyboard_set_textarea(keyboard,wifi_password);
+    finish_modal(c);
 }
+
 static void wifi_networks() {
     lv_obj_clean(wifi_list);
-    for (unsigned i = 0; i < wifi.count; i++) {
-        lv_obj_t *row = button(wifi_list, "", 0, i * 66, 870, 58, wifi_choose, i, CARD);
-        lv_obj_set_style_bg_grad_dir(row, LV_GRAD_DIR_NONE, 0);
-        lv_obj_set_style_radius(row, 0, 0);
-        lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_shadow_width(row, 0, 0);
-        lv_obj_delete(lv_obj_get_child(row, 0));
-        label(row, wifi.networks[i].ssid, 16, 18, 610, 20);
-        char signal[64];
-        snprintf(signal, sizeof signal, "%d dBm", wifi.networks[i].rssi);
-        lv_obj_t *strength = label(row, signal, 650, 20, 148, 16, MUTED);
-        lv_obj_set_style_text_align(strength, LV_TEXT_ALIGN_RIGHT, 0);
-        if (wifi.networks[i].authmode) {
-            lv_obj_t *lock = lv_image_create(row);
-            lv_image_set_src(lock, &panel_wifi_lock);
-            lv_obj_set_pos(lock, 814, 20);
-            lv_obj_set_style_image_recolor(lock, lv_color_hex(MUTED), 0);
-            lv_obj_set_style_image_recolor_opa(lock, LV_OPA_COVER, 0);
+    for (unsigned i=0;i<wifi.count;++i) {
+        auto row=button(wifi_list,"",0,i*72,936,64,wifi_choose,i,CARD);
+        lv_obj_set_style_bg_grad_dir(row,LV_GRAD_DIR_NONE,0);
+        lv_obj_set_style_radius(row,0,0); lv_obj_set_style_border_width(row,0,0);
+        lv_obj_set_style_shadow_width(row,0,0);
+        lv_obj_delete(lv_obj_get_child(row,0));
+        label(row,wifi.networks[i].ssid,16,20,650,20);
+        char signal[32];snprintf(signal,sizeof signal,"%d dBm",wifi.networks[i].rssi);
+        auto strength=label(row,signal,692,22,168,16,MUTED);
+        lv_obj_set_style_text_align(strength,LV_TEXT_ALIGN_RIGHT,0);
+        if(wifi.networks[i].authmode) {
+            auto lock=lv_image_create(row); lv_image_set_src(lock,&panel_wifi_lock);
+            lv_obj_set_pos(lock,884,22); lv_obj_set_style_image_recolor(lock,lv_color_hex(0x94A0A5),0);
+            lv_obj_set_style_image_recolor_opa(lock,LV_OPA_COVER,0);
         }
+        form_control_style(row);
+        lv_obj_set_style_bg_color(row,lv_color_hex(0x080B0D),0);
+        lv_obj_set_style_radius(row,0,0);
     }
-    wifi_revision = wifi.revision;
+    wifi_revision=wifi.revision;
 }
 static void show_wifi(lv_event_t *) {
     wifi_bridge_snapshot(&wifi);
-    if (!wifi.scanning && !wifi.connecting && !wifi.count)
-        wifi_scan(nullptr);
-    lv_obj_t *c = open_modal("Wi-Fi", 920, 480);
-    wifi_scan_btn = button(c, "Scan", 560, 80, 140, 52, wifi_scan);
-    wifi_disconnect_btn = button(c, "Disconnect", 712, 80, 184, 52, wifi_disconnect, 0, CARD, true);
-    modal_close_button(c);
-    wifi_status = label(c, "", 80, 92, 450, 18);
-    lv_label_set_long_mode(wifi_status, LV_LABEL_LONG_DOT);
-    wifi_spinner = lv_spinner_create(c);
-    lv_obj_set_pos(wifi_spinner, 24, 86);
-    lv_obj_set_size(wifi_spinner, 36, 36);
-    lv_obj_set_style_arc_color(wifi_spinner, lv_color_hex(PRIMARY), LV_PART_INDICATOR);
-    wifi_list = box(c, 24, 144, 872, 304, CARD);
-    lv_obj_set_style_border_width(wifi_list, 0, 0);
-    lv_obj_set_style_radius(wifi_list, 0, 0);
-    lv_obj_add_flag(wifi_list, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(wifi_list, LV_DIR_VER);
-    wifi_networks();
-    refresh(nullptr);
+    if(!wifi.scanning&&!wifi.connecting&&!wifi.count) wifi_scan(nullptr);
+    auto c=open_modal("Wi-Fi networks"); modal_close_button(c);
+    wifi_scan_btn=button(c,"Scan",644,100,148,56,wifi_scan);
+    wifi_disconnect_btn=button(c,"Disconnect",808,100,176,56,wifi_disconnect,0,RED);
+    wifi_status=label(c,"",88,116,536,18);
+    lv_label_set_long_mode(wifi_status,LV_LABEL_LONG_DOT);
+    wifi_spinner=lv_spinner_create(c); lv_obj_set_pos(wifi_spinner,40,108);lv_obj_set_size(wifi_spinner,32,32);
+    wifi_list=box(c,40,180,944,380,CARD);
+    lv_obj_set_style_border_width(wifi_list,0,0);lv_obj_set_style_radius(wifi_list,0,0);
+    lv_obj_add_flag(wifi_list,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(wifi_list,LV_DIR_VER);
+    wifi_networks();refresh(nullptr);finish_modal(c);
 }
+
 static void wifi_result_ok(lv_event_t *) {
     close_modal();
     build_page();
 }
 static void wifi_notification() {
-    lv_obj_t *c = open_modal(wifi.connected ? "Successfully connected" : "Could not connect", 600, 320,
-                             wifi.connected ? GREEN : RED);
+    auto c=open_modal(wifi.connected?"Successfully connected":"Could not connect",1024,600,wifi.connected?GREEN:RED);
     char message[192];
-    if (wifi.connected)
-        snprintf(message, sizeof message, "%s\nIP address: %s", wifi.ssid, wifi.ip);
-    else
-        snprintf(message, sizeof message, "%s\n%s", wifi.ssid, wifi.status);
-    label(c, message, 24, 90, 552, 20, wifi.connected ? GREEN : RED);
-    button(c, "OK", 24, 242, 552, 54, wifi_result_ok, 0, GREEN);
+    if(wifi.connected) snprintf(message,sizeof message,"%s\nIP address: %s",wifi.ssid,wifi.ip);
+    else snprintf(message,sizeof message,"%s\n%s",wifi.ssid,wifi.status);
+    auto text=label(c,message,80,164,864,26,wifi.connected?GREEN:RED);
+    lv_obj_set_style_text_align(text,LV_TEXT_ALIGN_CENTER,0);
+    button(c,"OK",660,488,324,64,wifi_result_ok,0,GREEN);finish_modal(c);
+}
+
+static void wifi_refresh_ui() {
+    wifi_bridge_snapshot(&wifi);
+    if (!modal) lv_label_set_text(wifi_header_name, wifi.connected ? wifi.ssid : wifi.connecting ? "Connecting..." : "Not connected");
+    if (!modal) lv_label_set_text(wifi_header_ip, wifi.connected ? wifi.ip : "Wi-Fi");
+    lv_obj_set_style_text_color(wifi_icon, lv_color_hex(wifi.connected ? WHITE : MUTED), 0);
+    lv_obj_set_style_opa(wifi_icon, !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
+                                         wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50, 0);
+    if (wifi_attempt && !wifi.connecting && tab_for_page(page) >= 0) {
+        wifi_attempt = false;
+        wifi_notification();
+    }
+    char network_status[160];
+    snprintf(network_status, sizeof network_status, wifi.connected && !wifi.scanning ? "%s / %s" : "%s",
+             wifi.connected && !wifi.scanning ? wifi.ssid : wifi.status, wifi.ip);
+    if (wifi_row_status && !modal)
+        lv_label_set_text(wifi_row_status, network_status);
+    if (wifi_status) {
+        if (strcmp(lv_label_get_text(wifi_status),network_status)) lv_label_set_text(wifi_status, network_status);
+        visibility(wifi_spinner, wifi.scanning || wifi.connecting);
+        enable(wifi_scan_btn, !wifi.scanning && !wifi.connecting);
+        enable(wifi_disconnect_btn, wifi.connected && !wifi.scanning && !wifi.connecting);
+        if (wifi_revision != wifi.revision)
+            wifi_networks();
+        enable(wifi_list, !wifi.scanning && !wifi.connecting);
+    }
 }
 static lv_obj_t *settings_list_row(lv_obj_t *parent, int y, int height) {
     auto row = box(parent,0,y,970,height,CARD);
@@ -1158,6 +1196,26 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
 #include "panel_probe_ui.inc"
 #include "panel_probe_config_ui.inc"
 #include "panel_jog_concept.inc"
+static void probe_refresh_ui() {
+    bool on = ready();
+    char s[160];
+    if (probe_start) {
+        if (state.probing) {
+            if (state.probe_axis >= 0) snprintf(s, sizeof s, "Probing %c", "XYZ"[state.probe_axis]);
+            else snprintf(s, sizeof s, "Probing axis %d / 3", state.probe_stage < 3 ? state.probe_stage + 1 : 3);
+            lv_label_set_text(probe_status, s);
+        } else
+            lv_label_set_text(probe_status, state.probe           ? "Contact detected - release the plate"
+                                            : state.contact_ready ? "Contact verified"
+                                            : state.probe_known   ? "Test probe: lift plate, touch tool, then release"
+                                                                  : "Waiting for probe feedback");
+        lv_obj_set_style_text_color(probe_status, lv_color_hex(state.contact_ready ? GREEN : 0x8A5500), 0);
+        if (contact_btn) lv_label_set_text(lv_obj_get_child(contact_btn, 0), state.contact_testing ? "Touch tool to plate, then release" : "Test probe");
+        enable(contact_btn, on && state.probe_known && !state.contact_testing && state.spindle == 0 && state.spindle_direction == 0);
+        enable(probe_start, on && state.contact_ready && !state.probe && state.spindle == 0 && state.spindle_direction == 0 &&
+                                ((single_probe && surface_axes[probe_surface_choice] == 2) || prefs.probe.diameter > 0) && state.modal_known && state.wco_known);
+    }
+}
 static void build_page() {
     storage_preview_viewing(false);
     runtime_snapshot(state);
@@ -1372,6 +1430,14 @@ static void refresh(lv_timer_t *) {
         show_page(CompletePage);
         return;
     }
+    if (modal) {
+        int fault = state.alarm ? state.alarm : -state.error;
+        if (!fault) fault_seen = 0;
+        if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); return; }
+    }
+    if (wifi_status) { wifi_refresh_ui(); return; }
+    if (wifi_password || number || confirmation || actuator_config_open) return;
+    if (probe_status) { probe_refresh_ui(); return; }
     if (preview_update_open) { preview_update_refresh(); return; }
     if (server_open || probe_offsets_open) return;
     if (accessories_open || spindles_open || macro_editor_open) {
@@ -1388,6 +1454,7 @@ static void refresh(lv_timer_t *) {
         else machine_refresh();
         return; // The full-screen settings view does not need hidden Jog/Job redraws.
     }
+    if (modal) return; // Full-screen notices do not redraw the covered main page.
     int parsed = preview_parsing.load();
     if (parsed == 2 || parsed == 3) {
         preview_parsing.store(0);
@@ -1479,7 +1546,7 @@ static void refresh(lv_timer_t *) {
         enable(axis_home[i], can_home, brief_busy);
     bool held = !strncmp(state.mode, "Hold", 4);
     lv_label_set_text(lv_obj_get_child(job_pause, 0), held ? "Resume" : "Pause");
-    lv_obj_set_style_bg_color(job_pause, lv_color_hex(held ? GREEN : AMBER), 0);
+    lv_obj_set_style_bg_color(job_pause, lv_color_hex(held ? 0x83E6B0 : AMBER), 0);
     lv_obj_set_style_text_color(lv_obj_get_child(job_pause, 0), lv_color_hex(button_text(held ? GREEN : AMBER)), 0);
     lv_obj_set_style_bg_grad_dir(job_pause, held ? LV_GRAD_DIR_NONE : LV_GRAD_DIR_VER, 0);
     enable(job_pause,
@@ -1518,30 +1585,7 @@ static void refresh(lv_timer_t *) {
         if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59)
             lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
     }
-    wifi_bridge_snapshot(&wifi);
-    lv_label_set_text(wifi_header_name, wifi.connected ? wifi.ssid : wifi.connecting ? "Connecting..." : "Not connected");
-    lv_label_set_text(wifi_header_ip, wifi.connected ? wifi.ip : "Wi-Fi");
-    lv_obj_set_style_text_color(wifi_icon, lv_color_hex(wifi.connected ? WHITE : MUTED), 0);
-    lv_obj_set_style_opa(wifi_icon, !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
-                                         wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50, 0);
-    if (wifi_attempt && !wifi.connecting && tab_for_page(page) >= 0) {
-        wifi_attempt = false;
-        wifi_notification();
-    }
-    char network_status[160];
-    snprintf(network_status, sizeof network_status, wifi.connected && !wifi.scanning ? "%s / %s" : "%s",
-             wifi.connected && !wifi.scanning ? wifi.ssid : wifi.status, wifi.ip);
-    if (wifi_row_status)
-        lv_label_set_text(wifi_row_status, network_status);
-    if (wifi_status) {
-        lv_label_set_text(wifi_status, network_status);
-        visibility(wifi_spinner, wifi.scanning || wifi.connecting);
-        enable(wifi_scan_btn, !wifi.scanning && !wifi.connecting);
-        enable(wifi_disconnect_btn, wifi.connected && !wifi.scanning && !wifi.connecting);
-        if (wifi_revision != wifi.revision)
-            wifi_networks();
-        enable(wifi_list, !wifi.scanning && !wifi.connecting);
-    }
+    wifi_refresh_ui();
     int fault = state.alarm ? state.alarm : -state.error;
     if (!fault)
         fault_seen = 0;
@@ -1549,22 +1593,7 @@ static void refresh(lv_timer_t *) {
         fault_seen = fault;
         recover(nullptr);
     }
-    if (probe_start) {
-        if (state.probing) {
-            if (state.probe_axis >= 0) snprintf(s, sizeof s, "Probing %c", "XYZ"[state.probe_axis]);
-            else snprintf(s, sizeof s, "Probing axis %d / 3", state.probe_stage < 3 ? state.probe_stage + 1 : 3);
-            lv_label_set_text(probe_status, s);
-        } else
-            lv_label_set_text(probe_status, state.probe           ? "Contact detected - release the plate"
-                                            : state.contact_ready ? "Contact verified"
-                                            : state.probe_known   ? "Test probe: lift plate, touch tool, then release"
-                                                                  : "Waiting for probe feedback");
-        lv_obj_set_style_text_color(probe_status, lv_color_hex(state.contact_ready ? GREEN : 0x8A5500), 0);
-        if (contact_btn) lv_label_set_text(lv_obj_get_child(contact_btn, 0), state.contact_testing ? "Touch tool to plate, then release" : "Test probe");
-        enable(contact_btn, on && state.probe_known && !state.contact_testing && state.spindle == 0 && state.spindle_direction == 0);
-        enable(probe_start, on && state.contact_ready && !state.probe && state.spindle == 0 && state.spindle_direction == 0 &&
-                                ((single_probe && surface_axes[probe_surface_choice] == 2) || prefs.probe.diameter > 0) && state.modal_known && state.wco_known);
-    }
+    probe_refresh_ui();
     machine_refresh();
     tools_refresh();
     concept_refresh();
@@ -1697,11 +1726,16 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     const char *dialog = probe_offsets_open ? "probe-offsets" : number ? "number-keypad" :
                          server_open ? "preview-server" : machine_editor ? "machine-editor" :
                          machine_browser ? "machine-settings" : modal ? "other" : "none";
+    const char *form_kind = probe_offsets_open ? "probe-configuration" : number ? "numeric" : server_open ? "preview-server" :
+        wifi_password ? "wifi-password" : wifi_list ? "wifi-scan" : spindles_open ? "spindles" : accessories_open ? "tools" :
+        macro_editor_open ? "macro-editor" : actuator_config_open ? "actuator-editor" : machine_editor ? "machine-editor" :
+        machine_search ? "machine-search" : machine_browser ? "machine-settings" : probe_status ? "probe" :
+        preview_update_open ? "preview-update" : confirmation ? "confirmation" : modal ? "notice" : "none";
     unsigned macro_count = 0;
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"inset\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d}",
+             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.probe.inset, prefs.tx,
              prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
              page == JogPage && !actuator_mode && mode_choices
@@ -1714,7 +1748,8 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[2]),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[3]),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[4]),nullptr) : 0.0,
-             lv_obj_get_x(wifi_header),lv_obj_get_y(wifi_header),lv_obj_get_width(wifi_header),lv_obj_get_height(wifi_header));
+             lv_obj_get_x(wifi_header),lv_obj_get_y(wifi_header),lv_obj_get_width(wifi_header),lv_obj_get_height(wifi_header),
+             modal?lv_obj_get_width(lv_obj_get_child(modal,0)):0,modal?lv_obj_get_height(lv_obj_get_child(modal,0)):0,form_kind);
 }
 extern "C" bool panel_ui_setting_field(const char *text) {
     if (probe_offsets_open && text && strlen(text) <= 10) {

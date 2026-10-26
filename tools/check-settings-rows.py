@@ -33,12 +33,12 @@ try:
    cmd(f'SWIPE 940 {start} 940 {start-step}');time.sleep(.5)
  scroll_to(480);shot('settings-service-rows')
  y=lambda local:round(70+local-data()['scroll_y'])
- tap(850,y(570));assert data()['dialog']=='preview-server';shot('settings-preview-server-large');tap(943,220);tap(744,108);assert data()['dialog']=='none'
+ tap(850,y(570));assert data()['dialog']=='preview-server';shot('settings-preview-server-large');tap(943,220);tap(700,132);assert data()['dialog']=='none'
  assert json.loads(cmd('SD STATE').removeprefix('@UGDATA '))['server']==original_server
  tap(691,566);assert data()['page']==6 and data()['dialog']=='none';tap(870,566)
  scroll_to(480);tap(850,y(658));time.sleep(2)
  settings=json.loads(cmd('STATE').removeprefix('@UGDATA '));assert settings['settings_result']==1
- tap(956,48);assert data()['dialog']=='none'
+ tap(976,32);assert data()['dialog']=='none'
  scroll_to(650);row_y=y(794);assert 110<row_y<475
  keys=('x','y','z','feed','inset')
  points=((118,108),(310,108),(502,108),(258,184),(770,184))
@@ -59,15 +59,15 @@ try:
  shot('settings-probe-offsets-large');tap(690,108);assert data()['dialog']=='none'
  for key in keys:assert data()[key]==original[key]
  scroll_to(650);tap(850,y(938));assert data()['dialog']=='number-keypad'
- tap(380,459);assert data()['dialog']=='none';shot('settings-popup-closed')
+ tap(712,132);assert data()['dialog']=='none';shot('settings-popup-closed')
  for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','step','actuator_mode','a_rotary','macro_count','brightness'):
   assert data()[key]==original[key],key
  tap(512, 566);assert data()['page']==3
  if before:
   tap(236,134);assert data()['dialog']=='other';shot('macro-editor-consistent')
-  tap(724,176);tap(360,409);assert data()['dialog']=='none';assert data()['macro_count']==before
+  tap(720,204);tap(264,520);assert data()['dialog']=='none';assert data()['macro_count']==before
  tap(408,42);assert data()['dialog']=='other';shot('macro-add-consistent')
- tap(724,176);assert data()['dialog']=='none';assert data()['macro_count']==before
+ tap(720,204);assert data()['dialog']=='none';assert data()['macro_count']==before
  tap(870, 566);shot('settings-root-rows')
  assert data()['macro_count']==before
  print('PASS settings actions and Troubleshooting, editor input and navigation; preferences unchanged',flush=True)

@@ -64,7 +64,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
             field(1, code)
             if i % 4:  # Untouched Blue must persist just like an explicitly clicked colour.
                 tap(640 + (i % 4) * 105, 104)
-            tap(920, 176)
+            tap(902, 204)
             assert data()['macro_count'] == i + 1, f'Save failed at slot {i + 1}'
         if not args.no_captures:
             r.exchange(p, 'shot', Path('captures/tools/panel-macros-full.png'))
@@ -79,14 +79,14 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(850, 462)  # Last tile (row five, column four)
         if not args.no_captures:
             r.exchange(p, 'shot', Path('captures/tools/panel-macro-confirm.png'))
-        tap(630, 409)
+        tap(760, 520)
         assert data('STATE')['macro_running'] and '$G' in cmd('LAST')
         cmd('RX <Idle|FS:0,0>')
         time.sleep(.4)
         for i in range(20):
             tap(236 + (i % 4) * 244, 134 + (i // 4) * 82)
-            tap(724, 176)
-            tap(630, 409)
+            tap(720, 204)
+            tap(760, 520)
             assert data()['macro_count'] == 19 - i
         tap(154, 566)
         print('PASS: all 20 temporary macros saved, survived reboot, ran and were removed')

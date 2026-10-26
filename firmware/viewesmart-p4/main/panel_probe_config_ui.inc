@@ -29,7 +29,7 @@ static void probe_offsets_apply(lv_event_t *) {
 static void show_probe_offsets(lv_event_t *) {
     if (state.probing) { notify("Wait for the probe sequence to finish before editing geometry."); return; }
     probe_return = probe_status != nullptr;
-    auto card=open_modal(inches?"Probe configuration (in)":"Probe configuration (mm)",1024,600);
+    auto card=open_modal(inches?"Probe configuration (in)":"Probe configuration (mm)",1024,600,PRIMARY,true);
     modal_close_button(card,1024);
     const float values[]={prefs.probe.x,prefs.probe.y,prefs.probe.z,prefs.probe.feed,prefs.probe.inset};
     for (unsigned i=0;i<5;++i) {

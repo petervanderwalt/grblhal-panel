@@ -74,45 +74,16 @@ static void concept_keyboard_style(lv_obj_t *keyboard) {
 }
 static void concept_macro_dialog() {
     if (page != MacrosPage || !modal) return;
-    auto card = lv_obj_get_child(modal, 0);
-    concept_skin(card, CONCEPT_CARD, 0);
-    for (unsigned i = 1; i < lv_obj_get_child_count(card); ++i) {
-        auto o = lv_obj_get_child(card, i);
-        if (lv_obj_check_type(o, &lv_label_class) && (i != 1 || macro_editor_open))
-            concept_text(o, CONCEPT_INK);
-        if (!lv_obj_check_type(o, &lv_button_class)) continue;
-        const char *text = lv_label_get_text(lv_obj_get_child(o, 0));
-        bool positive = !strcmp(text, "Save") || !strcmp(text, "Run");
-        bool danger = !strcmp(text, "Delete") || !strcmp(text, "Stop") || !strcmp(text, "Cancel");
-        concept_button(o, positive ? CONCEPT_AXES[1] : danger ? RED : CONCEPT_PAD,
-                       positive ? CONCEPT_CARD : CONCEPT_INK);
-    }
+    auto card = lv_obj_get_child(modal,0);
+    finish_modal(card);
     if (!macro_editor_open) return;
-    concept_skin(lv_obj_get_child(card, 0), CONCEPT_CARD, 0);
-    for (auto field : macro_fields) {
-        concept_skin(field, CONCEPT_PAD, 12); concept_text(field, CONCEPT_INK);
-        lv_obj_set_style_border_width(field, 1, LV_STATE_USER_1);
-        lv_obj_set_style_border_color(field, lv_color_hex(0x39444B), LV_STATE_USER_1);
-        lv_obj_set_style_border_color(field, lv_color_hex(CONCEPT_AXES[2]), LV_STATE_USER_1 | LV_STATE_FOCUSED);
-        lv_obj_set_style_border_color(field, lv_color_hex(CONCEPT_AXES[2]), LV_PART_CURSOR);
-        lv_obj_set_style_bg_color(field, lv_color_hex(CONCEPT_AXES[2]), LV_PART_SELECTED);
-        lv_obj_set_style_text_color(field, lv_color_hex(CONCEPT_CARD), LV_PART_SELECTED);
-    }
-    lv_obj_set_style_pad_ver(macro_fields[0],14,LV_STATE_USER_1);
+    lv_obj_set_style_pad_ver(macro_fields[0],14,0);
     lv_obj_set_height(macro_fields[0],56);
-    concept_text(macro_error, CONCEPT_AXES[0], font(14));
-    concept_skin(macro_colors_control, CONCEPT_CARD, 0);
-    lv_obj_set_style_bg_color(macro_colors_control, lv_color_hex(CONCEPT_PAD), LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(macro_colors_control, lv_color_hex(CONCEPT_PAD), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(macro_colors_control, lv_color_hex(CONCEPT_MUTED), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(macro_colors_control, lv_color_hex(CONCEPT_CARD), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_border_width(macro_colors_control, 0, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(macro_colors_control, 0, LV_PART_ITEMS | LV_STATE_CHECKED);
     concept_macro_color();
     lv_obj_add_event_cb(macro_colors_control, [](lv_event_t *) { concept_macro_color(); }, LV_EVENT_VALUE_CHANGED, nullptr);
-    concept_keyboard_style(macro_keyboard);
 }
 static void concept_form_dialog(lv_obj_t *card, lv_obj_t *keyboard, lv_obj_t *const *fields, unsigned count) {
+    if (!modal_plain) { finish_modal(card); return; }
     concept_skin(card, CONCEPT_CARD, 0);
     concept_skin(lv_obj_get_child(card,0), CONCEPT_CARD, 0);
     for (unsigned i=0;i<count;++i) {

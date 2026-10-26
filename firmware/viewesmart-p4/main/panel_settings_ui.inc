@@ -78,6 +78,7 @@ static void machine_search_open(lv_event_t *) {
     lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(keyboard, 20, 184); lv_obj_set_size(keyboard, 960, 364);
     lv_keyboard_set_textarea(keyboard, machine_field);
+    finish_modal(c);
 }
 static void machine_mask_changed(lv_event_t *e) {
     unsigned bit = (uintptr_t)lv_event_get_user_data(e);
@@ -181,6 +182,7 @@ static void machine_editor_open(void *) {
     }
     button(c, "Cancel", list ? 20 : 560, list ? 490 : 206, 200, 52, machine_back, 0, CARD, true);
     machine_save = button(c, "Save", 780, list ? 490 : 206, 200, 52, machine_save_click, 0, GREEN);
+    finish_modal(c);
 }
 static void machine_edit_click(lv_event_t *e) {
     machine_edit_id = (uintptr_t)lv_event_get_user_data(e);
@@ -223,6 +225,7 @@ static void machine_render() {
         lv_obj_set_style_text_align(lv_obj_get_child(b, 0), LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_long_mode(lv_obj_get_child(b, 0), LV_LABEL_LONG_CLIP);
         lv_obj_set_height(lv_obj_get_child(b, 0), 22);
+        if (id == machine_group) lv_obj_add_state(b,LV_STATE_CHECKED);
         y += 48;
     };
     group_button(-1, "All settings");
@@ -264,6 +267,7 @@ static void machine_render() {
     for (const auto &g : groups) if (g.id == machine_group) caption = g.name;
     if (machine_group == -2) caption = "Other";
     lv_label_set_text(machine_caption, caption.c_str());
+    form_control_style(machine_groups); form_control_style(machine_rows);
 }
 static void machine_reload(lv_event_t *) {
     if (runtime_settings_load()) { machine_catalog.clear(); machine_seen = UINT32_MAX; machine_render_later(); }
@@ -278,7 +282,7 @@ static void machine_browser_open(bool reload) {
     machine_caption = label(c, "", 340, 78, 540, 20);
     lv_label_set_long_mode(machine_caption, LV_LABEL_LONG_CLIP); lv_obj_set_height(machine_caption, 26);
     machine_status = label(c, "", 340, 108, 570, 14, MUTED);
-    machine_spinner = lv_spinner_create(c); lv_obj_set_pos(machine_spinner, 938, 86); lv_obj_set_size(machine_spinner, 32, 32);
+    machine_spinner = lv_spinner_create(c); lv_obj_set_pos(machine_spinner, 928, 86); lv_obj_set_size(machine_spinner, 32, 32);
     machine_groups = box(c, 20, 144, 240, 340, CARD);
     machine_rows = box(c, 280, 144, 700, 340, CARD);
     for (auto p : {machine_groups, machine_rows}) {
@@ -294,6 +298,7 @@ static void machine_browser_open(bool reload) {
     else machine_catalog.clear();
     machine_seen = state.settings_revision;
     machine_render();
+    finish_modal(c);
 }
 static void show_machine_settings(lv_event_t *) { machine_browser_open(true); }
 static void machine_refresh() {

@@ -76,7 +76,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         shot('panel-inputs-inactive')
         tap(154, 564)
         shot('panel-jog')
-        tap(248, 432)
+        tap(254, 482)
         cmd('RX <Idle|FS:0,0|A:>')
         shot('panel-accessories')
         tap(770, 484)  # Backspace the initial zero using the native numeric keyboard
@@ -84,13 +84,13 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
             tap(*point)
         tap(422, 166)  # CW requires confirmation
         shot('panel-spindle-confirm')
-        tap(630, 409)
+        tap(760, 520)
         assert data()['spindle_direction'] == 1 and data()['rpm'] == 12000
         assert 'M3 S12000' in cmd('LAST')
         tap(844, 166)  # Off
         assert data()['spindle_direction'] == 0 and 'M5' in cmd('LAST')
         tap(630, 166)  # CCW also requires confirmation
-        tap(630, 409)
+        tap(760, 520)
         assert data()['spindle_direction'] == -1 and 'M4 S12000' in cmd('LAST')
         tap(844, 166)
         tap(530, 274)  # Flood
@@ -102,17 +102,17 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(530, 274)
         assert cmd('LAST') == before, 'Accessories must lock during Hold'
         cmd('RX <Idle|FS:0,0|A:>')
-        tap(916, 56)
+        tap(976, 32)
         tap(512, 564)
         assert data('PREFS')['page'] == 3
         tap(890, 110)  # Add in header
         field(0, 'Metric / absolute')
         field(1, 'G21\nM8!')
-        tap(920, 176)
+        tap(902, 204)
         assert data('PREFS')['macro_count'] == 0
         field(1, 'G21\nG90')
         shot('panel-macro-editor')
-        tap(920, 176)
+        tap(902, 204)
         assert data('PREFS')['macro_count'] == 1
         if args.reboot_macro:
             p.rts = True
@@ -127,34 +127,34 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         shot('panel-macros')
         tap(110, 175)  # Run tile
         shot('panel-macro-confirm')
-        tap(630, 409)
+        tap(760, 520)
         assert data()['macro_running'] and '$G' in cmd('LAST')
         tap(154, 564)
         assert data('PREFS')['page'] == 3, 'Keep Stop accessible while a macro runs'
         tap(680, 110)
         shot('panel-macro-stop')
-        tap(342, 409)
+        tap(264, 520)
         cmd('RX <Idle|FS:0,0>')
         time.sleep(.5)
         assert not data()['macro_running']
         tap(110, 175)
-        tap(630, 409)
+        tap(760, 520)
         cmd('RX error:20')
         cmd('RX <Hold:0|FS:0,0>')
         time.sleep(.4)
         shot('panel-macro-error')
-        tap(342, 409)  # Dismiss the fault; Stop must remain accessible
+        tap(264, 520)  # Dismiss the fault; Stop must remain accessible
         tap(680, 110)
-        tap(630, 409)
+        tap(760, 520)
         assert data('PREFS')['page'] == 0 and not data()['error']
         tap(512, 564)
         tap(232, 175)  # Edit tile
         field(0, 'Metric setup')
-        tap(920, 176)
+        tap(902, 204)
         assert data('PREFS')['macro_count'] == 1
         tap(232, 175)  # Editor contains Delete
-        tap(724, 176)
-        tap(630, 409)
+        tap(720, 204)
+        tap(760, 520)
         assert data('PREFS')['macro_count'] == 0
         tap(154, 564)
         print('PASS: live inputs, spindle keypad/CW/CCW/Off, coolant interlocks, macro validation/save/edit/run/stop/delete and navigation')

@@ -168,10 +168,10 @@ static void server_save(lv_event_t *) {
 static void show_preview_server(lv_event_t *) {
     auto c = open_modal("Preview server", 1024, 600);
     modal_close_button(c, 1024);
-    label(c, "HTTP address", 16, 94, 128, 18, MUTED);
+    label(c, "HTTP address", 40, 120, 128, 18, MUTED);
     server_field = lv_textarea_create(c);
-    lv_obj_set_pos(server_field, 152, 76);
-    lv_obj_set_size(server_field, 496, 64);
+    lv_obj_set_pos(server_field, 184, 100);
+    lv_obj_set_size(server_field, 416, 64);
     lv_obj_set_style_text_font(server_field, font(20), 0);
     lv_textarea_set_one_line(server_field, true);
     lv_textarea_set_max_length(server_field, 127);
@@ -180,12 +180,12 @@ static void show_preview_server(lv_event_t *) {
     lv_textarea_set_text(server_field, url);
     auto keyboard = lv_keyboard_create(c);
     lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(keyboard, 8, 160);
-    lv_obj_set_size(keyboard, 1008, 432);
+    lv_obj_set_pos(keyboard, 40, 188);
+    lv_obj_set_size(keyboard, 944, 380);
     lv_obj_set_style_text_font(keyboard, font(22), LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard, server_field);
-    button(c, "Save", 840, 76, 168, 64, server_save, 0, GREEN);
-    button(c, "Cancel", 660, 76, 168, 64, cancelled, 0, CARD, true);
+    button(c, "Save", 800, 100, 184, 64, server_save, 0, GREEN);
+    button(c, "Cancel", 616, 100, 168, 64, cancelled, 0, CARD, true);
     concept_form_dialog(c, keyboard, &server_field, 1);
     server_open = true;
 }
@@ -219,6 +219,7 @@ static void preview_update_refresh() {
     snprintf(text,sizeof text,"%u / %u files%s",done,total,active?"":" checked");
     lv_label_set_text(preview_update_overall,text);
     lv_label_set_text(lv_obj_get_child(preview_update_button,0),active?"Cancel":busy?"Stopping...":"OK");
+    lv_obj_set_style_bg_color(preview_update_button,lv_color_hex(active?RED:busy?0x22272B:GREEN),0);
     enable(preview_update_button,!busy||active);
     visibility(preview_update_spinner,active||busy);
 }
@@ -230,21 +231,21 @@ static void preview_update_action(lv_event_t *) {
 }
 static void show_preview_update(lv_event_t *) {
     if (!storage_update_start()) { notify("Preview update unavailable. Wait for the SD card and an idle machine."); return; }
-    auto c=open_modal("Update previews",760,400);
-    lv_obj_set_style_bg_color(c,lv_color_hex(0x080B0D),0);
+    auto c=open_modal("Update previews");
+
     lv_obj_set_style_radius(c,0,0);
-    preview_update_name=label(c,"",32,96,696,24,0xF2F5F4);
+    preview_update_name=label(c,"",40,116,944,24,0xF2F5F4);
     lv_label_set_long_mode(preview_update_name,LV_LABEL_LONG_DOT);
-    preview_update_spinner=lv_spinner_create(c); lv_obj_set_pos(preview_update_spinner,32,143); lv_obj_set_size(preview_update_spinner,30,30);
+    preview_update_spinner=lv_spinner_create(c); lv_obj_set_pos(preview_update_spinner,40,196); lv_obj_set_size(preview_update_spinner,30,30);
     lv_spinner_set_anim_params(preview_update_spinner,1000,220);
     lv_obj_set_style_arc_color(preview_update_spinner,lv_color_hex(0x34373C),0);
     lv_obj_set_style_arc_color(preview_update_spinner,lv_color_hex(0x78DEEF),LV_PART_INDICATOR);
-    preview_update_status=label(c,"",80,148,648,18,0x94A0A5);
-    preview_update_bar=lv_bar_create(c); lv_obj_set_pos(preview_update_bar,32,198); lv_obj_set_size(preview_update_bar,696,12);
+    preview_update_status=label(c,"",96,200,888,18,0x94A0A5);
+    preview_update_bar=lv_bar_create(c); lv_obj_set_pos(preview_update_bar,40,278); lv_obj_set_size(preview_update_bar,944,16);
     lv_obj_set_style_bg_color(preview_update_bar,lv_color_hex(0x34373C),0); lv_obj_set_style_bg_opa(preview_update_bar,LV_OPA_COVER,0);
     lv_obj_set_style_bg_color(preview_update_bar,lv_color_hex(0x78DEEF),LV_PART_INDICATOR);
-    preview_update_overall=label(c,"",32,238,696,18,0x94A0A5);
-    preview_update_button=button(c,"Cancel",516,308,212,60,preview_update_action,0,0x22272B);
+    preview_update_overall=label(c,"",40,332,944,18,0x94A0A5);
+    preview_update_button=button(c,"Cancel",660,488,324,64,preview_update_action,0,0x22272B);
     lv_obj_set_style_text_color(lv_obj_get_child(preview_update_button,0),lv_color_hex(0xF2F5F4),0);
-    preview_update_cancelled=false; preview_update_open=true; preview_update_refresh();
+    preview_update_cancelled=false; preview_update_open=true; preview_update_refresh(); finish_modal(c);
 }

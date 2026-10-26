@@ -146,13 +146,14 @@ static void select_spindle(lv_event_t *e) {
 static void show_spindles(lv_event_t *) {
     bool ok = runtime_action(Action::SpindleList);
     if (!ok) { result(false); return; }
-    auto c = open_modal("Select spindle", 920, 550);
+    auto c = open_modal("Select spindle");
     modal_close_button(c);
-    spindle_list_status = label(c, "", 24, 80, 872, 18, MUTED);
+    spindle_list_status = label(c, "", 40, 104, 944, 18, MUTED);
     for (unsigned i = 0; i < 8; ++i)
-        spindle_choices[i] = button(c, "", 24 + (i % 2) * 440, 124 + (i / 2) * 96, 424, 78, select_spindle, i);
+        spindle_choices[i] = button(c, "", 40 + (i % 2) * 480, 156 + (i / 2) * 96, 448, 78, select_spindle, i);
     spindles_open = true;
     runtime_snapshot(state); tools_refresh();
+    finish_modal(c);
 }
 static bool start_spindle() {
     bool ok = runtime_action(Action::Spindle, nullptr, spindle_requested_direction, spindle_requested_rpm);
@@ -178,31 +179,32 @@ static void coolant_click(lv_event_t *e) {
 }
 static void show_accessories(lv_event_t *) {
     runtime_snapshot(state);
-    auto c = open_modal("Spindle / coolant", 920, 550);
+    auto c = open_modal("Tools");
     modal_close_button(c);
     spindle_select_button = button(c, "Select spindle", 610, 10, 220, 44, show_spindles);
     char range[100];
     if (state.spindle_limits_known) snprintf(range, sizeof range, "Spindle RPM  /  %.0f to %.0f", state.spindle_min, state.spindle_max);
     else snprintf(range, sizeof range, "Spindle RPM  /  waiting for controller limits");
-    spindle_range = label(c, range, 24, 80, 850, 18, MUTED);
+    spindle_range = label(c, range, 40, 104, 944, 18, MUTED);
     rpm_field = lv_textarea_create(c);
-    lv_obj_set_pos(rpm_field, 24, 112); lv_obj_set_size(rpm_field, 228, 58);
-    lv_textarea_set_one_line(rpm_field, true); lv_textarea_set_max_length(rpm_field, 9);
+    lv_obj_set_pos(rpm_field, 40, 144); lv_obj_set_size(rpm_field, 228, 64);
+    lv_textarea_set_one_line(rpm_field, true); lv_obj_set_height(rpm_field,64); lv_textarea_set_max_length(rpm_field, 9);
     lv_textarea_set_accepted_chars(rpm_field, "0123456789");
     char rpm[24]; snprintf(rpm, sizeof rpm, "%.0f", spindle_requested_rpm > 0 ? spindle_requested_rpm : state.spindle_min);
     lv_textarea_set_text(rpm_field, rpm);
-    spindle_actions[1] = button(c, "CW", 272, 112, 196, 58, spindle_click, 1, PRIMARY);
-    spindle_actions[2] = button(c, "CCW", 480, 112, 196, 58, spindle_click, (uintptr_t)-1, PRIMARY);
-    spindle_actions[0] = button(c, "Off", 688, 112, 208, 58, spindle_click);
-    label(c, "Coolant", 24, 192, 850, 18, MUTED);
+    spindle_actions[1] = button(c, "CW", 284, 144, 212, 64, spindle_click, 1, PRIMARY);
+    spindle_actions[2] = button(c, "CCW", 512, 144, 212, 64, spindle_click, (uintptr_t)-1, PRIMARY);
+    spindle_actions[0] = button(c, "Off", 740, 144, 244, 64, spindle_click);
+    label(c, "Coolant", 40, 232, 944, 18, MUTED);
     const char *names[] = {"Off", "Mist", "Flood", "Mist + flood"};
-    for (int i = 0; i < 4; ++i) coolant_actions[i] = button(c, names[i], 24 + i * 220, 220, 208, 58, coolant_click, i);
-    accessory_feedback = label(c, "", 24, 302, 872, 18);
+    for (int i = 0; i < 4; ++i) coolant_actions[i] = button(c, names[i], 40 + i * 240, 268, 224, 64, coolant_click, i);
+    accessory_feedback = label(c, "", 40, 344, 944, 18);
     auto keyboard = lv_keyboard_create(c);
     lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(keyboard, 24, 342); lv_obj_set_size(keyboard, 872, 188);
+    lv_obj_set_pos(keyboard, 40, 384); lv_obj_set_size(keyboard, 944, 184);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_NUMBER); lv_keyboard_set_textarea(keyboard, rpm_field);
     accessories_open = true; tools_refresh();
+    finish_modal(c);
 }
 static void macro_edit(lv_event_t *);
 static void show_macro_editor();
@@ -283,12 +285,12 @@ static void show_macro_editor() {
     const auto &m = macros->entries[macro_edit_index];
     auto c = open_modal(*m.name ? "Edit macro" : "Add macro", 1024, 600);
     modal_close_button(c, 1024);
-    label(c, "Name", 16, 94, 64, 18, MUTED);
-    label(c, "Colour", 516, 94, 64, 16, MUTED);
+    label(c, "Name", 40, 118, 64, 18, MUTED);
+    label(c, "Colour", 516, 118, 64, 16, MUTED);
     for (int i = 0; i < 2; ++i) {
         macro_fields[i] = lv_textarea_create(c);
-        lv_obj_set_pos(macro_fields[i], i ? 16 : 88, i ? 144 : 76);
-        lv_obj_set_size(macro_fields[i], i ? 604 : 412, i ? 128 : 56);
+        lv_obj_set_pos(macro_fields[i], i ? 40 : 112, i ? 172 : 100);
+        lv_obj_set_size(macro_fields[i], i ? 580 : 388, i ? 124 : 56);
         lv_obj_set_style_text_font(macro_fields[i], font(20), 0);
         if (i) lv_textarea_set_placeholder_text(macro_fields[i], "G-code");
         lv_textarea_set_max_length(macro_fields[i], i ? MaxMacroCode : 32);
@@ -297,17 +299,17 @@ static void show_macro_editor() {
         lv_obj_add_event_cb(macro_fields[i], macro_focus, LV_EVENT_FOCUSED, nullptr);
     }
     static const char *const colors[] = {"Blue", "Teal", "Amber", "Green", ""};
-    macro_colors_control = choices(c, colors, m.color, 588, 76, 420, 56, nullptr);
+    macro_colors_control = choices(c, colors, m.color, 588, 100, 396, 56, nullptr);
     macro_keyboard = lv_keyboard_create(c);
     lv_obj_set_align(macro_keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(macro_keyboard, 8, 308); lv_obj_set_size(macro_keyboard, 1008, 284);
+    lv_obj_set_pos(macro_keyboard, 40, 328); lv_obj_set_size(macro_keyboard, 944, 240);
     lv_obj_set_style_text_font(macro_keyboard, font(22), LV_PART_ITEMS);
     lv_keyboard_set_textarea(macro_keyboard, macro_fields[0]);
-    macro_error = label(c, "", 16, 280, 992, 14, RED);
+    macro_error = label(c, "", 40, 300, 944, 14, RED);
     for (auto field : macro_fields) lv_obj_add_event_cb(field, macro_changed, LV_EVENT_VALUE_CHANGED, nullptr);
-    button(c, "Save", 832, 144, 176, 64, macro_saved, 0, GREEN);
-    if (*m.name) button(c, "Delete", 636, 144, 176, 64, macro_delete, macro_edit_index, RED);
-    else button(c, "Cancel", 636, 144, 176, 64, cancelled, 0, RED);
+    button(c, "Save", 820, 172, 164, 64, macro_saved, 0, GREEN);
+    if (*m.name) button(c, "Delete", 636, 172, 168, 64, macro_delete, macro_edit_index, RED);
+    else button(c, "Cancel", 636, 172, 168, 64, cancelled, 0, RED);
     macro_editor_open = true;
     concept_macro_dialog();
 }

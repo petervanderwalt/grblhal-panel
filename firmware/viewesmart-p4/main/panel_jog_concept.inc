@@ -125,7 +125,7 @@ static void concept_dock() {
 }
 static void concept_header() {
     lv_obj_update_layout(root);
-    if (concept_active() || page == FilesPage || page == MacrosPage || page == SettingsPage || page == DiagnosticsPage) {
+    if (concept_header_active()) {
         concept_skin(root, CONCEPT_BG, 0);
         concept_skin(lv_obj_get_child(root, 0), CONCEPT_BG, 0);
     }
@@ -144,6 +144,7 @@ static void concept_header() {
 }
 #include "panel_files_concept.inc"
 #include "panel_macros_concept.inc"
+#include "panel_fullscreen.inc"
 static void concept_settings_controls(lv_obj_t *obj) {
     if (lv_obj_check_type(obj, &lv_button_class)) {
         lv_obj_set_style_bg_color(obj, lv_color_hex(CONCEPT_PAD), 0);
@@ -201,6 +202,37 @@ static void concept_settings_layout() {
         concept_settings_controls(row);
     }
 }
+static void concept_aux_layout() {
+    page_title = label(root, page == JobPage ? "Running job" : "Actuators", 40, 20, 440, 28, CONCEPT_INK);
+    if (page == JogPage) {
+        concept_place(body,16,76,992,450);
+        lv_obj_set_style_bg_opa(body,LV_OPA_TRANSP,0);
+        for (unsigned i=0;i<lv_obj_get_child_count(body);++i) {
+            auto card=lv_obj_get_child(body,i); form_control_style(card);
+            lv_obj_set_style_radius(card,28,0); lv_obj_set_height(card,450);
+            if(lv_obj_get_child_count(card)) lv_obj_set_style_text_color(lv_obj_get_child(card,0),lv_color_hex(i<3?CONCEPT_AXES[i]:AMBER),0);
+        }
+        for(auto slider:act_slider) if(slider) {
+            lv_obj_set_style_bg_color(slider,lv_color_hex(CONCEPT_PAD),0);
+            lv_obj_set_style_bg_color(slider,lv_color_hex(CONCEPT_PAD),LV_PART_INDICATOR);
+        }
+        return;
+    }
+    concept_place(left_surface,16,76,470,450); concept_skin(left_surface,CONCEPT_CARD,28);
+    concept_place(right_surface,502,76,506,450); concept_skin(right_surface,CONCEPT_CARD,28);
+    visibility(machine_heading,false); visibility(work_heading,false);
+    for(int i=0;i<3;++i) {
+        concept_place(axis_card[i],32,96+i*100,438,100); concept_skin(axis_card[i],CONCEPT_CARD,0);
+        concept_place(axis_name[i],16,14,40,60); concept_text(axis_name[i],CONCEPT_AXES[i],&panel_dro_52);
+        concept_place(axis_work[i],80,14,342,60); concept_text(axis_work[i],CONCEPT_INK,&panel_dro_52);
+        concept_place(axis_machine[i],184,76,238,22); concept_text(axis_machine[i],CONCEPT_MUTED,font(16));
+    }
+    concept_place(job_controls,32,432,212,80); lv_obj_set_width(job_pause,212);
+    concept_place(stop_btn,260,432,210,80);
+    concept_place(body,526,100,466,414); form_control_style(body);
+    lv_obj_set_width(file_title,466);
+    form_control_style(job_pause); form_control_style(stop_btn);
+}
 static void concept_layout() {
     concept_dock();
     if (!concept_header_active()) return;
@@ -208,6 +240,7 @@ static void concept_layout() {
     if (page == FilesPage) { concept_files_layout(); return; }
     if (page == MacrosPage) { concept_macros_layout(); return; }
     if (page == SettingsPage || page == DiagnosticsPage) { concept_settings_layout(); return; }
+    if (page == JobPage || (page == JogPage && actuator_mode)) { concept_aux_layout(); return; }
     if (!concept_active()) return;
     concept_place(left_surface, 16, 16, 470, 510);
     concept_place(right_surface, 502, 76, 506, 450);

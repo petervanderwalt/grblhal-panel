@@ -284,3 +284,22 @@ probe retention/release, standard limits, disabled pin reporting, Probe Cancel
 and unchanged preferences. It captures the main screens and input states into
 `captures/diagnostics/` with UART1 disconnected, then restores physical touch.
 Inspect those real framebuffer images before publishing them to the README.
+
+### Full-screen secondary pages
+
+Wi-Fi scan/password/result, Probe, Tools/spindle choice, numeric input,
+confirmations, machine settings/search/editors, actuator configuration, macro
+editing, preview server and preview-update progress use the main graphite/card
+palette. Probe Configuration retains its existing black editor until its redesign.
+The old `modal` variable hosts a fully opaque page; it is not a floating overlay.
+
+`UG PREFS` includes `form_kind` and the actual content page `form_w`/`form_h`.
+Assert these before interacting or capturing; a tap alone does not prove that the
+expected page opened. `tools/check-fullscreen.py` checks return paths and Cancel,
+keeps controller UART off, and restores physical touch and application mode.
+`--only NAME...` limits captures while retaining functional checks. Optional
+`PANEL_TEST_WIFI_PASSWORD` is read only from the environment and never logged;
+connection checks target Braai-Fi only. No macro or machine setting is saved.
+
+The Wi-Fi worker defers a scan queued during saved-network startup until the
+connection attempt finishes; an early scan must not cancel the startup reconnect.

@@ -104,6 +104,7 @@ static void actuator_config(lv_event_t *e) {
     char title[60];
     snprintf(title, sizeof title, "Configure actuator %d / %c", act_edit_axis + 1, "XYZA"[act_edit_axis]);
     lv_obj_t *c = open_modal(title, 960, 568);
+    modal_close_button(c);
     actuator_config_open = true;
     const char *names[] = {"Name", "First button", "Second button", "First position", "Second position", "Speed"};
     const char *text[] = {a.name, a.first, a.second};
@@ -151,6 +152,7 @@ static void actuator_config(lv_event_t *e) {
     lv_obj_set_style_bg_color(act_keyboard, lv_color_hex(BG), 0);
     lv_obj_set_style_bg_color(act_keyboard, lv_color_hex(CARD), LV_PART_ITEMS);
     lv_obj_set_style_text_color(act_keyboard, lv_color_hex(TEXT), LV_PART_ITEMS);
+    finish_modal(c);
 }
 static bool actuator_home_confirm() {
     char axis[] = {"XYZA"[act_home_axis], 0};

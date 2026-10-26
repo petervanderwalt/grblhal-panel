@@ -162,7 +162,7 @@ Command-busy locks input immediately but keeps setup colours steady for the firs
 Speed/mode selectors retain their checked palette throughout Idle/Jog while input
 is unavailable; they still grey out for disconnect, Hold, alarms and errors.
 Use subtle button
-gradients and card shadows. Fault dialogs have square edges and red title bands; successful
+gradients and card shadows. Fault pages use red accents on the full-screen graphite/card layout; successful
 completion uses green. Include simulated alarms and errors in workflow checks.
 Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero
 use quiet flat backgrounds with subtle axis-coloured outlines; DRO action buttons
@@ -180,12 +180,13 @@ File preview controls and filename are inset inside the card. Use the eight
 cached views and physical pinch zoom, without +/- buttons or success notices.
 The file-list interior is white; the main grey background separates the cards.
 Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
-All modal frames have square corners. Probe and Wi-Fi scan share the same white
-header close icon with a transparent background. Keep touch buttons rounded.
+Secondary screens fill the LCD with graphite, a title/close control above a rounded
+black content card, and rounded dark controls. No floating or translucent overlays.
+Probe Configuration is the explicit unchanged black-editor exception.
 Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
 Scan rows show signal strength followed by a lock icon for secured networks; open
 networks have no lock. The Font Awesome glyph and license are in main/assets/.
-Files and Settings have no DRO. Probe is a modal launched from Jog; remove Probe and Zero /
+Files and Settings have no DRO. Probe is a full-screen page launched from Jog; remove Probe and Zero /
 Home tabs. G54-G59 uses a dropdown on Jog. Keep labels short; omit instructional
 filler such as "tap once" and "move the set distance". Settings uses labelled rows.
 
@@ -456,7 +457,7 @@ background input blocking and fully restore the page on close. Keep the internal
 LCD drawing buffer; do not add PSRAM rendering experiments on this early P4. See tools/check-settings-rows.py and the dialog diagnostics in
 UG PREFS before changing popup rendering.
 
-Full-screen black editors (Macro Add/Edit, Preview Server, Probe Configuration)
+Full-screen editors (Macro Add/Edit and Preview Server)
 use solid red Cancel/Delete on the left and mint Save on the right. Keep these
 roles consistent in both concept_macro_dialog and concept_form_dialog. Settings
 uses flat opaque list rows with bottom dividers; do not restore per-row shadows
@@ -485,3 +486,15 @@ Keep its bottom edge at y=60; the status and Wi-Fi contents sit 8 px above their
 original positions. The bottom dock is (16,540), 992x96 with radius 26 and 49 px
 bottom padding, extending off-screen while its pills remain at y=545, height 42;
 use normal screen clipping, without a canvas or custom raster drawing.
+
+Full-screen form implementation: panel_fullscreen.inc styles secondary controls;
+open_modal now builds a full 1024x600 page with a rounded (16,76,992,508) content
+card. The internal name remains for existing return callbacks. finish_modal runs
+before drawing each page, including dynamic Wi-Fi and machine-setting lists.
+Keep validation/confirmation/Cancel behavior intact. Only Probe Configuration
+passes plain=true; do not restyle it during this pass. New keyboard function keys
+use subdued charcoal, not cyan. Update/OK and Cancel retain semantic colours.
+UG PREFS exposes form_kind and actual form_w/form_h for reliable checks. Use
+check-fullscreen.py in UART-off demo mode; it never confirms motion or saves
+machine settings/macros. PANEL_TEST_WIFI_PASSWORD optionally reconnects only
+to the approved Braai-Fi network; never commit or print its value.

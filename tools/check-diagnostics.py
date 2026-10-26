@@ -60,7 +60,7 @@ try:
     assert not original['actuator_mode'] and original['dialog'] == 'none', 'Start in CNC mode without a dialog'
     tap(900, 4)
     assert data()['dialog'] == 'other', 'The header must remain tappable at the bezel'
-    tap(916, 92)
+    tap(976, 32)
     assert data()['dialog'] == 'none'
     for x, page, name in ((154, 0, 'panel-jog'), (333, 1, 'panel-files'),
                           (512, 3, 'panel-macros'), (870, 2, 'panel-settings')):
