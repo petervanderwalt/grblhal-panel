@@ -7,3 +7,7 @@ captures/
 *.log
 
 preview-server/cache/
+
+web-flasher/node_modules/
+web-flasher/dist/
+release/

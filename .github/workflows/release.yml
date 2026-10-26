@@ -1,0 +1,70 @@
+name: Firmware release and browser installer
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: firmware-release
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: espressif/idf:v5.3.4
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Require a release tag
+        run: test "${GITHUB_REF_TYPE}" = tag
+      - name: Build tested P4 configuration
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -C firmware/viewesmart-p4 build
+          python tools/package-release.py --version "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release
+          path: release/
+      - name: Publish tester release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: python tools/publish-release.py
+  pages:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web-flasher/package-lock.json
+      - name: Build browser installer
+        working-directory: web-flasher
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-release
+          path: web-flasher/dist/firmware
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-flasher/dist
+      - name: Publish installer
+        id: deployment
+        uses: actions/deploy-pages@v4

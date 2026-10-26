@@ -1,5 +1,14 @@
 # grblHAL panel
 
+[**Install firmware in your browser**](https://petervanderwalt.github.io/grblhal-panel/) · [Download tester releases](https://github.com/petervanderwalt/grblhal-panel/releases)
+
+Use desktop Chrome or Edge with the display's **UART** USB socket. The installer
+supports first installation and application-only updates, without erasing Panel
+settings or SD files. Builds target the VIEWESMART 7-inch 1024×600 P4/C6 hardware;
+the C6 must already have compatible ESP-Hosted firmware. See
+[browser installation and releases](docs/releases.md).
+
+
 A touchscreen pendant for grblHAL controllers, built for the VIEWESMART
 7-inch ESP32-P4/C6 display. CNC mode handles machine setup, controller SD files
 and job progress. Display-SD jobs include cached image previews and buffered

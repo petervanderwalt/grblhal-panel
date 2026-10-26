@@ -1,0 +1,8 @@
+{
+  "name": "grblhal-panel-installer",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "esbuild app.js --bundle --format=esm --outfile=dist/app.js && node build.mjs", "test": "node --test"},
+  "dependencies": {"esptool-js": "0.7.0", "crypto-js": "4.2.0"},
+  "devDependencies": {"esbuild": "0.25.11"}
+}
