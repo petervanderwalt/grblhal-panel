@@ -27,6 +27,8 @@
 #include <string.h>
 extern "C" {
 LV_IMAGE_DECLARE(panel_wifi_lock);
+LV_FONT_DECLARE(panel_dro_52);
+LV_FONT_DECLARE(panel_action_icons_22);
 }
 
 namespace {
@@ -70,7 +72,7 @@ static uint32_t override_sent = 0;
 static void show_probe(lv_event_t * = nullptr);
 static lv_obj_t *left_surface, *right_surface, *tabview, *page_layer;
 static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
-static lv_obj_t *root, *body, *state_label, *axis_work[3], *axis_machine[3],
+static lv_obj_t *root, *body, *brand_label, *state_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[4];
 static lv_obj_t *accessories_btn;
 static bool inputs_open = false, accessories_open = false, spindles_open = false, macro_editor_open = false;
@@ -83,10 +85,15 @@ static uint8_t jog_speed = 0;
 static lv_obj_t *dro_actions, *goto_buttons[2], *zero_all_btn;
 static bool preview_pending = false, preview_show = false;
 static bool local_preview_show=false,server_open=false;
-static lv_obj_t *file_prepare_status=nullptr,*file_prepare_spinner=nullptr;
+static lv_obj_t *file_prepare_status=nullptr,*file_prepare_spinner=nullptr,*file_prepare_name=nullptr;
 static lv_obj_t *cached_image=nullptr,*cached_status=nullptr,*server_field=nullptr;
+static bool preview_update_open = false, preview_update_cancelled = false;
+static lv_obj_t *preview_update_name, *preview_update_status, *preview_update_bar, *preview_update_overall, *preview_update_button, *preview_update_spinner;
+static void preview_update_refresh();
 static void cached_refresh();
 static void show_preview_server(lv_event_t *);
+static void concept_form_dialog(lv_obj_t *card, lv_obj_t *keyboard, lv_obj_t *const *fields, unsigned count);
+static void show_probe_offsets(lv_event_t *);
 static void build_cached_preview();
 static std::atomic<int> preview_parsing{0};
 static const char *preview_data;
@@ -116,6 +123,9 @@ struct Edit {
 };
 static Edit editing;
 static char edit_initial[24];
+static bool probe_offsets_open = false;
+static lv_obj_t *probe_offset_fields[5] = {}, *probe_offsets_keyboard = nullptr, *probe_offsets_error = nullptr;
+static char probe_offsets_initial[5][24];
 static bool (*confirmation)() = nullptr;
 static void build_page();
 static void release_jog();
@@ -129,6 +139,10 @@ static void parent_page_content(lv_obj_t *parent) {
     for (auto obj : objects)
         if (obj && lv_obj_get_parent(obj) != parent)
             lv_obj_set_parent(obj, parent);
+    if (parent == root && wifi_header && state_label) {
+        lv_obj_move_foreground(wifi_header);
+        lv_obj_move_foreground(state_label);
+    }
 }
 static void show_page(int target) {
     page = target;
@@ -415,12 +429,16 @@ static void result(bool ok) {
         notify("Action unavailable: check connection, machine state and setup.");
 }
 static void close_modal() {
+    if (preview_update_open) storage_update_cancel();
+    preview_update_open = false;
     machine_closed();
+    probe_offsets_open = false;
+    for (auto &field : probe_offset_fields) field = nullptr;
+    probe_offsets_keyboard = probe_offsets_error = nullptr;
     inputs_open = accessories_open = spindles_open = macro_editor_open = server_open = false;
     macro_fields[0] = macro_fields[1] = nullptr;
     actuator_config_open = false;
-    if (modal)
-        lv_obj_delete(modal);
+    if (modal) lv_obj_delete(modal);
     modal = nullptr;
     number = nullptr;
     number_error = nullptr;
@@ -432,17 +450,19 @@ static void close_modal() {
 }
 static lv_obj_t *open_modal(const char *title, int width = 600, int height = 320, uint32_t accent = PRIMARY) {
     close_modal();
+    // Opaque backing avoids blending the page beneath an editor.
     modal = box(lv_layer_top(), 0, 0, 1024, 600, EDGE);
-    lv_obj_set_style_bg_opa(modal, LV_OPA_80, 0);
+    lv_obj_set_style_bg_opa(modal, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(modal, 0, 0);
     lv_obj_set_style_radius(modal, 0, 0);
     lv_obj_t *card = surface(modal, (1024 - width) / 2, (600 - height) / 2, width, height);
     lv_obj_set_style_radius(card, 0, 0);
+    lv_obj_set_style_shadow_width(card,0,0);
     lv_obj_t *heading = box(card, 0, 0, width, 64, accent);
     lv_obj_set_style_border_width(heading, 0, 0);
     lv_obj_set_style_radius(heading, 0, 0);
     label(card, title, 24, 22, width - 48, 22, button_text(accent));
     layout_stop();
-    lv_obj_move_foreground(stop_btn);
     return card;
 }
 static void confirmed(lv_event_t *) {
@@ -516,7 +536,7 @@ static void apply_number(lv_event_t *) {
 static void edit(Edit e) {
     e.converted = !e.integer;
     editing = e;
-    lv_obj_t *c = open_modal(e.title, 430, 540);
+    lv_obj_t *c = open_modal(e.title, 430, 540, PRIMARY);
     number = lv_textarea_create(c);
     lv_obj_set_pos(number, 22, 70);
     lv_obj_set_size(number, 386, 54);
@@ -556,13 +576,9 @@ static void edit_value(lv_event_t *e) {
         edit({&prefs.probe.diameter, .1f, 50, inches ? "Tool diameter (in)" : "Tool diameter (mm)"});
         break;
     case 3:
-        edit({&prefs.probe.x, .1f, 50, inches ? "Plate X offset (in)" : "Plate X offset (mm)"});
-        break;
     case 4:
-        edit({&prefs.probe.y, .1f, 50, inches ? "Plate Y offset (in)" : "Plate Y offset (mm)"});
-        break;
     case 5:
-        edit({&prefs.probe.z, .1f, 50, inches ? "Plate Z thickness (in)" : "Plate Z thickness (mm)"});
+        show_probe_offsets(nullptr);
         break;
     case 6:
         edit({&prefs.probe.feed, 25, 500, inches ? "Probe feed (in/min)" : "Probe feed (mm/min)"});
@@ -673,7 +689,7 @@ static void parse_preview(void *) {
 static void preview_click(lv_event_t *) {
     if(storage_source()) {
         snprintf(preview_path,sizeof preview_path,"%s",selected);
-        local_preview_show=true;storage_prioritize(selected);build_page();return;
+        local_preview_show=true;storage_lookup_preview(selected);build_page();return;
     }
     if (preview_parsing.load() || preview_pending)
         return;
@@ -720,6 +736,7 @@ static void file_page_changed(lv_event_t *e) {
     else controller_file_page=std::clamp<int>((int)controller_file_page+delta,0,state.file_count?(state.file_count-1)/4:0);
     runtime_snapshot(state);build_page();
 }
+static void concept_files_style_rows();
 static void files() {
     if (!file_box)
         return;
@@ -729,6 +746,7 @@ static void files() {
     if (!state.file_count) {
         char message[160];storage_status(message,sizeof message);
         label(file_box, storage_source()?message:state.listing ? "Reading SD card..." : "No files", 18, 24, 900, 18, MUTED);
+        concept_files_style_rows();
         return;
     }
     if(!storage_source())controller_file_page=std::min(controller_file_page,state.file_count?(unsigned)(state.file_count-1)/4:0);
@@ -750,6 +768,7 @@ static void files() {
         file_run_buttons[i-first]=button(row,"Run",840,8,132,50,file_action,i*2+1,GREEN);
         enable(file_run_buttons[i-first],available&&ready());
     }
+    concept_files_style_rows();
 }
 static void contact(lv_event_t *) { result(runtime_action(Action::Contact)); }
 static void corner(lv_event_t *e) {
@@ -1106,12 +1125,25 @@ static void wifi_notification() {
     label(c, message, 24, 90, 552, 20, wifi.connected ? GREEN : RED);
     button(c, "OK", 24, 242, 552, 54, wifi_result_ok, 0, GREEN);
 }
+static lv_obj_t *settings_list_row(lv_obj_t *parent, int y, int height) {
+    auto row = box(parent,0,y,970,height,CARD);
+    lv_obj_set_style_radius(row,0,0);
+    lv_obj_set_style_shadow_width(row,0,0);
+    lv_obj_set_style_border_side(row,LV_BORDER_SIDE_BOTTOM,0);
+    return row;
+}
+static void setting_action_row(lv_obj_t *parent, const char *title, const char *action, int y, lv_event_cb_t open) {
+    auto row = settings_list_row(parent,y,76);
+    label(row, title, 20, 25, 620, 20);
+    button(row, action, 680, 10, 270, 56, open);
+}
 static void setting_row(lv_obj_t *parent, const char *title, float value, int y, int id) {
-    lv_obj_t *row = surface(parent, 0, y, 970, 76);
+    lv_obj_t *row = settings_list_row(parent,y,76);
     label(row, title, 20, 25, 620, 20);
     char text[48];
-    snprintf(text, sizeof text, id >= 8 ? "%.0f" : "%.3f %s", value / (id < 8 ? display_scale(inches) : 1),
-             inches ? (id == 6 ? "in/min" : "in") : (id == 6 ? "mm/min" : "mm"));
+    snprintf(text, sizeof text, "%.*f%s%s", id >= 8 ? 0 : !inches && (id == 3 || id == 4 || id == 5 || id == 7) ? 1 : 3,
+             value / (id < 8 ? display_scale(inches) : 1), id >= 8 ? "" : " ",
+             id >= 8 ? "" : inches ? (id == 6 ? "in/min" : "in") : (id == 6 ? "mm/min" : "mm"));
     button(row, text, 680, 10, 270, 56, edit_value, id);
 }
 #include "panel_actuators_ui.inc"
@@ -1119,13 +1151,17 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
 #include "panel_tools_ui.inc"
 #include "panel_storage_ui.inc"
 #include "panel_probe_ui.inc"
+#include "panel_probe_config_ui.inc"
+#include "panel_jog_concept.inc"
 static void build_page() {
+    storage_preview_viewing(false);
     runtime_snapshot(state);
     if (state.cycle_axis >= 0)
         runtime_action(Action::JogCancel);
     lv_anim_delete(page_layer, nullptr);
     lv_obj_set_x(page_layer, 0);
     parent_page_content(root);
+    concept_restore();
     release_jog();
     jog_count = 0;
     wifi_row_status = nullptr;
@@ -1142,7 +1178,7 @@ static void build_page() {
     memset(act_stop, 0, sizeof act_stop);
     gcode_viewer_detach();
     lv_obj_clean(body);
-    file_prepare_status=file_prepare_spinner=nullptr;
+    file_prepare_status=file_prepare_spinner=file_prepare_name=nullptr;
     brightness_value = nullptr;
     free(cached_pixels);cached_pixels=nullptr;cached_image=cached_status=nullptr;cached_loaded=false;
     runtime_snapshot(state);
@@ -1156,7 +1192,9 @@ static void build_page() {
     lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
     if (page < JobPage)
         lv_tabview_set_active(tabview, page == SettingsPage ? 3 : page == MacrosPage ? 2 : page, LV_ANIM_OFF);
-    bool floating = page == JogPage || page == JobPage || page == SettingsPage;
+    bool floating = page == JogPage || page == JobPage;
+    lv_obj_set_style_radius(body,page == SettingsPage ? 0 : 16,0);
+    lv_obj_set_style_shadow_width(body,page == SettingsPage ? 0 : 14,0);
     lv_obj_set_style_bg_color(body, lv_color_hex(CARD), 0);
     lv_obj_set_style_bg_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_shadow_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_10, 0);
@@ -1207,6 +1245,7 @@ static void build_page() {
         lv_obj_set_size(file_prepare_spinner, 28, 28);
         lv_spinner_set_anim_params(file_prepare_spinner, 1000, 220);
         file_prepare_status = label(body, "", 56, 24, 690, 16, MUTED);
+        file_prepare_name = label(body, "", 56, 4, 690, 14, TEXT);
         refresh_btn = button(body, "Refresh", 768, 12, 208, 48, list_click);
         label(body, "FILE", 16, 58, 500, 12, MUTED);
         label(body, "SIZE", 552, 58, 120, 12, MUTED);
@@ -1223,20 +1262,17 @@ static void build_page() {
     } else if (page == SettingsPage) {
         lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(body, LV_DIR_VER);
-        label(body, "Settings", 0, 0, 960, 22, WHITE);
-        button(body, "Machine settings", 680, 0, 270, 40, show_machine_settings);
-        button(body, "Inputs", 490, 0, 172, 40, show_inputs);
-        button(body, "Preview server", 254, 0, 220, 40, show_preview_server);
-        lv_obj_t *application = surface(body, 0, 44, 970, 80);
+        label(body, "Settings", 0, 0, 960, 22, TEXT);
+        lv_obj_t *application = settings_list_row(body, 44, 80);
         label(application, "Mode", 20, 28, 500, 20);
         static const char *const applications[] = {"CNC", "Actuator", ""};
         choices(application, applications, actuator_mode, 680, 16, 270, 48, application_changed);
-        auto location = surface(body, 0, 140, 970, 80);
+        auto location = settings_list_row(body, 140, 80);
         label(location, "File location", 20, 12, 600, 20);
         label(location, "Files and gCAM uploads", 20, 44, 600, 14, MUTED);
         dropdown(location, "Onboard SD\nController SD", storage_source() ? 0 : 1,
                  680, 16, 270, file_location_changed);
-        auto light = surface(body, 0, 236, 970, 80);
+        auto light = settings_list_row(body, 236, 80);
         label(light, "Screen brightness", 20, 28, 550, 20);
         char light_text[16]; snprintf(light_text, sizeof light_text, "%u%%", screen_brightness);
         brightness_value = label(light, light_text, 600, 28, 70, 18);
@@ -1250,19 +1286,23 @@ static void build_page() {
         lv_obj_set_style_bg_color(slider, lv_color_hex(PRIMARY), LV_PART_KNOB);
         lv_obj_add_event_cb(slider, brightness_changed, LV_EVENT_VALUE_CHANGED, nullptr);
         lv_obj_add_event_cb(slider, brightness_changed, LV_EVENT_RELEASED, nullptr);
-        lv_obj_t *units = surface(body, 0, 332, 970, 80);
+        lv_obj_t *units = settings_list_row(body, 332, 80);
         label(units, "Display units", 20, 28, 500, 20);
-        button(units, "mm", 680, 12, 130, 56, units_changed, 0, !inches ? PRIMARY : EDGE);
-        button(units, "inch", 820, 12, 130, 56, units_changed, 1, inches ? PRIMARY : EDGE);
-        lv_obj_t *network = surface(body, 0, 428, 970, 88);
+        auto metric = button(units, "mm", 680, 12, 130, 56, units_changed, 0, !inches ? PRIMARY : EDGE);
+        auto imperial = button(units, "inch", 820, 12, 130, 56, units_changed, 1, inches ? PRIMARY : EDGE);
+        lv_obj_add_state(inches ? imperial : metric, LV_STATE_CHECKED);
+        lv_obj_t *network = settings_list_row(body, 428, 88);
         label(network, "Wi-Fi", 20, 12, 620, 20);
         wifi_row_status = label(network, "", 20, 46, 620, 14, MUTED);
         button(network, "Networks", 680, 16, 270, 56, show_wifi);
-        label(body, actuator_mode ? "Actuators" : "Probe", 0, 548, 960, 18, MUTED);
+        setting_action_row(body, "Preview server", "Configure", 532, show_preview_server);
+        setting_action_row(body, "Input diagnostics", "View inputs", 620, show_inputs);
+        setting_action_row(body, "Machine settings", "Configure", 708, show_machine_settings);
+        label(body, actuator_mode ? "Actuators" : "Probe", 0, 812, 960, 18, MUTED);
         if (actuator_mode) {
             const char *styles[] = {"Buttons", "Position slider", "Three presets", "Repeat / speed slider"};
             for (int i = 0; i < 4; i++) {
-                auto row = surface(body, 0, 580 + i * 88, 970, 76);
+                auto row = settings_list_row(body, 844 + i * 88, 76);
                 char title[80];
                 snprintf(title, sizeof title, "%s / %c", actuator_prefs.axes[i].name, "XYZA"[i]);
                 label(row, title, 20, 10, 600, 20);
@@ -1270,19 +1310,16 @@ static void build_page() {
                 button(row, "Configure", 680, 10, 270, 56, actuator_config, i);
             }
         } else {
-            setting_row(body, "Plate X offset", prefs.probe.x, 580, 3);
-            setting_row(body, "Plate Y offset", prefs.probe.y, 668, 4);
-            setting_row(body, "Plate Z thickness", prefs.probe.z, 756, 5);
-            setting_row(body, "Probe feed", prefs.probe.feed, 844, 6);
-            setting_row(body, "Corner start inset", prefs.probe.inset, 932, 7);
+            setting_action_row(body, "Probe configuration", "Edit", 844, show_probe_offsets);
         }
-        label(body, "Controller UART", 0, 1044, 960, 18, MUTED);
-        setting_row(body, "TX pin", prefs.tx, 1076, 8);
-        setting_row(body, "RX pin", prefs.rx, 1164, 9);
-        setting_row(body, "Baud rate", prefs.baud, 1252, 10);
-        button(body, state.online ? "Disconnect" : "Connect controller", 0, 1348, 472, 64, connect_click, 0,
+        int controller_y = actuator_mode ? 1308 : 956;
+        label(body, "Controller UART", 0, controller_y, 960, 18, MUTED);
+        setting_row(body, "TX pin", prefs.tx, controller_y + 32, 8);
+        setting_row(body, "RX pin", prefs.rx, controller_y + 120, 9);
+        setting_row(body, "Baud rate", prefs.baud, controller_y + 208, 10);
+        button(body, state.online ? "Disconnect" : "Connect controller", 0, controller_y + 304, 472, 64, connect_click, 0,
                state.online ? CARD : GREEN, state.online);
-        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, 1348, 472, 64,
+        button(body, runtime_is_demo() ? "Exit preview" : "Preview / UART off", 498, controller_y + 304, 472, 64,
                demo_click);
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
@@ -1314,6 +1351,7 @@ static void build_page() {
         label(body, state.filename, 140, 144, 712, 22, WHITE);
         button(body, "OK", 290, 250, 412, 80, job_ok, 0, CARD);
     }
+    concept_layout();
     refresh(nullptr);
 }
 static void refresh(lv_timer_t *) {
@@ -1329,7 +1367,8 @@ static void refresh(lv_timer_t *) {
         show_page(CompletePage);
         return;
     }
-    if (server_open) return;
+    if (preview_update_open) { preview_update_refresh(); return; }
+    if (server_open || probe_offsets_open) return;
     if (inputs_open || accessories_open || spindles_open || macro_editor_open) {
         int fault = state.alarm ? state.alarm : -state.error;
         if (!fault) fault_seen = 0;
@@ -1375,15 +1414,6 @@ static void refresh(lv_timer_t *) {
         }
     }
     if(page==FilesPage && local_preview_show)cached_refresh();
-    if (file_prepare_status) {
-        int percent;
-        bool active = storage_source() && storage_progress(&percent);
-        char text[160];
-        storage_status(text, sizeof text);
-        if (strcmp(lv_label_get_text(file_prepare_status), active ? text : ""))
-            lv_label_set_text(file_prepare_status, active ? text : "");
-        visibility(file_prepare_spinner, active);
-    }
     bool on = ready();
     if(page==FilesPage)for(unsigned i=0;i<4;++i)tools_enable(file_run_buttons[i],on&&!state.listing&&file_run_usable[i]);
     if (page == JogPage && actuator_mode)
@@ -1532,6 +1562,7 @@ static void refresh(lv_timer_t *) {
     }
     machine_refresh();
     tools_refresh();
+    concept_refresh();
 }
 } // namespace
 extern "C" void panel_ui_create() {
@@ -1555,7 +1586,7 @@ extern "C" void panel_ui_create() {
     lv_obj_remove_flag(page_layer, LV_OBJ_FLAG_CLICKABLE);
     left_surface = surface(root, 8, 64, 488, 440);
     right_surface = surface(root, 500, 64, 516, 440);
-    label(root, "grblHAL", 16, 20, 148, 22, WHITE);
+    brand_label = label(root, "grblHAL", 16, 20, 148, 22, WHITE);
     wifi_header = button(root, "", 548, 4, 460, 52, show_wifi);
     lv_obj_set_style_bg_color(wifi_header, lv_color_hex(EDGE), 0);
     lv_obj_delete(lv_obj_get_child(wifi_header, 0));
@@ -1658,19 +1689,33 @@ extern "C" void panel_ui_create() {
     lv_timer_create(refresh, 100, nullptr);
 }
 extern "C" void panel_ui_settings(char *buffer, size_t size) {
+    const char *dialog = probe_offsets_open ? "probe-offsets" : number ? "number-keypad" :
+                         server_open ? "preview-server" : machine_editor ? "machine-editor" :
+                         machine_browser ? "machine-settings" : inputs_open ? "inputs" : modal ? "other" : "none";
     unsigned macro_count = 0;
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
-             "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d}",
-             prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.tx,
+             "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"inset\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
+             "\"baud\":%.0f,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d}",
+             prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.probe.inset, prefs.tx,
              prefs.rx, prefs.baud, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
              page == JogPage && !actuator_mode && mode_choices
                  ? (lv_buttonmatrix_has_button_ctrl(mode_choices, 1, LV_BUTTONMATRIX_CTRL_CHECKED) ? 1
                     : lv_buttonmatrix_has_button_ctrl(mode_choices, 0, LV_BUTTONMATRIX_CTRL_CHECKED) ? 0 : -1)
-                 : -1, body ? lv_obj_get_scroll_y(body) : 0);
+                 : -1, body ? lv_obj_get_scroll_y(body) : 0, dialog,
+             number ? strtof(lv_textarea_get_text(number),nullptr) : 0.0,
+             probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[0]),nullptr) : 0.0,
+             probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[1]),nullptr) : 0.0,
+             probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[2]),nullptr) : 0.0,
+             probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[3]),nullptr) : 0.0,
+             probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[4]),nullptr) : 0.0,
+             lv_obj_get_x(wifi_header),lv_obj_get_y(wifi_header),lv_obj_get_width(wifi_header),lv_obj_get_height(wifi_header));
 }
 extern "C" bool panel_ui_setting_field(const char *text) {
+    if (probe_offsets_open && text && strlen(text) <= 10) {
+        lv_textarea_set_text(lv_keyboard_get_textarea(probe_offsets_keyboard),text);
+        return true;
+    }
     if ((!machine_editor && !machine_search) || !machine_field || !text || strlen(text) > MaxSettingValue)
         return false;
     lv_textarea_set_text(machine_field, text);

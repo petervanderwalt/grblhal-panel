@@ -354,7 +354,7 @@ listing and Run only. `panel_storage.cpp` mounts the inserted card without
 formatting, scans up to 512 jobs into a PSRAM catalogue, and exposes four rows
 per page. Initialise each sort index before publishing a scan entry; the LVGL
 snapshot may run during scanning. Never render hundreds of LVGL rows at once.
-Cache files belong only in `.panel-previews/v3-<sha256>/`; never rewrite original
+Cache files belong only in `.panel-previews/v4-<sha256>/`; never rewrite original
 G-code. Shared SDMMC cleanup must release slot 0 only, preserving C6 slot 1.
 Long FAT filenames are enabled in sdkconfig. `panel_fs.cpp` validates native
 bitmap headers and reads through a 1 KiB internal staging buffer into a single
@@ -380,9 +380,13 @@ copies use the same explicit byte-loop precaution as capture on this P4.
 
 `preview-server/server.py` accepts hash-addressed raw uploads and generates the
 eight 740x328 PNGs and native RGB565 bitmaps using `renderer.py`. It checks the upload hash, serialises
-rendering work and publishes a ready/error manifest. The pendant only prepares
-previews while idle, checks for configuration/network changes and caches every native
-view before writing its completion marker. Keep HTTP and SD work off LVGL.
+rendering work and publishes a ready/error manifest. The pendant prepares
+previews only through Files > Update previews, while idle, and caches every native
+view before writing its completion marker. No generation or content hashing on
+page entry, Wi-Fi reconnect or preview selection. Small v4-path indexes restore
+cache mappings by path, size and timestamp after reboot; explicit Update hashes
+content. Keep HTTP and preparation work off LVGL.
+`tools/check-preview-update.py` checks idle browsing, explicit start and Cancel.
 The service binds localhost by default; LAN use needs an explicit bind address.
 Do not add or broaden host firewall rules without user approval. See
 `docs/display-sd-and-previews.md` for limits, setup and validation.
@@ -442,3 +446,24 @@ the checked item. Keep callbacks on release; running refresh during press left
 Continuous active while Incremental remained highlighted. PREFS exposes
 continuous/mode_checked for the real-touch check and scroll_y for capture
 coordinates after Settings rows change.
+
+Settings actions (Preview server, Input diagnostics, Machine settings) belong in
+scrollable label/button rows, not the title area. Probe Configuration has one Edit row
+opening a full-screen XYZ/feed/inset form and shared numeric keypad, with one
+decimal in mm and three in inches. Validate all five fields before saving. Never
+round saved geometry on open or Cancel. Dialogs use an opaque full-screen backing without dimming or floating shadows; preserve
+background input blocking and fully restore the page on close. Keep the internal
+LCD drawing buffer; do not add PSRAM rendering experiments on this early P4. See tools/check-settings-rows.py and the dialog diagnostics in
+UG PREFS before changing popup rendering.
+
+Full-screen black editors (Macro Add/Edit, Preview Server, Probe Configuration)
+use solid red Cancel/Delete on the left and mint Save on the right. Keep these
+roles consistent in both concept_macro_dialog and concept_form_dialog. Settings
+uses flat opaque list rows with bottom dividers; do not restore per-row shadows
+or rounded card clipping. Probe Configuration groups XYZ, feed and corner inset
+in one editor and validates all five before saving. Tool diameter stays on Probe.
+
+Settings uses the same graphite background, black list and dark neutral controls
+as the refreshed main screens. Keep rows flat, with simple bottom separators.
+When restoring source backups, touch their timestamps or clean the build; a newer
+object can otherwise retain reverted PSRAM buffer experiments.

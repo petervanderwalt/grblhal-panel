@@ -110,11 +110,11 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(890, 110)  # Add in header
         field(0, 'Metric / absolute')
         field(1, 'G21\nM8!')
-        tap(892, 542)
+        tap(920, 176)
         assert data('PREFS')['macro_count'] == 0
         field(1, 'G21\nG90')
         shot('panel-macro-editor')
-        tap(892, 542)
+        tap(920, 176)
         assert data('PREFS')['macro_count'] == 1
         if args.reboot_macro:
             p.rts = True
@@ -152,10 +152,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(640, 564)
         tap(232, 175)  # Edit tile
         field(0, 'Metric setup')
-        tap(892, 542)
+        tap(920, 176)
         assert data('PREFS')['macro_count'] == 1
         tap(232, 175)  # Editor contains Delete
-        tap(100, 542)
+        tap(724, 176)
         tap(630, 409)
         assert data('PREFS')['macro_count'] == 0
         tap(128, 564)

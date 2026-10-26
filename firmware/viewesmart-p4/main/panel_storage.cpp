@@ -28,7 +28,8 @@ static constexpr unsigned MaxStorageFiles = 512;
 struct Entry {
     File file;
     char hash[65];
-    bool ready, tried;
+    bool ready, tried, checked;
+    int64_t modified;
 };
 struct Catalog {
     Entry entries[MaxStorageFiles];
@@ -36,13 +37,16 @@ struct Catalog {
     unsigned count = 0, revision = 0;
     int percent = -1;
     bool mounted = false, scanning = false;
-    char message[160] = "Mounting display SD...", server[128] = "", priority[160] = "", working[160] = "";
+    char message[160] = "Mounting display SD...", server[128] = "", working[160] = "";
 };
 static Catalog *catalog;
 static SemaphoreHandle_t lock;
 static std::atomic<bool> scan_requested{true}, local_source{true};
 static std::atomic<unsigned> config_revision{0};
 static std::atomic<bool> capture_paused{false}, capture_active{false}, preparing{false};
+static std::atomic<bool> preview_viewing{false};
+static std::atomic<bool> update_active{false};
+static unsigned update_done = 0, update_failed = 0;
 static unsigned file_page = 0;
 static unsigned worker_stack_remaining = 0;
 static bool valid_path(const char *path) {
@@ -104,12 +108,48 @@ static void collect(const char *relative, unsigned depth) {
             e = {};
             snprintf(e.file.path, sizeof e.file.path, "%s", path);
             e.file.size = st.st_size;
+            e.modified = st.st_mtime;
         }
         xSemaphoreGive(lock);
     }
     closedir(dir);
 }
-static bool idle() { return !capture_paused.load() && runtime_background_idle(); }
+static bool available() { return !capture_paused.load() && !preview_viewing.load() && runtime_background_idle(); }
+static bool idle() { return update_active.load() && available(); }
+
+// A small path index avoids hashing entire jobs while browsing. Explicit Update verifies content.
+struct CacheIndex { uint32_t magic, size; int64_t modified; char hash[65]; };
+static void index_path(const char *path, char *out, size_t capacity) {
+    unsigned char digest[32];
+    mbedtls_sha256((const unsigned char *)path, strlen(path), digest, 0);
+    char hex[65];
+    for (unsigned i = 0; i < 32; ++i) snprintf(hex + 2*i, 3, "%02x", digest[i]);
+    snprintf(out, capacity, "%s/v4-path-%s", CACHE, hex);
+}
+static bool index_load(Entry &e) {
+    char path[256]; index_path(e.file.path, path, sizeof path);
+    CacheIndex index = {};
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    bool ok = fread(&index, 1, sizeof index, f) == sizeof index; fclose(f);
+    if (!ok || index.magic != 0x50434934 || index.size != e.file.size || index.modified != e.modified || index.hash[64]) return false;
+    for (unsigned i=0;i<64;++i) if (!strchr("0123456789abcdef", index.hash[i]) || !index.hash[i]) return false;
+    snprintf(path, sizeof path, "%s/v4-%s/complete", CACHE, index.hash);
+    char marker[65] = {}; f = fopen(path, "rb");
+    if (!f) return false;
+    ok = fread(marker, 1, 64, f) == 64 && !strcmp(marker, index.hash); fclose(f);
+    if (ok) snprintf(e.hash, sizeof e.hash, "%s", index.hash);
+    return ok;
+}
+static void index_save(const Entry &e) {
+    mkdir(CACHE, 0775);
+    CacheIndex index = {}; index.magic = 0x50434934; index.size = e.file.size; index.modified = e.modified;
+    snprintf(index.hash, sizeof index.hash, "%s", e.hash);
+    char path[256], temp[264]; index_path(e.file.path, path, sizeof path); snprintf(temp, sizeof temp, "%s.part", path);
+    FILE *f = fopen(temp, "wb"); if (!f) return;
+    bool ok = fwrite(&index, 1, sizeof index, f) == sizeof index; ok = fclose(f) == 0 && ok;
+    if (ok) { unlink(path); rename(temp, path); } else unlink(temp);
+}
 static bool hash_file(const char *path, char hash[65], unsigned revision) {
     uint32_t size;
     FILE *f = storage_open(path, &size);
@@ -283,7 +323,11 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
     message("Checking preview cache...");
     if (!hash_file(entry.file.path, entry.hash, revision))
         return false;
-    snprintf(dir, sizeof dir, "%s/v3-%s", CACHE, entry.hash);
+    Entry indexed = entry;
+    if (index_load(indexed) && strcmp(indexed.hash, entry.hash)) {
+        index_path(entry.file.path,path,sizeof path); unlink(path);
+    }
+    snprintf(dir, sizeof dir, "%s/v4-%s", CACHE, entry.hash);
     snprintf(path, sizeof path, "%s/complete", dir);
     bool ready = false;
     if (exists(path)) {
@@ -293,6 +337,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
             ready = fread(stored, 1, 64, marker) == 64 && !strcmp(stored, entry.hash);
             fclose(marker);
         }
+        if (ready) message("Checking cached views...");
         for (unsigned i = 0; ready && i < 8; i++) {
             snprintf(path, sizeof path, "%s/%s.bin", dir, views[i]);
             unsigned char header[12];
@@ -312,11 +357,11 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         wifi_bridge_snapshot(&wifi);
         if (!*server || !wifi.connected)
             return false;
-        snprintf(url, sizeof url, "%s/v3/jobs/%s/manifest.json", server, entry.hash);
+        snprintf(url, sizeof url, "%s/v4/jobs/%s/manifest.json", server, entry.hash);
         message("Checking server cache...");
         int code = get(url, json, sizeof json);
         if (code == 404) {
-            snprintf(url, sizeof url, "%s/v3/jobs/%s", server, entry.hash);
+            snprintf(url, sizeof url, "%s/v4/jobs/%s", server, entry.hash);
             message("Sending G-code for previews...");
             if (!post(url, entry.file.path, revision))
                 return false;
@@ -327,7 +372,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         for (int i = 0; i < 1800; i++) {
             if (!idle() || config_revision.load() != revision)
                 return false;
-            snprintf(url, sizeof url, "%s/v3/jobs/%s/manifest.json", server, entry.hash);
+            snprintf(url, sizeof url, "%s/v4/jobs/%s/manifest.json", server, entry.hash);
             *json = 0;
             code = get(url, json, sizeof json);
             if (code == 200 || code == 202) {
@@ -337,7 +382,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
                            version = cJSON_GetObjectItem(root, "renderer");
                 generated = cJSON_IsString(status) && !strcmp(status->valuestring, "ready") &&
                             cJSON_IsString(hash) && !strcmp(hash->valuestring, entry.hash) &&
-                            cJSON_IsNumber(version) && version->valueint == 3;
+                            cJSON_IsNumber(version) && version->valueint == 4;
                 bool error = cJSON_IsString(status) && !strcmp(status->valuestring, "error");
                 if (error) {
                     unsupported = true;
@@ -376,7 +421,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
         for (unsigned i = 0; i < 8; i++) {
             if (!idle())
                 return false;
-            snprintf(url, sizeof url, "%s/v3/jobs/%s/%s.bin", server, entry.hash, views[i]);
+            snprintf(url, sizeof url, "%s/v4/jobs/%s/%s.bin", server, entry.hash, views[i]);
             snprintf(path, sizeof path, "%s/%s.bin", dir, views[i]);
             char text[64];
             snprintf(text, sizeof text, "Downloading view %u/8...", i + 1);
@@ -394,6 +439,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
             return false;
         ready = true;
     }
+    index_save(entry);
     xSemaphoreTake(lock, portMAX_DELAY);
     for (unsigned i = 0; i < catalog->count; i++)
         if (!strcmp(catalog->entries[i].file.path, entry.file.path)) {
@@ -414,12 +460,10 @@ static void worker(void *) {
         vTaskDelete(nullptr);
         return;
     }
-    unsigned last_revision = 0;
-    bool was_connected = false;
-    uint32_t retried_at = 0;
+
     for (;;) {
         worker_stack_remaining = uxTaskGetStackHighWaterMark(nullptr);
-        if (!idle()) {
+        if (!available()) {
             vTaskDelay(pdMS_TO_TICKS(250));
             continue;
         }
@@ -442,17 +486,8 @@ static void worker(void *) {
             xSemaphoreGive(lock);
             file_page = 0;
         }
-        wifi_bridge_state_t network;
-        wifi_bridge_snapshot(&network);
-        bool retry_network =
-            network.connected && (!was_connected || xTaskGetTickCount() - retried_at > pdMS_TO_TICKS(60000));
-        was_connected = network.connected;
-        if (config_revision.load() != last_revision || retry_network) {
-            retried_at = xTaskGetTickCount();
-            last_revision = config_revision.load();
-            for (unsigned i = 0; i < catalog->count; i++)
-                catalog->entries[i].tried = false;
-        }
+        if (!update_active.load()) { vTaskDelay(pdMS_TO_TICKS(250)); continue; }
+        unsigned last_revision = config_revision.load();
         Entry next = {};
         char server[128];
         bool have = false;
@@ -460,34 +495,26 @@ static void worker(void *) {
         snprintf(server, sizeof server, "%s", catalog->server);
         for (unsigned i = 0; i < catalog->count; i++) {
             auto &entry = catalog->entries[catalog->order[i]];
-            if (entry.ready)
-                continue;
-            if (*catalog->priority && strcmp(entry.file.path, catalog->priority))
-                continue;
+
             if (!entry.tried) {
                 next = entry;
+                entry.ready = false; entry.checked = true;
                 snprintf(catalog->working, sizeof catalog->working, "%s", entry.file.path);
                 have = true;
                 break;
             }
         }
-        *catalog->priority = 0;
         xSemaphoreGive(lock);
         if (have) {
             preparing = true;
             bool unsupported = false;
             bool ok = idle() && prepare(next, server, last_revision, unsupported);
             preparing = false;
-            if (capture_paused.load() && !ok) {
-                xSemaphoreTake(lock, portMAX_DELAY);
-                if (!*catalog->priority) snprintf(catalog->priority, sizeof catalog->priority, "%s", next.file.path);
-                xSemaphoreGive(lock);
-            }
             if (idle()) {
                 xSemaphoreTake(lock, portMAX_DELAY);
                 for (unsigned i = 0; i < catalog->count; i++)
-                    if (!strcmp(catalog->entries[i].file.path, next.file.path))
-                        catalog->entries[i].tried = true;
+                    if (!strcmp(catalog->entries[i].file.path, next.file.path)) catalog->entries[i].tried = true;
+                ++update_done; if (!ok) ++update_failed;
                 xSemaphoreGive(lock);
             }
             if (ok)
@@ -495,9 +522,32 @@ static void worker(void *) {
             else if (idle() && !unsupported)
                 message(*server ? "Preview not ready; check server or refresh"
                                 : "Set Preview server in Settings to generate images");
+        } else {
+            update_active = false;
+            char summary[100];
+            snprintf(summary, sizeof summary, "Update complete: %u ready, %u unavailable", update_done-update_failed, update_failed);
+            message(summary, 100);
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
+}
+bool storage_update_start() {
+    if (!catalog || !available() || preparing.load()) return false;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool ok = catalog->mounted && !catalog->scanning && !scan_requested.load() && !update_active.load();
+    if (ok) {
+        for (unsigned i=0;i<catalog->count;++i) catalog->entries[i].tried=false;
+        update_done=update_failed=0; *catalog->working=0;
+        snprintf(catalog->message,sizeof catalog->message,"Starting preview update..."); catalog->percent=-1;
+        update_active=true;
+    }
+    xSemaphoreGive(lock); return ok;
+}
+void storage_update_cancel() { update_active=false; ++config_revision; }
+void storage_update_state(bool &active, bool &busy, unsigned &done, unsigned &total, unsigned &failed) {
+    xSemaphoreTake(lock,portMAX_DELAY);
+    active=update_active.load(); busy=preparing.load(); done=update_done; total=catalog->count; failed=update_failed;
+    xSemaphoreGive(lock);
 }
 void storage_init() {
     if (lock) {
@@ -521,7 +571,7 @@ void storage_init() {
 bool storage_can_upload() {
     if (!catalog) return false;
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool ok = catalog->mounted && catalog->count < MaxStorageFiles;
+    bool ok = catalog->mounted && catalog->count < MaxStorageFiles && !update_active.load() && !preparing.load();
     xSemaphoreGive(lock);
     return ok;
 }
@@ -597,6 +647,7 @@ bool storage_read_head(const char *path, char *text, size_t capacity) {
     fclose(file);
     return ok;
 }
+void storage_preview_viewing(bool viewing) { preview_viewing = viewing; }
 bool storage_preview(const char *path, unsigned view, char *image, size_t capacity) {
     if (!catalog || view >= 8) {
         return false;
@@ -605,22 +656,27 @@ bool storage_preview(const char *path, unsigned view, char *image, size_t capaci
     xSemaphoreTake(lock, portMAX_DELAY);
     for (unsigned i = 0; i < catalog->count; i++)
         if (!strcmp(catalog->entries[i].file.path, path) && catalog->entries[i].ready) {
-            snprintf(image, capacity, "%s/v3-%s/%s.bin", CACHE, catalog->entries[i].hash, views[view]);
+            snprintf(image, capacity, "%s/v4-%s/%s.bin", CACHE, catalog->entries[i].hash, views[view]);
             ready = true;
             break;
         }
     xSemaphoreGive(lock);
     return ready;
 }
-void storage_prioritize(const char *path) {
+void storage_lookup_preview(const char *path) {
+    Entry copy = {}; bool found=false;
     xSemaphoreTake(lock, portMAX_DELAY);
-    for (unsigned i=0; i<catalog->count; ++i) {
-        auto &entry=catalog->entries[i];
-        if (!strcmp(entry.file.path,path) && !entry.ready) {
-            snprintf(catalog->priority,sizeof catalog->priority,"%s",path);
-            entry.tried=false;
-            ++config_revision;
-            break;
+    for (unsigned i=0;i<catalog->count;++i) {
+        auto &e=catalog->entries[i];
+        if (!strcmp(e.file.path,path) && !e.ready && !e.checked) { e.checked=true; copy=e; found=true; break; }
+    }
+    xSemaphoreGive(lock);
+    if (!found || !index_load(copy)) return;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    for (unsigned i=0;i<catalog->count;++i) {
+        auto &e=catalog->entries[i];
+        if (!strcmp(e.file.path,path) && e.file.size==copy.file.size && e.modified==copy.modified) {
+            snprintf(e.hash,sizeof e.hash,"%s",copy.hash); e.ready=true; break;
         }
     }
     xSemaphoreGive(lock);
@@ -634,13 +690,16 @@ bool storage_progress(int *percent, const char *path) {
     xSemaphoreGive(lock);
     return active;
 }
-void storage_status(char *s, size_t n) {
+void storage_status(char *s, size_t n, char *working, size_t working_size) {
+    if (working && working_size) *working = 0;
     if (!catalog) {
         snprintf(s, n, "Starting SD...");
         return;
     }
     xSemaphoreTake(lock, portMAX_DELAY);
     snprintf(s, n, "%s", catalog->message);
+    if (working && working_size && !catalog->scanning)
+        snprintf(working, working_size, "%s", catalog->working);
     xSemaphoreGive(lock);
 }
 void storage_server(char *s, size_t n) {
@@ -686,8 +745,13 @@ extern "C" void panel_debug_storage(char *buffer, size_t size) {
     cJSON_AddBoolToObject(root, "mounted", catalog->mounted);
     cJSON_AddBoolToObject(root, "local", storage_source());
     cJSON_AddBoolToObject(root, "preparing", preparing.load());
+    cJSON_AddBoolToObject(root, "update_active", update_active.load());
+    cJSON_AddNumberToObject(root, "update_done", update_done);
+    cJSON_AddNumberToObject(root, "update_failed", update_failed);
+    cJSON_AddBoolToObject(root, "preview_viewing", preview_viewing.load());
     cJSON_AddNumberToObject(root, "percent", catalog->percent);
     cJSON_AddStringToObject(root, "status", catalog->message);
+    cJSON_AddStringToObject(root, "working", catalog->working);
     cJSON_AddStringToObject(root, "server", catalog->server);
     cJSON *files = cJSON_AddArrayToObject(root, "files");
     for (unsigned i = file_page * 4; i < catalog->count && i < file_page * 4 + 4; i++) {

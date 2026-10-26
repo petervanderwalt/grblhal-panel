@@ -244,3 +244,31 @@ frame-row logging and flushes at protocol boundaries rather than after every
 row. Keep these paths buffered; per-byte reads and per-row disk flushes made
 large captures exceed the host deadline. `check-macro-grid.py --short-samples`
 uses compact G21/G90 fixtures for photos; its empty-library safeguard remains.
+
+### Manual preview preparation
+
+`UG SD STATE` exposes `update_active`, `update_done` and `update_failed` as well
+as `preparing`, `working` and `percent`. Normal Files browsing leaves both active
+flags false. Use Files > Update previews to start a batch; Cancel stops it.
+Cached preview selection uses a small persistent path index and does not start
+hashing or networking. `tools/check-preview-update.py` exercises this on the LCD
+in UART-disconnected demo mode and restores physical touch afterward.
+
+### Dialog checks
+
+`UG PREFS` reports `dialog` and `number_value`. Assert dialog identity before
+injecting keypad or popup actions. Dialogs use opaque full-screen backing without
+translucent dimming or floating shadows, and block background machine actions.
+
+When restoring source backups, update their modification times or run `idf.py clean`
+before building. Preserved older timestamps can leave a newer experimental object
+in the firmware even though the source has been restored. Keep the LCD draw buffer
+in internal DMA RAM (1024 x 50 pixels); no full-frame PSRAM drawing buffer.
+
+The full-screen Probe Configuration editor has one shared numeric keyboard for
+X/Y/Z, feed and corner inset.
+`UG SETTING FIELD <ASCII-hex>` fills its currently focused field without applying;
+it still fills machine-setting/search fields when that editor is open. `UG PREFS`
+reports `dialog=probe-offsets` and the draft values as `probe_edit_x/y/z`. Saved
+values remain in `x/y/z`, `feed` and `inset`; draft feed/inset use
+`probe_edit_feed` and `probe_edit_inset`. Validate all five before changing any.

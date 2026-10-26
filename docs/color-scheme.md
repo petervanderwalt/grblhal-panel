@@ -75,3 +75,11 @@ These are framebuffer captures from the pendant, with simulated controller feedb
 | ![Running job](screenshots/panel-job.png) | ![Completion](screenshots/panel-complete.png) |
 | ![Empty macro page](screenshots/panel-macros-empty.png) | ![Disabled actuator controls](screenshots/panel-actuators-disabled.png) |
 | ![Wi-Fi](screenshots/wifi-networks.png) | ![Single surface probe](screenshots/panel-probe-surface.png) |
+
+## Full-screen black editors
+
+Macro Add/Edit, Preview Server and Probe Configuration use solid red Cancel/Delete
+(`#D3343B`, light text) on the left and mint Save (`#83E6B0`, dark text) on the
+right. Cancel is not a grey secondary action in these editors. Macro confirmation
+dialogs follow the same Cancel treatment. Input controls keep their height after
+LVGL configures one-line text, with a cyan focus border for the shared keyboard.

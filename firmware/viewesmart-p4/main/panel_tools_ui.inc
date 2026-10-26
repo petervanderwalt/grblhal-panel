@@ -5,7 +5,8 @@ static lv_obj_t *input_values[19], *input_connection, *accessory_feedback, *rpm_
 static int input_display[19];
 static lv_obj_t *spindle_actions[3], *coolant_actions[4], *macro_runs[MaxMacros], *macro_stop, *macro_status;
 static lv_obj_t *macro_keyboard, *macro_error, *macro_colors_control;
-static lv_obj_t *macro_edits[MaxMacros], *macro_add_button;
+static lv_obj_t *macro_edits[MaxMacros], *macro_add_button, *macro_list;
+static void concept_macro_dialog();
 static lv_obj_t *spindle_choices[8], *spindle_list_status, *spindle_range, *spindle_select_button;
 static int spindle_requested_number;
 static int macro_edit_index, macro_run_index, spindle_requested_direction;
@@ -95,7 +96,7 @@ static void tools_refresh() {
         for (auto b : coolant_actions) tools_enable(b, ready());
     }
     if (page == MacrosPage && !modal) {
-        tools_text(macro_status, state.macro_failed ? "Macro interrupted" : state.macro_running ? "Macro running" : fresh ? state.mode : "Not connected");
+        tools_text(macro_status, state.macro_failed ? "Macro interrupted" : state.macro_running ? "Macro running" : "");
         for (auto b : macro_runs) tools_enable(b, ready());
         unsigned count = 0;
         for (const auto &m : macros->entries) if (*m.name) ++count;
@@ -211,6 +212,7 @@ static bool macro_run_confirmed() { return runtime_action(Action::Macro, macros-
 static void macro_run_click(lv_event_t *e) {
     macro_run_index = (uintptr_t)lv_event_get_user_data(e);
     confirm("Run macro?", macros->entries[macro_run_index].name, macro_run_confirmed, AMBER, "Run");
+    concept_macro_dialog();
 }
 static bool macro_delete_confirmed() {
     Macro old = macros->entries[macro_edit_index];
@@ -221,9 +223,11 @@ static bool macro_delete_confirmed() {
 static void macro_delete(lv_event_t *e) {
     macro_edit_index = (uintptr_t)lv_event_get_user_data(e);
     confirm("Delete macro?", macros->entries[macro_edit_index].name, macro_delete_confirmed, RED, "Delete", RED);
+    concept_macro_dialog();
 }
 static void macro_stop_click(lv_event_t *) {
     confirm("Stop macro?", "The controller will reset. The macro cannot resume.", stop, RED, "Stop", RED);
+    concept_macro_dialog();
 }
 static void macro_add(lv_event_t *) {
     for (unsigned i = 0; i < MaxMacros; ++i) if (!*macros->entries[i].name) {
@@ -241,6 +245,7 @@ static void build_macros() {
     macro_add_button = button(body, LV_SYMBOL_PLUS "  Add macro", 780, 10, 192, 48, macro_add, 0, PRIMARY);
     macro_stop = button(body, "Stop macro", 562, 10, 202, 48, macro_stop_click, 0, RED);
     auto list = box(body, 12, 70, 968, 344, CARD);
+    macro_list = list;
     lv_obj_set_style_border_width(list, 0, 0); lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     for (unsigned i = 0; i < MaxMacros; ++i) {
@@ -278,29 +283,33 @@ static void macro_edit(lv_event_t *e) {
 }
 static void show_macro_editor() {
     const auto &m = macros->entries[macro_edit_index];
-    auto c = open_modal(*m.name ? "Edit macro" : "Add macro", 1000, 568);
-    modal_close_button(c, 1000);
-    label(c, "Name", 24, 76, 550, 16, MUTED);
-    label(c, "Colour", 640, 76, 330, 16, MUTED);
+    auto c = open_modal(*m.name ? "Edit macro" : "Add macro", 1024, 600);
+    modal_close_button(c, 1024);
+    label(c, "Name", 16, 94, 64, 18, MUTED);
+    label(c, "Colour", 516, 94, 64, 16, MUTED);
     for (int i = 0; i < 2; ++i) {
         macro_fields[i] = lv_textarea_create(c);
-        lv_obj_set_pos(macro_fields[i], 24, i ? 190 : 100);
-        lv_obj_set_size(macro_fields[i], i ? 952 : 592, i ? 104 : 54);
+        lv_obj_set_pos(macro_fields[i], i ? 16 : 88, i ? 144 : 76);
+        lv_obj_set_size(macro_fields[i], i ? 604 : 412, i ? 128 : 56);
+        lv_obj_set_style_text_font(macro_fields[i], font(20), 0);
+        if (i) lv_textarea_set_placeholder_text(macro_fields[i], "G-code");
         lv_textarea_set_max_length(macro_fields[i], i ? MaxMacroCode : 32);
         lv_textarea_set_one_line(macro_fields[i], !i);
         lv_textarea_set_text(macro_fields[i], i ? m.code : m.name);
         lv_obj_add_event_cb(macro_fields[i], macro_focus, LV_EVENT_FOCUSED, nullptr);
     }
     static const char *const colors[] = {"Blue", "Teal", "Amber", "Green", ""};
-    macro_colors_control = choices(c, colors, m.color, 640, 100, 336, 54, nullptr);
-    label(c, "G-code", 24, 166, 650, 16, MUTED);
+    macro_colors_control = choices(c, colors, m.color, 588, 76, 420, 56, nullptr);
     macro_keyboard = lv_keyboard_create(c);
     lv_obj_set_align(macro_keyboard, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(macro_keyboard, 24, 306); lv_obj_set_size(macro_keyboard, 952, 178);
+    lv_obj_set_pos(macro_keyboard, 8, 308); lv_obj_set_size(macro_keyboard, 1008, 284);
+    lv_obj_set_style_text_font(macro_keyboard, font(22), LV_PART_ITEMS);
     lv_keyboard_set_textarea(macro_keyboard, macro_fields[0]);
-    macro_error = label(c, "", 196, 500, 560, 14, RED);
+    macro_error = label(c, "", 16, 280, 992, 14, RED);
     for (auto field : macro_fields) lv_obj_add_event_cb(field, macro_changed, LV_EVENT_VALUE_CHANGED, nullptr);
-    button(c, "Save", 780, 500, 196, 52, macro_saved, 0, GREEN);
-    if (*m.name) button(c, "Delete", 24, 500, 156, 52, macro_delete, macro_edit_index, RED);
+    button(c, "Save", 832, 144, 176, 64, macro_saved, 0, GREEN);
+    if (*m.name) button(c, "Delete", 636, 144, 176, 64, macro_delete, macro_edit_index, RED);
+    else button(c, "Cancel", 636, 144, 176, 64, cancelled, 0, RED);
     macro_editor_open = true;
+    concept_macro_dialog();
 }
