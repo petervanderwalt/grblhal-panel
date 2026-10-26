@@ -45,7 +45,7 @@ $('install').onclick=async()=>{
       calculateMD5Hash:bytes=>CryptoJS.MD5(CryptoJS.lib.WordArray.create(bytes)).toString(),
       reportProgress:(i,w,total)=>{const percent=Math.round(100*(i+w/total)/parts.length);$('progress').value=percent;status(`Installing ${parts[i].path} — ${percent}%`);}
     });
-    await loader.after();await disconnect();$('progress').value=100;
+    await loader.after('custom_reset',false,'D0|R1|W100|R0|W100');await disconnect();$('progress').value=100;
     status('Installed successfully. The display is restarting.');log('Installation complete.');
   } catch(error){status(`Installation failed: ${error.message}`);log(error.stack||error.message);await disconnect();}
   finally{busy=false;controls();}
