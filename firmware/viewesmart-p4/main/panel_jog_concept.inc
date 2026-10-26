@@ -133,11 +133,12 @@ static void concept_header() {
     lv_label_set_long_mode(state_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_LEFT, LV_STATE_USER_1);
     concept_text(state_label, CONCEPT_MUTED, font(18));
-    concept_place(wifi_header, 502, 8, 506, 60);
+    // The screen clips the upper corners, leaving a tab attached to the bezel.
+    concept_place(wifi_header, 502, -28, 506, 96);
     lv_obj_set_style_bg_opa(wifi_header, LV_OPA_COVER, LV_STATE_USER_1);
-    concept_place(wifi_header_name, 288, 8, 148, 24);
-    concept_place(wifi_header_ip, 288, 32, 148, 20);
-    concept_place(wifi_icon, 454, 16, 40, 36);
+    concept_place(wifi_header_name, 288, 44, 148, 24);
+    concept_place(wifi_header_ip, 288, 68, 148, 20);
+    concept_place(wifi_icon, 454, 52, 40, 36);
 }
 #include "panel_files_concept.inc"
 #include "panel_macros_concept.inc"

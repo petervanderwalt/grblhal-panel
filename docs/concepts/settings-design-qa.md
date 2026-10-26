@@ -47,7 +47,8 @@ side by side, with the keyboard below.
 ![Dark Settings list](settings-root-rows.png)
 
 The status/Wi-Fi container keeps the same position across the main pages, aligned
-with both edges of the Jogging card. Settings shares the graphite background,
+with both edges of the Jogging card. Its top extends beyond the screen edge,
+joining the bezel while the lower corners stay rounded. Settings shares the graphite background,
 black list, neutral dark buttons and cyan choice controls.
 
 The drawing-buffer experiment is removed. Verification uses the original internal

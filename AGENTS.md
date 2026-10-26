@@ -478,3 +478,8 @@ Use tab_pages/tab_for_page instead of page-number comparisons for navigation.
 CNC dock centres are x=116/314/512/710/908 at y=566. Actuator mode hides Files
 and Macros but keeps Diagnostics. Input diagnostics lives on this read-only
 page, not a Settings row or modal. Retain unknown/stale and pin-reporting states.
+
+The shared status/Wi-Fi card is a native rounded rectangle at (502,-28),
+506x96 with radius 28. Its upper corners sit off-screen so it joins the bezel.
+Keep its bottom edge at y=68 and its text/icon at their current visible positions;
+use normal screen clipping, without a canvas or custom raster drawing.

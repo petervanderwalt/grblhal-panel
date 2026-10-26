@@ -22,8 +22,9 @@ The font's SIL Open Font License is distributed with the firmware assets.
 
 The left card uses the former brand-header space for 68 px-high per-axis Home/Zero
 targets, 62 px global actions and 60 px Probe/Tools controls. Status and Wi-Fi share
-a black rounded rectangle header card matching the Jogging card, inset 8 px
-from the top and right screen edges. The redundant units label is removed. Home all, XY zero, Z zero,
+a black rounded rectangle header card aligned with the Jogging card. Its upper
+corners extend off-screen so the visible card joins the top bezel, with rounded
+lower corners and the same text positions. The redundant units label is removed. Home all, XY zero, Z zero,
 Zero all, Probe and Tools have matching Font Awesome action icons; labels and
 touch targets are retained.
 
