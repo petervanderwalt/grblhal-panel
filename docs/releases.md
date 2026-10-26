@@ -31,13 +31,14 @@ what is happening. Interrupted installs can be retried through the bootloader.
 The `Firmware release and browser installer` Actions workflow runs when a `v*`
 tag is pushed. It builds with the official ESP-IDF 5.3.4 container and the tracked
 configuration/dependency lock, packages separate binary regions, publishes a
-GitHub prerelease, and deploys the same files with the installer to GitHub Pages.
+GitHub prerelease, and publishes the same files for the installer. A separate Pages workflow runs
+from the allowed main branch after a release and deploys its binary assets.
 All releases remain marked as tester prereleases. Pages must use GitHub Actions
 as its build source. To rerun, select the existing release tag in Run workflow.
 
 ```sh
-git tag v0.1.0-beta.1
-git push origin v0.1.0-beta.1
+git tag v0.1.0-beta.3
+git push origin v0.1.0-beta.3
 ```
 
 Release downloads include the three binaries, manifest, checksums, instructions

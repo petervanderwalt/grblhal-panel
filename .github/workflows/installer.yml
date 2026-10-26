@@ -1,0 +1,54 @@
+name: Browser installer
+on:
+  workflow_run:
+    workflows: ['Firmware release and browser installer']
+    types: [completed]
+  push:
+    branches: [main]
+    paths: ['web-flasher/**', '.github/workflows/installer.yml', 'tools/fetch-release.py']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag (blank = most recent tester release)'
+        required: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web-flasher/package-lock.json
+      - name: Build browser installer
+        working-directory: web-flasher
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Download published firmware
+        env:
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/fetch-release.py --output web-flasher/dist/firmware
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-flasher/dist
+      - name: Publish installer
+        id: deployment
+        uses: actions/deploy-pages@v4

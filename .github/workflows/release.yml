@@ -36,36 +36,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: python tools/publish-release.py
-  pages:
-    needs: build
-    runs-on: ubuntu-22.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: web-flasher/package-lock.json
-      - name: Build browser installer
-        working-directory: web-flasher
-        run: |
-          npm ci
-          npm test
-          npm run build
-      - uses: actions/download-artifact@v4
-        with:
-          name: firmware-release
-          path: web-flasher/dist/firmware
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web-flasher/dist
-      - name: Publish installer
-        id: deployment
-        uses: actions/deploy-pages@v4
