@@ -276,8 +276,17 @@ static void worker(void *) {
             usb_seen = usb_generation();
             cancel_upload("USB connection changed during SD upload");
             used = 0; overflow = false; pending = false; pending_count = 0;
-            if (usb_connected()) model.begin(now());
-            else model.disconnect();
+            model.disconnect();
+        }
+        if (!demo && link_ready() && !model.state.online) {
+            // Retry identification after reset/timeouts, without resuming interrupted work.
+            bool job_failed = model.state.job_failed || model.state.sd_active;
+            bool macro_failed = model.state.macro_failed;
+            used = 0; overflow = false; pending = false; pending_count = 0;
+            model.begin(now());
+            model.state.job_failed |= job_failed;
+            model.state.macro_failed |= macro_failed;
+            if (job_failed || macro_failed) model.state.error = 1;
         }
         if (link_ready() && !demo) {
             uart_event_t event;

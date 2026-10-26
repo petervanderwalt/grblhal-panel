@@ -64,3 +64,7 @@ A normal startup alarm is released by explicit Unlock (`$X`), following Ooznest 
 USB3 was built against this workstation's ESP-IDF 5.3.4 tree with P4 full-speed host support. Stock older SDK support and other CDC ACM controllers have not been verified. The CH340 UART socket remains separate from the native USB host.
 
 Logical Disconnect disables application TX/RX and lowers DTR while retaining the claimed CDC interface. Reconnect starts a fresh model identification without recreating USB endpoints. Physical loss or a transport error closes the handle. This avoids the intermittent reopen failure observed during repeated logical sessions.
+
+The selected connection starts on pendant boot. Identification retries after a timeout while the link remains enabled. Explicit Disconnect disables retries for that session; the next boot connects again. USB open failures lasting five seconds with a device physically present trigger an SDK root-port power cycle to restart enumeration. Neither reconnect nor boot unlocks an alarm or resumes queued work.
+
+The bare controller reports Alarm 10 for its power monitor as well as E-stop. Preserve that fault and require user confirmation; do not infer which physical cause occurred from the number alone.

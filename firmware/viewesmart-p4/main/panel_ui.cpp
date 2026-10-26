@@ -130,6 +130,7 @@ static lv_obj_t *file_run_buttons[4]={};
 static bool file_run_usable[4]={};
 static lv_obj_t *file_previous=nullptr,*file_next=nullptr,*file_page_label=nullptr;
 static bool continuous = false, jog_held = false;
+static uint32_t jog_pressed_at, jog_hold_ms;
 static lv_obj_t *jog_buttons[10];
 static int jog_count;
 static char home_axis;
@@ -530,12 +531,13 @@ static void notify(const char *s) {
     finish_modal(c);
 }
 static void confirm(const char *title, const char *text, bool (*fn)(), uint32_t accent = AMBER,
-                    const char *action = "Confirm", uint32_t action_color = GREEN) {
+                    const char *action = "Confirm", uint32_t action_color = GREEN, uint32_t cancel_color = RED) {
     auto c = open_modal(title, 1024, 600, accent);
     auto message = label(c, text, 80, 150, 864, 22, MUTED);
     lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
     confirmation = fn;
-    button(c, "Cancel", 40, 488, 448, 64, cancelled, 0, RED);
+    auto cancel = button(c, "Cancel", 40, 488, 448, 64, cancelled, 0, cancel_color);
+    if (cancel_color != RED) lv_obj_add_state(cancel, LV_STATE_USER_2);
     button(c, action, 536, 488, 448, 64, confirmed, 0, action_color);
     finish_modal(c);
 }
@@ -688,6 +690,7 @@ static void release_jog() {
     if (jog_held) {
         jog_held = false;
         result(runtime_action(Action::JogCancel));
+        jog_hold_ms = now() - jog_pressed_at;
     }
 }
 static void jog_event(lv_event_t *e) {
@@ -698,6 +701,7 @@ static void jog_event(lv_event_t *e) {
         bool ok = runtime_action(Action::Jog, directions[(uintptr_t)lv_event_get_user_data(e)],
                                  continuous ? 10000 : jog_step_mm(inches, step_index), jog_speed);
         jog_held = ok && continuous;
+        if (jog_held) jog_pressed_at = now();
         result(ok);
     } else if (lv_event_get_code(e) == LV_EVENT_RELEASED || lv_event_get_code(e) == LV_EVENT_PRESS_LOST) {
         release_jog();
@@ -836,7 +840,7 @@ static void zero_click(lv_event_t *e) {
     zero_axes = (uintptr_t)lv_event_get_user_data(e);
     confirm("Set work zero?",
             "Set the selected axes to zero in the active WCS.\nMachine coordinates are unchanged.",
-            zero_confirm);
+            zero_confirm, PRIMARY, "Set zero", GREEN, CARD);
 }
 static int goto_axes;
 static bool goto_confirm() { return runtime_action(Action::GotoZero, nullptr, goto_axes); }
@@ -1444,9 +1448,30 @@ static void build_page() {
     concept_layout();
     refresh(nullptr);
 }
+static void refresh_dro(bool colors = true) {
+    char work[32], machine[32];
+    for (int i = 0; i < 3; ++i) {
+        if (state.coordinates && state.wco_known) {
+            snprintf(work, sizeof work, "% .3f", state.work[i] / display_scale(inches));
+            snprintf(machine, sizeof machine, "% .3f", state.machine[i] / display_scale(inches));
+        } else {
+            snprintf(work, sizeof work, "--.---");
+            snprintf(machine, sizeof machine, "M  --.---");
+        }
+        if (strcmp(lv_label_get_text(axis_work[i]), work)) lv_label_set_text(axis_work[i], work);
+        if (strcmp(lv_label_get_text(axis_machine[i]), machine)) lv_label_set_text(axis_machine[i], machine);
+        if (colors) lv_obj_set_style_text_color(axis_work[i], lv_color_hex(state.status ? TEXT : MUTED), 0);
+    }
+}
 static void refresh(lv_timer_t *) {
     runtime_snapshot(state);
     hardware_status(state);
+    // Keep the release event responsive instead of restyling the whole page during a held jog.
+    if (jog_held && page == JogPage && !actuator_mode && !modal && state.online && state.status &&
+        !state.alarm && !state.error && (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3))) {
+        refresh_dro(false);
+        return;
+    }
     if (state.sd_active && page != JobPage) {
         close_modal();
         show_page(JobPage);
@@ -1549,18 +1574,7 @@ static void refresh(lv_timer_t *) {
                                              : state.status                    ? 0x6CDB78
                                                                                : 0xBCC6D2),
                                 0);
-    for (int i = 0; i < 3; i++) {
-        if (state.coordinates && state.wco_known) {
-            snprintf(s, sizeof s, "% .3f", state.work[i] / display_scale(inches));
-            lv_label_set_text(axis_work[i], s);
-            snprintf(s, sizeof s, "% .3f", state.machine[i] / display_scale(inches));
-            lv_label_set_text(axis_machine[i], s);
-        } else {
-            lv_label_set_text(axis_work[i], "--.---");
-            lv_label_set_text(axis_machine[i], "M  --.---");
-        }
-        lv_obj_set_style_text_color(axis_work[i], lv_color_hex(state.status ? TEXT : MUTED), 0);
-    }
+    refresh_dro();
     if (state.alarm || state.error)
         lv_obj_add_flag(state_label, LV_OBJ_FLAG_CLICKABLE);
     else
@@ -1753,6 +1767,7 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
     lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
     build_page();
+    runtime_connect((int)prefs.tx, (int)prefs.rx, (int)prefs.baud, usb_connection);
     lv_timer_create(refresh, 100, nullptr);
 }
 extern "C" void panel_ui_settings(char *buffer, size_t size) {
@@ -1768,13 +1783,13 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"inset\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"usb_connection\":%d,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
+             "\"baud\":%.0f,\"usb_connection\":%d,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"jog_speed\":%u,\"jog_hold_ms\":%lu,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.probe.inset, prefs.tx,
              prefs.rx, prefs.baud, usb_connection, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
              page == JogPage && !actuator_mode && mode_choices
                  ? (lv_buttonmatrix_has_button_ctrl(mode_choices, 1, LV_BUTTONMATRIX_CTRL_CHECKED) ? 1
                     : lv_buttonmatrix_has_button_ctrl(mode_choices, 0, LV_BUTTONMATRIX_CTRL_CHECKED) ? 0 : -1)
-                 : -1, body ? lv_obj_get_scroll_y(body) : 0, dialog,
+                 : -1, jog_speed, (unsigned long)jog_hold_ms, body ? lv_obj_get_scroll_y(body) : 0, dialog,
              number ? strtof(lv_textarea_get_text(number),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[0]),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[1]),nullptr) : 0.0,

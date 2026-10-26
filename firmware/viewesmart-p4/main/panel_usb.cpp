@@ -27,7 +27,8 @@ static std::atomic<bool> enabled{false}, connected{false}, lost{false};
 static std::atomic<uint32_t> generation{0}, received{0}, transmitted{0};
 static std::atomic<unsigned> vid{0}, pid{0};
 static std::atomic<int> last_error{0};
-static uint32_t next_open;
+static uint32_t next_open, open_failed_at;
+static bool port_off;
 static bool control_active;
 
 static void host_task(void *) {
@@ -120,6 +121,13 @@ void usb_poll() {
         } else { last_error = err; lost = true; }
     }
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if (port_off) {
+        if (int32_t(now - next_open) >= 0) {
+            last_error = usb_host_lib_set_root_port_power(true);
+            port_off = false;
+        }
+        xSemaphoreGive(lock); return;
+    }
     if (enabled && !device && int32_t(now - next_open) >= 0) {
         next_open = now + 1000; lost = false;
         cdc_acm_host_device_config_t config = {};
@@ -136,10 +144,20 @@ void usb_poll() {
             // Allow native CDC firmware to observe DTR before the first identification query.
             if (err == ESP_OK) vTaskDelay(pdMS_TO_TICKS(100));
             if (err == ESP_OK && enabled && !lost) {
-                last_error = 0; control_active = true; connected = true; generation++;
+                last_error = 0; open_failed_at = 0; control_active = true; connected = true; generation++;
                 ESP_LOGI("panel_usb", "CDC ACM connected, interface 0");
             } else { last_error = err; connected = false; lost = true; }
-        } else last_error = err;
+        } else {
+            last_error = err;
+            if (!open_failed_at) open_failed_at = now;
+            // A fast controller reboot can leave the root port waiting for enumeration.
+            if (now - open_failed_at >= 5000 && usb_dwc_ll_hprt_get_conn_status(USB_DWC_LL_GET_HW(HostController))) {
+                esp_err_t power_err = usb_host_lib_set_root_port_power(false);
+                ESP_LOGW("panel_usb", "Recovering USB enumeration: %s", esp_err_to_name(power_err));
+                if (power_err == ESP_OK) { port_off = true; next_open = now + 250; }
+                open_failed_at = 0;
+            }
+        }
     }
     xSemaphoreGive(lock);
 }

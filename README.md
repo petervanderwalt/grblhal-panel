@@ -129,6 +129,7 @@ for reconnection. The header shows the connected SSID and IP address.
 - Controller UART defaults: TX GPIO37, RX GPIO38, 115200 baud; configurable in Settings.
 - USB3 CDC ACM host connection: tested with an RP2350 grblHAL controller (2E8A:000A). USB UART remains available for programming and development tools.
 - Startup alarms open an Unlock confirmation; unlocking does not establish a homed position.
+- The selected controller connection starts on boot and reconnects after USB re-enumeration. Interrupted jobs do not resume automatically.
 
 This is firmware under development. The interface and Wi-Fi have been exercised
 on the display. Physical controller motion, probing and SD transfers still need

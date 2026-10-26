@@ -51,3 +51,12 @@ For every executed case record **pass**, **fail** or **not tested**, firmware re
 - Ooznest Control: js/machine/webserial.js (byte accounting), js/ui/alarms_and_errors.js (normal/critical unlock), and the corresponding jog, SD and probing handlers.
 - Pendant: firmware/viewesmart-p4/main/panel_stream.cpp, panel_model.cpp, panel_runtime.cpp and panel_usb.cpp.
 - Existing checks: tools/check-usb.py, tools/check-workflow.py, tools/check-display-sd.py, tools/check-machine-settings.py and tools/check-probe-surfaces.py.
+
+## 2026-10-26 follow-up
+
+- Automatic USB connection passed two pendant reboot cycles, including the startup alarm confirmation.
+- A logged physical controller power cycle reconnected automatically (USB generation 1 to 4), returned Alarm 11, and left the LCD running. Alarm 10 during power loss is expected on this controller.
+- An earlier power-cycle attempt left the port unable to open; root-port enumeration recovery was added. An LCD restart (panic reset reason 4) was also observed once; the latest full UART capture did not reproduce it. Keep the full UART logger active during further reset/soak tests to obtain a backtrace if it recurs; do not mark this intermittent restart explained.
+- Before the held-jog redraw fix, a requested 60 ms Slow jog held the UI for 882 ms and moved 45.24 mm on the bare board. With the same feed preset after the fix, 60/100/150 ms requests moved 1.75/2.92/4.38 mm. Host command round-trip includes later rendering; it is not the cancel-transmission timestamp.
+- The embedded timing check subsequently measured cancel transmission at 65/100/150 ms for 60/100/150 ms holds in isolated demo mode. Slow remains 25% of the moving axes' maximum rate, matching Ooznest Control. No controller settings or offsets were changed by these jog trials.
+- Full embedded model tests passed, including stream window/fault/fresh-Idle completion checks. Live job streaming remains pending.

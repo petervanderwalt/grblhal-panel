@@ -56,7 +56,7 @@ static const char *fault_text(bool alarm, int code) {
         case 9:
             return "Homing did not find the limit switch.";
         case 10:
-            return "Emergency stop asserted. Clear the input and reset.";
+            return "Emergency stop or power loss. Clear the cause and reset.";
         case 11:
             return "Homing required. Clear travel and home the machine.";
         default:

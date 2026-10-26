@@ -7,7 +7,7 @@ static void form_control_style(lv_obj_t *obj) {
         auto color = lv_color_to_u32(lv_obj_get_style_bg_color(obj, 0)) & 0xFFFFFF;
         const char *text = lv_obj_get_child_count(obj) ? lv_label_get_text(lv_obj_get_child(obj, 0)) : "";
         bool positive = color == GREEN || color == CONCEPT_AXES[1];
-        bool danger = color == RED || !strcmp(text,"Cancel") || !strcmp(text,"Delete") || !strcmp(text,"Stop") || !strcmp(text,"Disconnect");
+        bool danger = color == RED || (!strcmp(text,"Cancel") && !lv_obj_has_state(obj, LV_STATE_USER_2)) || !strcmp(text,"Delete") || !strcmp(text,"Stop") || !strcmp(text,"Disconnect");
         fill = danger ? RED : positive ? CONCEPT_AXES[1] : color == AMBER ? AMBER : CONCEPT_PAD;
         ink = (positive || color == AMBER) && !danger ? CONCEPT_CARD : CONCEPT_INK;
         if (wifi_list && lv_obj_get_parent(obj) == wifi_list) fill = CONCEPT_CARD;
