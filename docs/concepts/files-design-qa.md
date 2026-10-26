@@ -1,7 +1,7 @@
 # Files card design
 
 The Files library and preview share the Jog screen's graphite background, black
-rounded rectangle card, floating dock and status/Wi-Fi card.
+rounded rectangle card, bottom dock and status/Wi-Fi card.
 
 | Library | Rendered preview |
 | --- | --- |

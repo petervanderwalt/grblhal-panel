@@ -94,12 +94,14 @@ static void concept_library_card() {
     lv_obj_move_background(card);
 }
 static void concept_dock() {
-    lv_obj_set_pos(tabview, 16, 540); lv_obj_set_size(tabview, 992, 52);
-    lv_tabview_set_tab_bar_size(tabview, 52);
+    lv_obj_set_pos(tabview, 16, 540); lv_obj_set_size(tabview, 992, 96);
+    lv_tabview_set_tab_bar_size(tabview, 96);
     auto bar = lv_tabview_get_tab_bar(tabview);
     lv_obj_set_style_bg_color(bar, lv_color_hex(CONCEPT_CARD), 0);
     lv_obj_set_style_radius(bar, 26, 0);
     lv_obj_set_style_pad_all(bar, 5, 0); lv_obj_set_style_pad_column(bar, 6, 0);
+    // Extra bottom padding extends the background without moving the pills.
+    lv_obj_set_style_pad_bottom(bar, 49, 0);
     const char *names[] = {LV_SYMBOL_SHUFFLE "  Jog", LV_SYMBOL_FILE "  Files", LV_SYMBOL_LIST "  Macros", LV_SYMBOL_EYE_OPEN "  Diag", LV_SYMBOL_SETTINGS "  Settings"};
     for (int i = 0; i < 5; ++i) {
         lv_label_set_text(lv_obj_get_child(nav[i], 0), i == 0 && actuator_mode ? LV_SYMBOL_SHUFFLE "  Actuators" : names[i]);
@@ -129,12 +131,12 @@ static void concept_header() {
     }
     concept_skin(wifi_header, CONCEPT_CARD, 28);
     visibility(brand_label, false);
-    concept_place(state_label, 530, 28, 244, 26);
+    concept_place(state_label, 530, 20, 244, 26);
     lv_label_set_long_mode(state_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_LEFT, LV_STATE_USER_1);
     concept_text(state_label, CONCEPT_MUTED, font(18));
     // The screen clips the upper corners, leaving a tab attached to the bezel.
-    concept_place(wifi_header, 502, -28, 506, 96);
+    concept_place(wifi_header, 502, -36, 506, 96);
     lv_obj_set_style_bg_opa(wifi_header, LV_OPA_COVER, LV_STATE_USER_1);
     concept_place(wifi_header_name, 288, 44, 148, 24);
     concept_place(wifi_header_ip, 288, 68, 148, 20);

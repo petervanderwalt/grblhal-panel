@@ -2,7 +2,7 @@
 
 ![Macro library](macros-card-concept.png)
 
-The library uses the same black rounded rectangle card and floating dock as Files.
+The library uses the same black rounded rectangle card and bottom dock as Files.
 Square macro buttons have a wide colored left strip and a separate pencil action.
 The macro name is shown without a play icon. Add remains above the card.
 

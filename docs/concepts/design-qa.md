@@ -1,6 +1,6 @@
 # Jog card concept
 
-An experimental Jog screen and floating navigation dock for the 1024 × 600 LCD.
+An experimental Jog screen and bottom navigation dock for the 1024 × 600 LCD.
 The existing control handlers and dialogs remain in place. Files now shares this
 style; see [Files design](files-design-qa.md) and [Macros design](macros-design-qa.md).
 
@@ -13,7 +13,7 @@ style; see [Files design](files-design-qa.md) and [Macros design](macros-design-
 | Black cards on graphite | Native LVGL rounded rectangle cards; custom shoulder drawing removed |
 | Large clean numeric typography | Roboto Condensed 52 px for work coordinates and aligned XYZ labels; machine positions sit directly below their work values |
 | Selective vivid accents | Lime selected mode, coral X, mint Y, cyan Z; neutral action pads including Probe |
-| Floating pill navigation | Black dock, white active pill, icons and 18 px labels |
+| Bezel-attached pill navigation | Black dock, white active pill, icons and 18 px labels |
 | Uncluttered widgets | Existing homing, zeroing, WCS and motion controls retained in two groups |
 
 The phone-sized references guide shape, contrast and typography. Controls remain
@@ -58,3 +58,7 @@ The custom card-shape draw callbacks have been removed. Tab slides retain the
 existing 220 ms animation and use native rounded rectangle rendering. An
 intermittent framebuffer-capture reset recurred during verification; it remains
 unresolved and is separate from a successful navigation check.
+
+The bottom dock extends beyond the lower screen edge. Extra bottom padding keeps
+the pills, icons and labels at their existing positions. The shared status/Wi-Fi
+card and all its contents are raised 8 px while remaining attached to the top bezel.

@@ -67,7 +67,7 @@ try:
         tap(x, 566)
         d = data()
         assert d['page'] == page and d['dialog'] == 'none'
-        assert tuple(d[k] for k in ('header_x', 'header_y', 'header_w', 'header_h')) == (502, -28, 506, 96)
+        assert tuple(d[k] for k in ('header_x', 'header_y', 'header_w', 'header_h')) == (502, -36, 506, 96)
         idle()
         shot(name)
     tap(691, 566)

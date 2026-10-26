@@ -479,7 +479,9 @@ CNC dock centres are x=116/314/512/710/908 at y=566. Actuator mode hides Files
 and Macros but keeps Diagnostics. Input diagnostics lives on this read-only
 page, not a Settings row or modal. Retain unknown/stale and pin-reporting states.
 
-The shared status/Wi-Fi card is a native rounded rectangle at (502,-28),
+The shared status/Wi-Fi card is a native rounded rectangle at (502,-36),
 506x96 with radius 28. Its upper corners sit off-screen so it joins the bezel.
-Keep its bottom edge at y=68 and its text/icon at their current visible positions;
+Keep its bottom edge at y=60; the status and Wi-Fi contents sit 8 px above their
+original positions. The bottom dock is (16,540), 992x96 with radius 26 and 49 px
+bottom padding, extending off-screen while its pills remain at y=545, height 42;
 use normal screen clipping, without a canvas or custom raster drawing.
