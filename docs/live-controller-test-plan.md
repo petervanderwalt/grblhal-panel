@@ -66,3 +66,9 @@ For every executed case record **pass**, **fail** or **not tested**, firmware re
 CNC controls now keep their appearance through Idle/Jog, with live positions and status updated independently. Control styling runs only when availability or the mode selector changes; Wi-Fi labels and signal styling update only when their displayed values change. Native alarm/disconnect disabling and model command guards remain in effect. Rejected busy jog taps do not queue another move or open a blocking notice.
 
 The isolated response check also verifies unchanged jog_control_updates across idle, continuous and incremental cycles, enabled-looking Jog controls with can_setup false, and actual disabling/re-enabling for disconnect and faults. The first live repeat measured 50/60/100 ms holds at 1.46/1.75/2.62 mm; host round trips were 157/169/209 ms. These injected durations do not establish a minimum physical-finger travel; physical tap feel still needs user confirmation.
+
+### Revised jog presets
+
+Fast / Med / Slow now use 100% / 40% / 10%, as requested. The controller was read directly: X/Y maximum 7000 mm/min and Z 3000 mm/min, giving Slow X/Y 700 and Z 300 mm/min. These values are observations, not firmware defaults. Every moving axis must have a valid reported maximum; the old 1000 mm/min fallback has been removed. The next jog uses updated reports immediately. Earlier 25% timing/travel results above describe the previous preset, not the revised Slow speed.
+
+The revised presets passed embedded model and real-LCD command checks, including missing/partial-rate rejection and use of a changed reported rate. Live Slow holds of 50/60/100 ms then moved 0.58/0.69/1.05 mm on this controller. Controller maximum-rate settings were not edited.

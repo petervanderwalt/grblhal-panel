@@ -59,14 +59,14 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as po
         idle()
         tap(694, 358)  # Empty centre must not send a command
         assert command("LAST") == last
-        for x, rate in ((638, "F1500.0"), (728, "F750.0")):
+        for x, rate in ((638, "F1200.0"), (728, "F300.0")):
             tap(x, 120)
             tap(578, 268)
             assert rate in command("LAST")
             command("RX ok")
             idle()
         tap(938, 290)  # Slow Z uses the Z axis rate, beside XY
-        assert "Z" in command("LAST") and "F300.0" in command("LAST")
+        assert "Z" in command("LAST") and "F120.0" in command("LAST")
         command("RX ok")
         idle()
         tap(548, 120)

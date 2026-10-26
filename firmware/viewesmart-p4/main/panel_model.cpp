@@ -316,14 +316,13 @@ bool Model::jog_preset(const char *directions, float distance, int speed) {
         return false;
     float rate = 0;
     for (int i = 0; i < 3; i++) {
-        if (directions[i] == '0' || state.axis_max_rate[i] <= 0)
-            continue;
+        if (directions[i] == '0') continue;
+        if (!isfinite(state.axis_max_rate[i]) || state.axis_max_rate[i] <= 0) return false;
         if (!rate || state.axis_max_rate[i] < rate)
             rate = state.axis_max_rate[i];
     }
-    if (!rate)
-        rate = 1000; // Same fallback as Ooznest Control before settings arrive.
-    const float factor[] = {1, .5f, .25f};
+    if (!rate) return false;
+    const float factor[] = {1, .4f, .1f};
     return jog_vector(directions, distance, fmaxf(.1f, rate * factor[speed]));
 }
 bool Model::home(char axis) {

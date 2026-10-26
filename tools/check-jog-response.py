@@ -13,6 +13,11 @@ def cmd(t):return r.debug(p,t)
 def data(t='PREFS'):return json.loads(cmd(t).removeprefix('@UGDATA '))
 def tap(x,y):r.exchange(p,'tap',point=(x,y));time.sleep(.3)
 def idle():cmd('RX <Idle|MPos:100,0,0|WCO:0,0,0|FS:0,0|Pn:i>');time.sleep(.2)
+def wait_enabled():
+ for _ in range(25):
+  if data()['jog_enabled']:return
+  time.sleep(.1)
+ raise AssertionError('Reported maximum rates did not enable jog controls')
 original=None
 try:
  p.open();r.buffered_lines(p);p.write(b'\nUG SYNC\n');time.sleep(.5);p.reset_input_buffer()
@@ -22,7 +27,13 @@ try:
   kind=data()['form_kind']
   if kind=='none':break
   tap(264,520) if kind=='confirmation' else tap(976,32)
- tap(116,566);idle();tap(878,154)
+ tap(116,566);idle();tap(638,154)
+ cmd('RX $110=6000');cmd('RX $111=3000');cmd('RX $112=1200')
+ for x,feed in ((568,'F3000.0'),(652,'F1200.0'),(740,'F300.0')):
+  tap(x,214);idle();cmd('HOLD 575 291 60');assert feed in cmd('LAST'),feed
+ idle();cmd('HOLD 940 291 60');assert 'F120.0' in cmd('LAST')
+ print('PASS dynamic 100/40/10 axis-rate presets and diagonal minimum',flush=True)
+ idle();tap(878,154)
  assert data()['continuous']
  time.sleep(.5)
  baseline=data()['jog_control_updates']
@@ -44,10 +55,10 @@ try:
  d=data();assert d['jog_control_updates']==baseline and d['jog_enabled'] and not d['can_setup'],d
  idle();assert data()['jog_control_updates']==baseline
  cmd('DEMO OFF');time.sleep(.4);assert not data()['jog_enabled'],'Disconnect did not disable jog controls'
- cmd('DEMO ON');idle();assert data()['jog_enabled'],'Reconnect did not enable jog controls'
+ cmd('DEMO ON');idle();wait_enabled()
  cmd('RX ALARM:1');time.sleep(.4);assert data()['form_kind']=='confirmation'
  tap(264,520);time.sleep(.3);assert not data()['jog_enabled'],'Alarm did not disable jog controls'
- cmd('DEMO ON');idle();assert data()['jog_enabled'],'Controls stayed disabled after clearing alarm'
+ cmd('DEMO ON');idle();wait_enabled()
  print('PASS stable Idle/Jog controls; model setup guard, incremental completion, disconnect and fault disabling',flush=True)
 finally:
  if p.is_open:
@@ -55,5 +66,6 @@ finally:
    cmd('DEMO ON');idle()
    if original and data()['page']==0:
     tap(878 if original['continuous'] else 638,154)
+    tap((568,652,740)[original['jog_speed']],214)
    cmd('TOUCH ON')
   finally:p.close()

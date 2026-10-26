@@ -204,8 +204,11 @@ further manual motion. Never generate G20 to match LCD units or change `$13`.
 Convert mm/inch only on the LCD; geometry and runtime commands remain mm.
 Jog steps: 0.1, 1, 10, 100 mm or 0.01, 0.1, 1, 10 inch (0.254, 2.54, 25.4, 254 mm).
 Use actual directional arrows. Continuous cancels on release/lost press;
-incremental finishes its distance. Fast / Med / Slow use 100% / 50% / 25% of the
-minimum maximum rate among moving axes (`$110`-`$112`), fallback 1000 mm/min.
+incremental finishes its distance. Fast / Med / Slow use 100% / 40% / 10% of the
+minimum controller-reported maximum rate among moving axes (`$110`-`$112`).
+There is no fallback rate: every moving axis must have a valid report. Jog direction
+buttons stay disabled until their required rates arrive; include known-rate axes
+in the Jog appearance key. New reports affect the next jog without rebooting.
 Legacy Preferences `step` and `jog_feed` preserve NVS blob compatibility. Separate
 keys are `jogspeed`, `stepidx` and `inches`.
 

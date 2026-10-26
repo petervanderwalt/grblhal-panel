@@ -133,6 +133,7 @@ static bool continuous = false, jog_held = false;
 static uint32_t jog_pressed_at, jog_hold_ms;
 static uint32_t jog_control_key = UINT32_MAX, jog_control_updates;
 static lv_obj_t *jog_buttons[10];
+static const char *const jog_directions[] = {"-+0", "0+0", "++0", "-00", "+00", "--0", "0-0", "+-0", "00+", "00-"};
 static int jog_count;
 static char home_axis;
 struct Edit {
@@ -698,8 +699,7 @@ static void jog_event(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
         if (jog_held)
             return;
-        const char *directions[] = {"-+0", "0+0", "++0", "-00", "+00", "--0", "0-0", "+-0", "00+", "00-"};
-        bool ok = runtime_action(Action::Jog, directions[(uintptr_t)lv_event_get_user_data(e)],
+        bool ok = runtime_action(Action::Jog, jog_directions[(uintptr_t)lv_event_get_user_data(e)],
                                  continuous ? 10000 : jog_step_mm(inches, step_index), jog_speed);
         jog_held = ok && continuous;
         if (jog_held) jog_pressed_at = now();
@@ -1561,6 +1561,9 @@ static void refresh(lv_timer_t *) {
     }
     if(page==FilesPage && local_preview_show)cached_refresh();
     bool cnc_jog = page == JogPage && !actuator_mode;
+    unsigned known_rate_axes = 0;
+    for (unsigned i = 0; i < 3; ++i)
+        if (isfinite(state.axis_max_rate[i]) && state.axis_max_rate[i] > 0) known_rate_axes |= 1u << i;
     bool manual_motion = cnc_jog && state.online && state.identified && state.status &&
                          !state.alarm && !state.error && !state.sd_active && !state.probing && !state.uploading &&
                          !state.macro_failed && !state.job_failed &&
@@ -1586,7 +1589,7 @@ static void refresh(lv_timer_t *) {
         uint32_t key = unsigned(on) | unsigned(brief_busy) << 1 | unsigned(steady_selection) << 2 |
                        unsigned(state.online) << 3 | unsigned(state.identified) << 4 | unsigned(state.status) << 5 |
                        unsigned(continuous) << 6 | unsigned(state.coordinates) << 7 | unsigned(state.wco_known) << 8 |
-                       unsigned(state.modal_known) << 9;
+                       unsigned(state.modal_known) << 9 | known_rate_axes << 10;
         if (key == jog_control_key) { refresh_jog_data(); return; }
         jog_control_key = key;
         ++jog_control_updates;
@@ -1615,8 +1618,11 @@ static void refresh(lv_timer_t *) {
     enable(zero_all_btn, on, brief_busy);
     for (int i = 0; i < 2; i++)
         enable(goto_buttons[i], on && state.coordinates && state.wco_known && state.modal_known, brief_busy);
-    for (int i = 0; i < jog_count; i++)
-        enable(jog_buttons[i], on || jog_held, brief_busy);
+    for (int i = 0; i < jog_count; i++) {
+        unsigned required = 0;
+        for (unsigned axis = 0; axis < 3; ++axis) if (jog_directions[i][axis] != '0') required |= 1u << axis;
+        enable(jog_buttons[i], (on || jog_held) && (known_rate_axes & required) == required, brief_busy);
+    }
     bool can_home = on || (state.online && state.identified && state.status && !state.busy &&
                            !state.sd_active && !strncmp(state.mode, "Alarm", 5));
     enable(home_btn, can_home, brief_busy);

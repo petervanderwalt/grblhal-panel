@@ -30,8 +30,10 @@ browser motion commands and Home Assistant control are planned. See the
 
 - **Jog:** eight-direction XY pad, separate Z controls, incremental moves or
   continuous movement while held. Releasing a continuous jog stops it.
-- **Jog speed:** Slow, Med and Fast presets, with metric steps of
-  0.1 / 1 / 10 / 100 mm or imperial steps of 0.01 / 0.1 / 1 / 10 inch.
+- **Jog speed:** Fast / Med / Slow use 100% / 40% / 10% of the controller-reported
+  maximum rate for the moving axes. Diagonals use the lower axis rate; jogging
+  waits for valid rate reports. Metric steps are 0.1 / 1 / 10 / 100 mm, or
+  imperial steps 0.01 / 0.1 / 1 / 10 inch.
 - **Position:** compact machine and work coordinates, individual axis homing
   and zeroing, Home All, Set Zero All, Go to XY Zero and Go to Z Zero.
 - **Work offsets:** G54â€“G59 selection beside the Probe control.
