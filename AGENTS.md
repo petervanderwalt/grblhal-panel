@@ -146,12 +146,12 @@ Filter realtime characters from filenames and honour `UNUSABLE` entries.
 
 Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
 rows on the left and group the entire XYZ pad on the right, with Z immediately
-beside XY and a blank centre. Use Jog / Files / Macros / Settings navigation.
+beside XY and a blank centre. Use Jog / Files / Macros / Diag / Settings navigation.
 Jog work coordinates use 28 px type and DRO rows have no coloured borders.
 Do not show protocol command bytes or a redundant units/WCS footer to end users.
 The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
 duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
-Jog / Files / Macros / Settings tab accents are blue / green / teal / orange, with opaque
+Jog / Files / Macros / Diag / Settings tab accents are blue / green / teal / orange, with opaque
 backgrounds and a solid selected fill; no top selection line. Tab taps slide the
 shared page_layer horizontally for 220 ms; keep the header and tab bar stationary.
 The animation layer holds controls only during the slide; restore their root
@@ -217,7 +217,7 @@ contact, geometry and spindle interlocks.
 
 On Job, Pause/Resume and Stop sit side by side below the DRO. Pause changes to
 Resume after hold feedback. Dialogs cover these controls and have their own close
-or Cancel action. Jog / Files / Macros / Settings use the native LVGL bottom tabview,
+or Cancel action. Jog / Files / Macros / Diag / Settings use the native LVGL bottom tabview,
 with no content swiping; hide it during jobs and until completion is acknowledged.
 
 `tools/check-workflow.py` checks LCD units, settings swipes, the Probe modal,
@@ -288,7 +288,7 @@ accept `PANEL_PORT` to override COM12.
 
 ## Inputs, accessories and macros
 
-Settings ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ Inputs is read-only and works in both modes. Preserve the distinction
+Diagnostics is read-only and works in both modes. Preserve the distinction
 between `Pn:` control/limit snapshots and extended I/J/K probe deltas. Missing
 or stale feedback must not look active or safely released. Never enable `$10`
 automatically. The Jog Spindle / coolant button opens manual controls; use
@@ -296,7 +296,7 @@ controller `$30`/`$31` limits and explicit spindle-start confirmation. `A:` is
 reported accessory state, not a prediction from a click. Retain spindle-direction
 interlocks for probing and actuators, including controllers without `FS:` RPM.
 
-CNC tab order is Jog / Files / Macros / Settings. Internal page IDs remain
+CNC tab order is Jog / Files / Macros / Diag / Settings. Internal page IDs remain
 Jog=0, Files=1, Settings=2, Macros=3; map native tab indices explicitly. Actuator
 mode hides Files and Macros. `panel_tools_ui.inc` and `panel_macros.h` contain
 the screens and bounded NVS store. Macros use the acknowledged model queue,
@@ -471,3 +471,10 @@ object can otherwise retain reverted PSRAM buffer experiments.
 Settings keeps its heading above the rounded outer card, matching Files/Macros.
 The flat scrollable list is inset inside that card; keep the heading stationary
 while scrolling and include it in the normal page slide.
+
+The main CNC dock is Jog / Files / Macros / Diag / Settings. Preserve
+page IDs Jog=0, Files=1, Settings=2, Macros=3, Job=4, Complete=5; Diagnostics=6.
+Use tab_pages/tab_for_page instead of page-number comparisons for navigation.
+CNC dock centres are x=116/314/512/710/908 at y=566. Actuator mode hides Files
+and Macros but keeps Diagnostics. Input diagnostics lives on this read-only
+page, not a Settings row or modal. Retain unknown/stale and pin-reporting states.

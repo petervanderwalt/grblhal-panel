@@ -24,7 +24,7 @@ try:
  time.sleep(.3);p.reset_input_buffer();cmd('DEMO ON');cmd('TOUCH OFF');time.sleep(.5)
  cmd('RX <Idle|MPos:125.375,84.5,-12.25|WCO:100,50,-20|FS:0,0|Pn:i>')
  before=data()['macro_count']
- original=data();assert original['dialog']=='none' and not original['actuator_mode'] and not original['inches'], 'Start in CNC mode with metric display and no dialog';original_server=json.loads(cmd('SD STATE').removeprefix('@UGDATA '))['server'];tap(730,566);assert data()['page']==2
+ original=data();assert original['dialog']=='none' and not original['actuator_mode'] and not original['inches'], 'Start in CNC mode with metric display and no dialog';original_server=json.loads(cmd('SD STATE').removeprefix('@UGDATA '))['server'];tap(870, 566);assert data()['page']==2
  def scroll_to(target):
   for _ in range(4):
    current=data()['scroll_y'];delta=target-current
@@ -35,11 +35,11 @@ try:
  y=lambda local:round(70+local-data()['scroll_y'])
  tap(850,y(570));assert data()['dialog']=='preview-server';shot('settings-preview-server-large');tap(943,220);tap(744,108);assert data()['dialog']=='none'
  assert json.loads(cmd('SD STATE').removeprefix('@UGDATA '))['server']==original_server
- scroll_to(480);tap(850,y(658));assert data()['dialog']=='inputs';tap(916,62);assert data()['dialog']=='none'
- scroll_to(480);tap(850,y(746));time.sleep(2)
+ tap(691,566);assert data()['page']==6 and data()['dialog']=='none';tap(870,566)
+ scroll_to(480);tap(850,y(658));time.sleep(2)
  settings=json.loads(cmd('STATE').removeprefix('@UGDATA '));assert settings['settings_result']==1
  tap(956,48);assert data()['dialog']=='none'
- scroll_to(650);row_y=y(882);assert 110<row_y<475
+ scroll_to(650);row_y=y(794);assert 110<row_y<475
  keys=('x','y','z','feed','inset')
  points=((118,108),(310,108),(502,108),(258,184),(770,184))
  def field(axis,text):
@@ -50,7 +50,7 @@ try:
  for key in keys:assert data()[key]==original[key]
  for axis,key in enumerate(keys):field(axis,f"{original[key]:.1f}")
  tap(906,108);assert data()['dialog']=='none'
- scroll_to(650);row_y=y(882);tap(850,row_y);assert data()['dialog']=='probe-offsets'
+ scroll_to(650);row_y=y(794);tap(850,row_y);assert data()['dialog']=='probe-offsets'
  delta=(.1,.2,.3,1,.5)
  for axis,key in enumerate(keys):field(axis,f"{original[key]+delta[axis]:.1f}")
  for axis,key in enumerate(keys):assert abs(data()['probe_edit_'+key]-(original[key]+delta[axis]))<.001
@@ -58,19 +58,19 @@ try:
  field(4,f"{original['inset']+.5:.1f}")
  shot('settings-probe-offsets-large');tap(690,108);assert data()['dialog']=='none'
  for key in keys:assert data()[key]==original[key]
- scroll_to(650);tap(850,y(1026));assert data()['dialog']=='number-keypad'
+ scroll_to(650);tap(850,y(938));assert data()['dialog']=='number-keypad'
  tap(380,459);assert data()['dialog']=='none';shot('settings-popup-closed')
  for key in ('x','y','z','diameter','feed','inset','tx','rx','baud','inches','step','actuator_mode','a_rotary','macro_count','brightness'):
   assert data()[key]==original[key],key
- tap(586,566);assert data()['page']==3
+ tap(512, 566);assert data()['page']==3
  if before:
   tap(236,134);assert data()['dialog']=='other';shot('macro-editor-consistent')
   tap(724,176);tap(360,409);assert data()['dialog']=='none';assert data()['macro_count']==before
  tap(408,42);assert data()['dialog']=='other';shot('macro-add-consistent')
  tap(724,176);assert data()['dialog']=='none';assert data()['macro_count']==before
- tap(730,566);shot('settings-root-rows')
+ tap(870, 566);shot('settings-root-rows')
  assert data()['macro_count']==before
- print('PASS three settings actions, editor input and navigation; preferences unchanged',flush=True)
+ print('PASS settings actions and Troubleshooting, editor input and navigation; preferences unchanged',flush=True)
 finally:
  if p.is_open:
   cmd('DEMO ON');time.sleep(.3);cmd('RX <Idle|FS:0,0>');cmd('TOUCH ON');p.close()

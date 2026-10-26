@@ -55,7 +55,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         cmd('DEMO ON')
         cmd('TOUCH OFF')
         assert not data()['actuator_mode'] and data()['macro_count'] == 0
-        tap(586, 566)
+        tap(512, 566)
         base = 'G21\nG90\n('
         code = 'G21\nG90' if args.short_samples else base + 'x' * (768 - len(base) - 1) + ')'
         for i in range(20):
@@ -75,7 +75,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         cmd('DEMO ON')
         cmd('TOUCH OFF')
         assert data()['macro_count'] == 20, 'Macro library did not persist'
-        tap(586, 566)
+        tap(512, 566)
         tap(850, 462)  # Last tile (row five, column four)
         if not args.no_captures:
             r.exchange(p, 'shot', Path('captures/tools/panel-macro-confirm.png'))
@@ -88,7 +88,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
             tap(724, 176)
             tap(630, 409)
             assert data()['macro_count'] == 19 - i
-        tap(285, 566)
+        tap(154, 566)
         print('PASS: all 20 temporary macros saved, survived reboot, ran and were removed')
     finally:
         cmd('TOUCH ON')

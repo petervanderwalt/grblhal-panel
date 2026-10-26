@@ -5,7 +5,7 @@ constexpr uint32_t CONCEPT_BG = 0x34373C, CONCEPT_CARD = 0x080B0D,
                    CONCEPT_MUTED = 0x94A0A5, CONCEPT_LIME = 0xD9F95C;
 constexpr uint32_t CONCEPT_AXES[] = {0xFF8379, 0x83E6B0, 0x78DEEF};
 static bool concept_active() { return page == JogPage && !actuator_mode; }
-static bool concept_header_active() { return page >= JogPage && page <= CompletePage; }
+static bool concept_header_active() { return tab_for_page(page) >= 0 || page == JobPage || page == CompletePage; }
 struct ConceptGeometry { lv_obj_t *obj; int x, y, w, h; };
 static ConceptGeometry concept_geometry[48];
 static unsigned concept_geometry_count;
@@ -94,14 +94,14 @@ static void concept_library_card() {
     lv_obj_move_background(card);
 }
 static void concept_dock() {
-    lv_obj_set_pos(tabview, 212, 540); lv_obj_set_size(tabview, 600, 52);
+    lv_obj_set_pos(tabview, 16, 540); lv_obj_set_size(tabview, 992, 52);
     lv_tabview_set_tab_bar_size(tabview, 52);
     auto bar = lv_tabview_get_tab_bar(tabview);
     lv_obj_set_style_bg_color(bar, lv_color_hex(CONCEPT_CARD), 0);
     lv_obj_set_style_radius(bar, 26, 0);
     lv_obj_set_style_pad_all(bar, 5, 0); lv_obj_set_style_pad_column(bar, 6, 0);
-    const char *names[] = {LV_SYMBOL_SHUFFLE "  Jog", LV_SYMBOL_FILE "  Files", LV_SYMBOL_LIST "  Macros", LV_SYMBOL_SETTINGS "  Settings"};
-    for (int i = 0; i < 4; ++i) {
+    const char *names[] = {LV_SYMBOL_SHUFFLE "  Jog", LV_SYMBOL_FILE "  Files", LV_SYMBOL_LIST "  Macros", LV_SYMBOL_EYE_OPEN "  Diag", LV_SYMBOL_SETTINGS "  Settings"};
+    for (int i = 0; i < 5; ++i) {
         lv_label_set_text(lv_obj_get_child(nav[i], 0), i == 0 && actuator_mode ? LV_SYMBOL_SHUFFLE "  Actuators" : names[i]);
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(CONCEPT_CARD), 0);
         lv_obj_set_style_bg_color(nav[i], lv_color_hex(CONCEPT_INK), LV_STATE_CHECKED);
@@ -113,17 +113,17 @@ static void concept_dock() {
         lv_obj_set_style_pad_all(nav[i], 0, 0);
         lv_obj_set_height(nav[i], 42);
         auto caption = lv_obj_get_child(nav[i], 0);
-        int active = page == SettingsPage ? 3 : page == MacrosPage ? 2 : page;
+        int active = tab_for_page(page);
         lv_obj_set_style_text_color(caption, lv_color_hex(i == active ? CONCEPT_CARD : CONCEPT_MUTED), 0);
         lv_obj_set_style_text_font(caption, font(18), 0);
-        lv_obj_set_size(caption, 132, 26);
+        lv_obj_set_size(caption, 182, 26);
         lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(caption);
     }
 }
 static void concept_header() {
     lv_obj_update_layout(root);
-    if (concept_active() || page == FilesPage || page == MacrosPage || page == SettingsPage) {
+    if (concept_active() || page == FilesPage || page == MacrosPage || page == SettingsPage || page == DiagnosticsPage) {
         concept_skin(root, CONCEPT_BG, 0);
         concept_skin(lv_obj_get_child(root, 0), CONCEPT_BG, 0);
     }
@@ -167,6 +167,8 @@ static void concept_settings_controls(lv_obj_t *obj) {
             lv_obj_set_style_border_width(obj, 0, part);
             lv_obj_set_style_shadow_width(obj, 0, part);
         }
+    } else if (lv_obj_check_type(obj, &lv_led_class)) {
+        return;
     } else if (lv_obj_check_type(obj, &lv_slider_class)) {
         lv_obj_set_style_bg_color(obj, lv_color_hex(CONCEPT_PAD), LV_PART_MAIN);
         lv_obj_set_style_bg_color(obj, lv_color_hex(CONCEPT_AXES[2]), LV_PART_INDICATOR);
@@ -183,7 +185,7 @@ static void concept_settings_controls(lv_obj_t *obj) {
     }
 }
 static void concept_settings_layout() {
-    settings_title = label(root, "Settings", 40, 20, 400, 28, CONCEPT_INK);
+    page_title = label(root, page == DiagnosticsPage ? "Diagnostics" : "Settings", 40, 20, 440, 28, CONCEPT_INK);
     concept_place(right_surface, 16, 76, 992, 450);
     concept_skin(right_surface, CONCEPT_CARD, 28);
     visibility(right_surface, true);
@@ -192,7 +194,7 @@ static void concept_settings_layout() {
     lv_obj_set_style_bg_opa(body, LV_OPA_COVER, LV_STATE_USER_1);
     for (unsigned i = 0; i < lv_obj_get_child_count(body); ++i) {
         auto row = lv_obj_get_child(body, i);
-        lv_obj_set_y(row, lv_obj_get_y(row) - 24);
+        if (page == SettingsPage) lv_obj_set_y(row, lv_obj_get_y(row) - 24);
         concept_settings_controls(row);
     }
 }
@@ -202,7 +204,7 @@ static void concept_layout() {
     concept_header();
     if (page == FilesPage) { concept_files_layout(); return; }
     if (page == MacrosPage) { concept_macros_layout(); return; }
-    if (page == SettingsPage) { concept_settings_layout(); return; }
+    if (page == SettingsPage || page == DiagnosticsPage) { concept_settings_layout(); return; }
     if (!concept_active()) return;
     concept_place(left_surface, 16, 16, 470, 510);
     concept_place(right_surface, 502, 76, 506, 450);

@@ -36,7 +36,7 @@ with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p, (a
  def data(s='STATE'):return json.loads(cmd(s).removeprefix('@UGDATA '))
  def tap(x,y):r.exchange(p,'tap',point=(x,y));time.sleep(.4)
  def location(local):
-  tap(730,566);tap(830,266);tap(830,313 if local else 350);tap(434,566)
+  tap(870, 566);tap(830,266);tap(830,313 if local else 350);tap(333, 566)
   assert data('SD STATE')['local']==local
  def choose_view(view):
   tap(885,190)
@@ -50,7 +50,7 @@ with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p, (a
   cmd('DEMO ON');cmd('TOUCH OFF');time.sleep(1)
   assert not data()['job'],'Stop the current demo job first'
   if data('PREFS').get('local_preview'):tap(56,112)
-  tap(434,566)
+  tap(333, 566)
   if not data('SD STATE')['local']:location(True)
   sd=data('SD STATE')
   for _ in range(sd['page']):tap(104,494)
@@ -91,7 +91,7 @@ with serial.Serial(port=None,baudrate=115200,timeout=1,write_timeout=5) as p, (a
   assert not data('SD STATE')['local']
   time.sleep(.5);assert data()['files']==3
   shot('panel-controller-files')
-  tap(730,566);shot('panel-settings');tap(380,96);shot('panel-preview-server')
+  tap(870, 566);shot('panel-settings');tap(380,96);shot('panel-preview-server')
   tap(940,55);location(True)
   assert data('SD STATE')['local']
   cmd('DEMO ON');time.sleep(.5)

@@ -1,7 +1,7 @@
 # Actuator mode
 
 Select **Settings → Mode → Actuator**. The bottom navigation becomes
-**Actuators / Settings**. Selecting CNC restores Jog / Files / Macros / Settings.
+**Actuators / Diag / Settings**. Selecting CNC restores Jog / Files / Macros / Diag / Settings.
 The mode and each actuator's configuration are saved across restarts.
 
 Actuator mode treats X, Y, Z and A as four separate actuators. X/Y/Z are linear;

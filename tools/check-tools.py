@@ -63,8 +63,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         assert not prefs['actuator_mode'], 'Select CNC mode first'
         assert prefs['macro_count'] == 0, 'Use a development display with an empty macro library'
         cmd('TEST')
-        tap(896, 564)
-        tap(592, 96)
+        tap(691, 566)
         cmd('RX $10=511')
         cmd('RX <Idle|Pn:XDIJ>')
         shot('panel-inputs')
@@ -75,8 +74,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         assert data()['inputs'] & (1 << 8), 'An omitted probe must retain its state'
         cmd('RX <Idle|Pn:i>')
         shot('panel-inputs-inactive')
-        tap(916, 62)
-        tap(128, 564)
+        tap(154, 564)
         shot('panel-jog')
         tap(248, 432)
         cmd('RX <Idle|FS:0,0|A:>')
@@ -105,7 +103,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         assert cmd('LAST') == before, 'Accessories must lock during Hold'
         cmd('RX <Idle|FS:0,0|A:>')
         tap(916, 56)
-        tap(640, 564)
+        tap(512, 564)
         assert data('PREFS')['page'] == 3
         tap(890, 110)  # Add in header
         field(0, 'Metric / absolute')
@@ -125,13 +123,13 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
             cmd('TOUCH OFF')
             time.sleep(1)
             assert data('PREFS')['macro_count'] == 1, 'Default-colour macro did not persist'
-            tap(640, 564)
+            tap(512, 564)
         shot('panel-macros')
         tap(110, 175)  # Run tile
         shot('panel-macro-confirm')
         tap(630, 409)
         assert data()['macro_running'] and '$G' in cmd('LAST')
-        tap(128, 564)
+        tap(154, 564)
         assert data('PREFS')['page'] == 3, 'Keep Stop accessible while a macro runs'
         tap(680, 110)
         shot('panel-macro-stop')
@@ -149,7 +147,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(680, 110)
         tap(630, 409)
         assert data('PREFS')['page'] == 0 and not data()['error']
-        tap(640, 564)
+        tap(512, 564)
         tap(232, 175)  # Edit tile
         field(0, 'Metric setup')
         tap(920, 176)
@@ -158,7 +156,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as p:
         tap(724, 176)
         tap(630, 409)
         assert data('PREFS')['macro_count'] == 0
-        tap(128, 564)
+        tap(154, 564)
         print('PASS: live inputs, spindle keypad/CW/CCW/Off, coolant interlocks, macro validation/save/edit/run/stop/delete and navigation')
     finally:
         cmd('TOUCH ON')

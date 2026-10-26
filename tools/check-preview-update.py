@@ -23,7 +23,7 @@ try:
   break
  time.sleep(.3);p.reset_input_buffer();cmd('DEMO ON');cmd('TOUCH OFF');time.sleep(.5)
  cmd('RX <Idle|MPos:125.375,84.5,-12.25|WCO:100,50,-20|FS:0,0|Pn:i>')
- tap(434,566)
+ tap(333, 566)
  def sd():return json.loads(cmd('SD STATE').removeprefix('@UGDATA '))
  for _ in range(20):
   t=sd()
@@ -48,7 +48,7 @@ try:
  tap(752,454)
  for _ in range(8):
   assert not sd()['preparing'] and not sd()['update_active'];time.sleep(.5)
- tap(285,566);tap(434,566)
+ tap(154, 566);tap(333, 566)
  assert not sd()['preparing'] and not sd()['update_active']
  print('PASS idle browsing starts no work; explicit update starts; Cancel stops; navigation does not restart',flush=True)
 finally:

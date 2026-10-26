@@ -77,7 +77,7 @@ def main():
             remote.exchange(port, "shot", args.output / (name + ".png"))
 
         def page(index):
-            tap((128, 384, 896, 640)[index], 564)
+            tap((154, 333, 870, 512)[index], 564)
             assert data("PREFS")["page"] == index
 
         def idle():

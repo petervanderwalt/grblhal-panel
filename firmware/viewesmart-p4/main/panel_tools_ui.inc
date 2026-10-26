@@ -63,7 +63,7 @@ static void tools_refresh() {
                          state.spindle <= 0 && s.number >= 0 && !s.active);
         }
     }
-    if (inputs_open) {
+    if (page == DiagnosticsPage) {
         bool reporting = !state.pins_reporting_known || state.pins_reporting;
         tools_text(input_connection, !fresh ? "Controller feedback unavailable" : !reporting ?
                    "Pin reporting is disabled in controller setting $10" : "Live inputs");
@@ -106,29 +106,27 @@ static void tools_refresh() {
         tools_enable(macro_stop, state.online);
     }
 }
-static void show_inputs(lv_event_t *) {
-    auto c = open_modal("Input diagnostics", 920, 540);
-    modal_close_button(c);
-    input_connection = label(c, "", 24, 80, 440, 18, MUTED);
+static void build_inputs() {
+    auto c = body;
+    input_connection = label(c, "", 16, 8, 488, 16, MUTED);
     const char *legend[] = {"Active", "Inactive", "Unknown"};
     const uint32_t colors[] = {RED, GREEN, MUTED};
     for (int i = 0; i < 3; ++i) {
         auto led = lv_led_create(c);
-        lv_obj_set_pos(led, 500 + i * 132, 80); lv_obj_set_size(led, 16, 16);
+        lv_obj_set_pos(led, 548 + i * 132, 12); lv_obj_set_size(led, 16, 16);
         lv_led_set_color(led, lv_color_hex(colors[i]));
         lv_led_set_brightness(led, i == 2 ? 120 : 255);
-        label(c, legend[i], 524 + i * 132, 80, 104, 14, MUTED);
+        label(c, legend[i], 572 + i * 132, 12, 104, 14, MUTED);
     }
     for (unsigned i = 0; i < 19; ++i) {
-        int x = 24 + (i / 7) * 294, y = 120 + (i % 7) * 56;
-        label(c, input_names[i], x + 36, y, 240, 16);
+        int x = 16 + (i / 7) * 312, y = 68 + (i % 7) * 48;
+        label(c, input_names[i], x + 36, y, 264, 18);
         input_values[i] = lv_led_create(c);
         lv_obj_set_pos(input_values[i], x, y - 2);
         lv_obj_set_size(input_values[i], 22, 22);
         lv_obj_remove_flag(input_values[i], LV_OBJ_FLAG_CLICKABLE);
         input_display[i] = -1;
     }
-    inputs_open = true;
     runtime_snapshot(state); tools_refresh();
 }
 static void show_accessories(lv_event_t * = nullptr);

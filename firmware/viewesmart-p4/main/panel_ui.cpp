@@ -58,7 +58,12 @@ static uint8_t wifi_auth;
 static bool wifi_attempt;
 static lv_obj_t *wifi_password_error;
 static void show_wifi(lv_event_t * = nullptr);
-enum { JogPage, FilesPage, SettingsPage, MacrosPage, JobPage, CompletePage };
+enum { JogPage, FilesPage, SettingsPage, MacrosPage, JobPage, CompletePage, DiagnosticsPage };
+static constexpr int tab_pages[] = {JogPage, FilesPage, MacrosPage, DiagnosticsPage, SettingsPage};
+static int tab_for_page(int value) {
+    for (int i = 0; i < 5; ++i) if (tab_pages[i] == value) return i;
+    return -1;
+}
 static int page = JogPage;
 static bool inches = false, probe_return = false;
 static bool single_probe = true;
@@ -73,9 +78,9 @@ static void show_probe(lv_event_t * = nullptr);
 static lv_obj_t *left_surface, *right_surface, *tabview, *page_layer;
 static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
 static lv_obj_t *root, *body, *brand_label, *state_label, *axis_work[3], *axis_machine[3],
-    *axis_card[3], *nav[4];
-static lv_obj_t *accessories_btn, *settings_title;
-static bool inputs_open = false, accessories_open = false, spindles_open = false, macro_editor_open = false;
+    *axis_card[3], *nav[5];
+static lv_obj_t *accessories_btn, *page_title;
+static bool accessories_open = false, spindles_open = false, macro_editor_open = false;
 static lv_obj_t *macro_fields[2];
 static lv_obj_t *home_btn, *stop_btn, *job_controls, *job_pause, *probe_btn;
 static lv_obj_t *speed_choices, *mode_choices, *step_dropdown;
@@ -135,7 +140,7 @@ static void machine_refresh();
 static void show_machine_settings(lv_event_t *);
 static void parent_page_content(lv_obj_t *parent) {
     lv_obj_t *objects[] = {left_surface, right_surface, axis_card[0], axis_card[1], axis_card[2],
-                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn, settings_title};
+                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn, page_title};
     for (auto obj : objects)
         if (obj && lv_obj_get_parent(obj) != parent)
             lv_obj_set_parent(obj, parent);
@@ -435,7 +440,7 @@ static void close_modal() {
     probe_offsets_open = false;
     for (auto &field : probe_offset_fields) field = nullptr;
     probe_offsets_keyboard = probe_offsets_error = nullptr;
-    inputs_open = accessories_open = spindles_open = macro_editor_open = server_open = false;
+    accessories_open = spindles_open = macro_editor_open = server_open = false;
     macro_fields[0] = macro_fields[1] = nullptr;
     actuator_config_open = false;
     if (modal) lv_obj_delete(modal);
@@ -915,8 +920,8 @@ static void navigate(lv_event_t *e) {
     if (state.sd_active || page == JobPage || page == CompletePage)
         return;
     int target_tab = lv_tabview_get_tab_active(tabview);
-    int current_tab = page == SettingsPage ? 3 : page == MacrosPage ? 2 : page;
-    int target = target_tab == 2 ? MacrosPage : target_tab == 3 ? SettingsPage : target_tab;
+    int current_tab = tab_for_page(page);
+    int target = tab_pages[target_tab];
     if (target == page)
         return;
     int direction = target_tab > current_tab ? 1 : -1;
@@ -963,7 +968,7 @@ static void layout_dro() {
     visibility(work_heading, jog || job);
     visibility(left_surface, jog || job);
     visibility(right_surface, jog || job);
-    visibility(tabview, page < JobPage);
+    visibility(tabview, tab_for_page(page) >= 0);
     visibility(job_controls, job);
     layout_stop();
     visibility(dro_actions, jog);
@@ -1162,7 +1167,7 @@ static void build_page() {
     lv_obj_set_x(page_layer, 0);
     parent_page_content(root);
     concept_restore();
-    if (settings_title) { lv_obj_delete(settings_title); settings_title = nullptr; }
+    if (page_title) { lv_obj_delete(page_title); page_title = nullptr; }
     release_jog();
     jog_count = 0;
     wifi_row_status = nullptr;
@@ -1191,8 +1196,8 @@ static void build_page() {
     lv_obj_set_pos(body, compact ? 508 : 16, 76);
     lv_obj_set_size(body, compact ? 500 : 992, 424);
     lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
-    if (page < JobPage)
-        lv_tabview_set_active(tabview, page == SettingsPage ? 3 : page == MacrosPage ? 2 : page, LV_ANIM_OFF);
+    if (tab_for_page(page) >= 0)
+        lv_tabview_set_active(tabview, tab_for_page(page), LV_ANIM_OFF);
     bool floating = page == JogPage || page == JobPage;
     lv_obj_set_style_radius(body,page == SettingsPage ? 0 : 16,0);
     lv_obj_set_style_shadow_width(body,page == SettingsPage ? 0 : 14,0);
@@ -1260,6 +1265,8 @@ static void build_page() {
         files();
     } else if (page == MacrosPage) {
         build_macros();
+    } else if (page == DiagnosticsPage) {
+        build_inputs();
     } else if (page == SettingsPage) {
         lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(body, LV_DIR_VER);
@@ -1295,13 +1302,12 @@ static void build_page() {
         wifi_row_status = label(network, "", 20, 46, 620, 14, MUTED);
         button(network, "Networks", 680, 16, 270, 56, show_wifi);
         setting_action_row(body, "Preview server", "Configure", 532, show_preview_server);
-        setting_action_row(body, "Input diagnostics", "View inputs", 620, show_inputs);
-        setting_action_row(body, "Machine settings", "Configure", 708, show_machine_settings);
-        label(body, actuator_mode ? "Actuators" : "Probe", 0, 812, 960, 18, MUTED);
+        setting_action_row(body, "Machine settings", "Configure", 620, show_machine_settings);
+        label(body, actuator_mode ? "Actuators" : "Probe", 0, 724, 960, 18, MUTED);
         if (actuator_mode) {
             const char *styles[] = {"Buttons", "Position slider", "Three presets", "Repeat / speed slider"};
             for (int i = 0; i < 4; i++) {
-                auto row = settings_list_row(body, 844 + i * 88, 76);
+                auto row = settings_list_row(body, 756 + i * 88, 76);
                 char title[80];
                 snprintf(title, sizeof title, "%s / %c", actuator_prefs.axes[i].name, "XYZA"[i]);
                 label(row, title, 20, 10, 600, 20);
@@ -1309,9 +1315,9 @@ static void build_page() {
                 button(row, "Configure", 680, 10, 270, 56, actuator_config, i);
             }
         } else {
-            setting_action_row(body, "Probe configuration", "Edit", 844, show_probe_offsets);
+            setting_action_row(body, "Probe configuration", "Edit", 756, show_probe_offsets);
         }
-        int controller_y = actuator_mode ? 1308 : 956;
+        int controller_y = actuator_mode ? 1220 : 868;
         label(body, "Controller UART", 0, controller_y, 960, 18, MUTED);
         setting_row(body, "TX pin", prefs.tx, controller_y + 32, 8);
         setting_row(body, "RX pin", prefs.rx, controller_y + 120, 9);
@@ -1368,7 +1374,7 @@ static void refresh(lv_timer_t *) {
     }
     if (preview_update_open) { preview_update_refresh(); return; }
     if (server_open || probe_offsets_open) return;
-    if (inputs_open || accessories_open || spindles_open || macro_editor_open) {
+    if (accessories_open || spindles_open || macro_editor_open) {
         int fault = state.alarm ? state.alarm : -state.error;
         if (!fault) fault_seen = 0;
         if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
@@ -1518,7 +1524,7 @@ static void refresh(lv_timer_t *) {
     lv_obj_set_style_text_color(wifi_icon, lv_color_hex(wifi.connected ? WHITE : MUTED), 0);
     lv_obj_set_style_opa(wifi_icon, !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
                                          wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50, 0);
-    if (wifi_attempt && !wifi.connecting && page < JobPage) {
+    if (wifi_attempt && !wifi.connecting && tab_for_page(page) >= 0) {
         wifi_attempt = false;
         wifi_notification();
     }
@@ -1598,7 +1604,7 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_text_align(wifi_header_ip, LV_TEXT_ALIGN_RIGHT, 0);
     wifi_icon = label(wifi_header, LV_SYMBOL_WIFI, 412, 12, 40, 28, WHITE);
     state_label = label(root, "Disconnected", 174, 22, 352, 20, MUTED);
-    const char *tabs[] = {"Jog", "Files", "Macros", "Settings"};
+    const char *tabs[] = {"Jog", "Files", "Macros", "Diag", "Settings"};
     tabview = lv_tabview_create(root);
     lv_obj_set_pos(tabview, 8, 528);
     lv_obj_set_size(tabview, 1008, 72);
@@ -1609,9 +1615,9 @@ extern "C" void panel_ui_create() {
     lv_obj_set_style_bg_color(tab_bar, lv_color_hex(CARD), 0);
     lv_obj_set_style_pad_all(tab_bar, 0, 0);
     lv_obj_set_style_pad_column(tab_bar, 0, 0);
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         lv_tabview_add_tab(tabview, tabs[i]);
-        const uint32_t accents[] = {0x176FB5, 0x2D8530, 0x247C87, 0xA95B12};
+        const uint32_t accents[] = {0x176FB5, 0x2D8530, 0x247C87, 0x247C87, 0xA95B12};
         lv_color_t accent = lv_color_hex(accents[i]);
         nav[i] = lv_obj_get_child(tab_bar, i);
         lv_obj_set_style_bg_opa(nav[i], LV_OPA_COVER, 0);
@@ -1690,7 +1696,7 @@ extern "C" void panel_ui_create() {
 extern "C" void panel_ui_settings(char *buffer, size_t size) {
     const char *dialog = probe_offsets_open ? "probe-offsets" : number ? "number-keypad" :
                          server_open ? "preview-server" : machine_editor ? "machine-editor" :
-                         machine_browser ? "machine-settings" : inputs_open ? "inputs" : modal ? "other" : "none";
+                         machine_browser ? "machine-settings" : modal ? "other" : "none";
     unsigned macro_count = 0;
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,

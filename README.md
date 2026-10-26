@@ -9,7 +9,7 @@ or rotary A.
 The CNC landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
 screens keep the common machine operations within reach. Bottom tabs switch
-between Jog, Files, Macros and Settings with a short sliding transition.
+between Jog, Files, Macros, Diag and Settings with a short sliding transition.
 
 Settings also offers an **Actuator** mode for independent X/Y/Z/A
 mechanisms. It replaces Jog, Files and Macros with an **Actuators** screen. Configure
@@ -42,7 +42,7 @@ browser motion commands and Home Assistant control are planned. See the
 - **Spindle / coolant:** a Jog-screen button opens RPM, CW/CCW, spindle Off,
   mist and flood controls, plus discovery and activation of enabled spindles. Starting or switching the spindle requires confirmation. Controls
   use the controller's reported state and RPM limits and are available while idle.
-- **Input diagnostics:** Settings â†’ Inputs shows live limits, probes, door,
+- **Diag:** a dedicated tab shows live limits, probes, door,
   E-stop and other standard controller inputs. LEDs show red for active, green
   for inactive and grey for unknown or stale feedback.
 
@@ -184,7 +184,7 @@ Click a screenshot to open it at full size.
 | **Available spindle selection**<br><br>Choose from the spindles reported by the controller. The active spindle is identified; entries not enabled in controller settings remain unavailable. | [<img src="docs/screenshots/panel-spindles.png" alt="Available spindle selection" width="640">](docs/screenshots/panel-spindles.png) |
 | **Spindle activation confirmation**<br><br>Confirm the spindle to activate. Selection is available while idle with stopped-spindle feedback, and the controller is queried again afterward. | [<img src="docs/screenshots/panel-spindle-activate.png" alt="Spindle activation confirmation" width="640">](docs/screenshots/panel-spindle-activate.png) |
 | **Spindle start confirmation**<br><br>Check the direction and requested RPM before starting. The entered speed must fit the controller-reported range. | [<img src="docs/screenshots/panel-spindle-confirm.png" alt="Spindle start confirmation" width="640">](docs/screenshots/panel-spindle-confirm.png) |
-| **Twenty macro positions**<br><br>Keep up to twenty named sequences in a four-column grid. Tap a name to run it or the pencil to edit; Add macro stays in the header. | [<img src="docs/screenshots/panel-macros-full.png" alt="Four by five macro grid with sample entries" width="640">](docs/screenshots/panel-macros-full.png) |
+| **Twenty macro positions**<br><br>Keep up to twenty named sequences in a four-column grid. Tap a name to run it or the pencil to edit; Add macro stays in the header. | [<img src="docs/screenshots/panel-macros.png" alt="Macro library with Add and per-macro editing" width="640">](docs/screenshots/panel-macros.png) |
 | **Add or edit a macro**<br><br>Enter a name and G-code, then choose a tile colour. Saved macros remain available after restarting the display. | [<img src="docs/screenshots/panel-macro-editor.png" alt="Macro name colour and G-code editor" width="640">](docs/screenshots/panel-macro-editor.png) |
 | **Run, stop and error recovery**<br><br>Confirm the selected macro before execution. Each command waits for acknowledgement before the next is sent. | [<img src="docs/screenshots/panel-macro-confirm.png" alt="Macro run confirmation" width="640">](docs/screenshots/panel-macro-confirm.png) |
 | **Macro stop confirmation**<br><br>Stop asks for confirmation before resetting the controller. An interrupted macro cannot resume. | [<img src="docs/screenshots/panel-macro-stop.png" alt="Macro stop confirmation" width="640">](docs/screenshots/panel-macro-stop.png) |
@@ -198,7 +198,7 @@ Click a screenshot to open it at full size.
 | **Rotary A with degree readout and angular position dial**<br><br>Rotary A uses degrees and an angular position dial. Position changes apply when the finger is released. | [<img src="docs/screenshots/panel-actuator-rotary.png" alt="Actuator controls with rotary A" width="640">](docs/screenshots/panel-actuator-rotary.png) |
 | **Repeated endpoint travel with speed control**<br><br>Repeat travels between the two configured endpoints until Stop. The vertical slider sets the travel speed. | [<img src="docs/screenshots/panel-actuator-repeat.png" alt="Actuator repeat control" width="640">](docs/screenshots/panel-actuator-repeat.png) |
 | **Rotary A configuration**<br><br>Set A to Linear or Rotary. Saving updates only the controller bit for A and checks its reported type before permitting movement. | [<img src="docs/screenshots/panel-actuator-rotary-config.png" alt="Rotary A configuration" width="640">](docs/screenshots/panel-actuator-rotary-config.png) |
-| **Mode selection**<br><br>Choose CNC or Actuator mode. Actuator mode replaces the CNC tabs with Actuators and Settings. | [<img src="docs/screenshots/panel-settings-actuator-mode.png" alt="CNC and Actuator mode selection" width="640">](docs/screenshots/panel-settings-actuator-mode.png) |
+| **Mode selection**<br><br>Choose CNC or Actuator mode. Actuator mode replaces the CNC tabs with Actuators, Diag and Settings. | [<img src="docs/screenshots/panel-settings-actuator-mode.png" alt="CNC and Actuator mode selection" width="640">](docs/screenshots/panel-settings-actuator-mode.png) |
 | **Per-actuator settings**<br><br>Open the settings for each actuator independently. Labels and layout choices stay here rather than crowding the control screen. | [<img src="docs/screenshots/panel-actuator-settings.png" alt="Actuator configuration rows in Settings" width="640">](docs/screenshots/panel-actuator-settings.png) |
 | **Names, endpoint labels, positions and speed**<br><br>Edit the actuator name, endpoint labels, positions and speed with the onscreen keyboard. Labels can suit doors, camera sliders or other mechanisms. | [<img src="docs/screenshots/panel-actuator-config.png" alt="Actuator settings with LVGL keyboard" width="640">](docs/screenshots/panel-actuator-config.png) |
 
@@ -217,15 +217,21 @@ Click a screenshot to open it at full size.
 | **Homing confirmation**<br><br>Confirm homing before the machine starts its homing cycle. Individual-axis homing is also available beside the position readout. | [<img src="docs/screenshots/panel-home-confirm.png" alt="Home all confirmation" width="640">](docs/screenshots/panel-home-confirm.png) |
 | **Zeroing confirmation**<br><br>Confirm changes to the current work zero. Per-axis zero buttons and Set Zero All are on Jog. | [<img src="docs/screenshots/panel-zero-confirm.png" alt="Set work zero confirmation" width="640">](docs/screenshots/panel-zero-confirm.png) |
 
-### Settings
+### Diagnostics
 
 | Features and use | Preview |
 | --- | --- |
 | **Live input LEDs**<br><br>Check limits, probes, door, E-stop and other controller inputs live. Each LED sits directly beside its label: red is active, green inactive and grey unknown. | [<img src="docs/screenshots/panel-inputs.png" alt="Controller input diagnostics with active inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs.png) |
 | **Inactive input LEDs**<br><br>Inputs return to green when released. Unavailable or unknown inputs stay grey rather than implying a healthy signal. | [<img src="docs/screenshots/panel-inputs-inactive.png" alt="Controller input diagnostics with inactive and unknown LEDs" width="640">](docs/screenshots/panel-inputs-inactive.png) |
-| **Display units and Wi-Fi**<br><br>Choose display units and open Wi-Fi, input diagnostics or the controller settings browser. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
-| **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Probe configuration rows" width="640">](docs/screenshots/panel-settings-probe.png) |
-| **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Lower probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
+| **Unavailable signals**<br><br>Grey LEDs indicate unknown feedback. Diagnostics identifies disabled controller pin reporting without changing controller settings. | [<img src="docs/screenshots/panel-inputs-unknown.png" alt="Diagnostics with pin reporting disabled" width="640">](docs/screenshots/panel-inputs-unknown.png) |
+
+### Settings
+
+| Features and use | Preview |
+| --- | --- |
+| **Display units and Wi-Fi**<br><br>Choose display units, file location, brightness and Wi-Fi; configure probing, previews and the controller. | [<img src="docs/screenshots/panel-settings.png" alt="Settings units and network" width="640">](docs/screenshots/panel-settings.png) |
+| **Probe configuration**<br><br>Set the touch-plate dimensions used by corner probing. These values are stored on the display. | [<img src="docs/screenshots/panel-settings-probe.png" alt="Combined probe geometry and feed editor" width="640">](docs/screenshots/panel-settings-probe.png) |
+| **Probe feed and corner start inset**<br><br>Adjust the probing feed and the initial corner inset to suit the plate and setup. | [<img src="docs/screenshots/panel-settings-probe-lower.png" alt="Settings service and probe configuration rows" width="640">](docs/screenshots/panel-settings-probe-lower.png) |
 | **Controller UART configuration**<br><br>Configure the controller UART transmit pin, receive pin and baud rate. The display uses the full grblHAL serial protocol. | [<img src="docs/screenshots/panel-settings-uart.png" alt="Controller TX RX baud and preview controls" width="640">](docs/screenshots/panel-settings-uart.png) |
 | **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
 

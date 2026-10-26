@@ -2,7 +2,8 @@
 
 ## Inputs
 
-Settings → Inputs opens the live diagnostic screen in either application mode.
+The Diag tab opens live input diagnostics in either application mode.
+It sits immediately before Settings and uses the same header and rounded card.
 It monitors X/Y/Z/A limits, primary probe, tool setter, secondary probe, door,
 E-stop, reset, hold, cycle start, motor fault/warning, optional stop, block delete,
 single block, probe disconnection and the selected probe signal.
@@ -33,7 +34,7 @@ It sends `M104Q<number>` using the reported spindle number (not the hardware ID)
 then reads `$SPINDLESH` again. The active report supplies that spindle's RPM range;
 starting remains disabled if its range is unknown. Unsupported discovery leaves
 the existing manual controls available. Selection follows Ooznest Control's
-Troubleshooting spindle controls.
+Diagnostics spindle controls.
 
 ## Macros
 

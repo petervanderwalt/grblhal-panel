@@ -272,3 +272,15 @@ it still fills machine-setting/search fields when that editor is open. `UG PREFS
 reports `dialog=probe-offsets` and the draft values as `probe_edit_x/y/z`. Saved
 values remain in `x/y/z`, `feed` and `inset`; draft feed/inset use
 `probe_edit_feed` and `probe_edit_inset`. Validate all five before changing any.
+
+### Diagnostics page
+
+The Diag pill opens the read-only Diagnostics page (page ID 6), immediately
+before Settings. Its LEDs use the existing input parser; missing or stale input
+reports stay unknown. No input-diagnostics row remains in Settings.
+
+`python tools/check-diagnostics.py --port COM12` checks all five tabs, extended
+probe retention/release, standard limits, disabled pin reporting, Probe Cancel
+and unchanged preferences. It captures the main screens and input states into
+`captures/diagnostics/` with UART1 disconnected, then restores physical touch.
+Inspect those real framebuffer images before publishing them to the README.
