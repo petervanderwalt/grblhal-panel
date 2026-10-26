@@ -131,6 +131,7 @@ static bool file_run_usable[4]={};
 static lv_obj_t *file_previous=nullptr,*file_next=nullptr,*file_page_label=nullptr;
 static bool continuous = false, jog_held = false;
 static uint32_t jog_pressed_at, jog_hold_ms;
+static uint32_t jog_control_key = UINT32_MAX, jog_control_updates;
 static lv_obj_t *jog_buttons[10];
 static int jog_count;
 static char home_axis;
@@ -702,6 +703,11 @@ static void jog_event(lv_event_t *e) {
                                  continuous ? 10000 : jog_step_mm(inches, step_index), jog_speed);
         jog_held = ok && continuous;
         if (jog_held) jog_pressed_at = now();
+        if (!ok) {
+            runtime_snapshot(state);
+            if (state.online && !state.alarm && !state.error &&
+                (state.busy || !strncmp(state.mode, "Jog", 3))) return;
+        }
         result(ok);
     } else if (lv_event_get_code(e) == LV_EVENT_RELEASED || lv_event_get_code(e) == LV_EVENT_PRESS_LOST) {
         release_jog();
@@ -1162,11 +1168,16 @@ static void wifi_notification() {
 
 static void wifi_refresh_ui() {
     wifi_bridge_snapshot(&wifi);
-    if (!modal) lv_label_set_text(wifi_header_name, wifi.connected ? wifi.ssid : wifi.connecting ? "Connecting..." : "Not connected");
-    if (!modal) lv_label_set_text(wifi_header_ip, wifi.connected ? wifi.ip : "Wi-Fi");
-    lv_obj_set_style_text_color(wifi_icon, lv_color_hex(wifi.connected ? WHITE : MUTED), 0);
-    lv_obj_set_style_opa(wifi_icon, !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
-                                         wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50, 0);
+    const char *name = wifi.connected ? wifi.ssid : wifi.connecting ? "Connecting..." : "Not connected";
+    const char *ip = wifi.connected ? wifi.ip : "Wi-Fi";
+    if (!modal && strcmp(lv_label_get_text(wifi_header_name), name)) lv_label_set_text(wifi_header_name, name);
+    if (!modal && strcmp(lv_label_get_text(wifi_header_ip), ip)) lv_label_set_text(wifi_header_ip, ip);
+    lv_color_t icon_color = lv_color_hex(wifi.connected ? WHITE : MUTED);
+    if (!lv_color_eq(lv_obj_get_style_text_color(wifi_icon, 0), icon_color))
+        lv_obj_set_style_text_color(wifi_icon, icon_color, 0);
+    lv_opa_t icon_opa = !wifi.connected || !wifi.rssi || wifi.rssi >= -60 ? LV_OPA_COVER :
+                        wifi.rssi >= -75 ? LV_OPA_80 : LV_OPA_50;
+    if (lv_obj_get_style_opa(wifi_icon, 0) != icon_opa) lv_obj_set_style_opa(wifi_icon, icon_opa, 0);
     if (wifi_attempt && !wifi.connecting && tab_for_page(page) >= 0) {
         wifi_attempt = false;
         wifi_notification();
@@ -1235,6 +1246,7 @@ static void probe_refresh_ui() {
     }
 }
 static void build_page() {
+    jog_control_key = UINT32_MAX;
     storage_preview_viewing(false);
     runtime_snapshot(state);
     if (state.cycle_axis >= 0)
@@ -1453,7 +1465,7 @@ static void refresh_dro(bool colors = true) {
     for (int i = 0; i < 3; ++i) {
         if (state.coordinates && state.wco_known) {
             snprintf(work, sizeof work, "% .3f", state.work[i] / display_scale(inches));
-            snprintf(machine, sizeof machine, "% .3f", state.machine[i] / display_scale(inches));
+            snprintf(machine, sizeof machine, concept_active() ? "M  % .3f" : "% .3f", state.machine[i] / display_scale(inches));
         } else {
             snprintf(work, sizeof work, "--.---");
             snprintf(machine, sizeof machine, "M  --.---");
@@ -1463,15 +1475,19 @@ static void refresh_dro(bool colors = true) {
         if (colors) lv_obj_set_style_text_color(axis_work[i], lv_color_hex(state.status ? TEXT : MUTED), 0);
     }
 }
+static void refresh_jog_data() {
+    refresh_dro(false);
+    char text[64];
+    snprintf(text, sizeof text, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
+    if (strcmp(lv_label_get_text(state_label), text)) lv_label_set_text(state_label, text);
+    if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59 &&
+        lv_dropdown_get_selected(wcs_dropdown) != (unsigned)(state.wcs - 54))
+        lv_dropdown_set_selected(wcs_dropdown, state.wcs - 54);
+    wifi_refresh_ui();
+}
 static void refresh(lv_timer_t *) {
     runtime_snapshot(state);
     hardware_status(state);
-    // Keep the release event responsive instead of restyling the whole page during a held jog.
-    if (jog_held && page == JogPage && !actuator_mode && !modal && state.online && state.status &&
-        !state.alarm && !state.error && (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3))) {
-        refresh_dro(false);
-        return;
-    }
     if (state.sd_active && page != JobPage) {
         close_modal();
         show_page(JobPage);
@@ -1544,13 +1560,19 @@ static void refresh(lv_timer_t *) {
         }
     }
     if(page==FilesPage && local_preview_show)cached_refresh();
-    bool on = ready();
+    bool cnc_jog = page == JogPage && !actuator_mode;
+    bool manual_motion = cnc_jog && state.online && state.identified && state.status &&
+                         !state.alarm && !state.error && !state.sd_active && !state.probing && !state.uploading &&
+                         !state.macro_failed && !state.job_failed &&
+                         (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3));
+    // Keep Jog controls visually steady; model actions still reject busy/non-idle commands.
+    bool on = ready() || manual_motion;
     if(page==FilesPage)for(unsigned i=0;i<4;++i)tools_enable(file_run_buttons[i],on&&!state.listing&&file_run_usable[i]);
     if (page == JogPage && actuator_mode)
         refresh_actuators();
     // Keep input disabled immediately, but avoid a one-frame palette flash for brief command ACKs.
     static uint32_t busy_since;
-    bool command_busy = page == JogPage && state.busy && state.online && state.identified && state.status &&
+    bool command_busy = !manual_motion && page == JogPage && state.busy && state.online && state.identified && state.status &&
                         !state.alarm && !state.error && !state.sd_active && !strcmp(state.mode, "Idle");
     if (!command_busy)
         busy_since = 0;
@@ -1560,6 +1582,15 @@ static void refresh(lv_timer_t *) {
     bool steady_selection = state.online && state.identified && state.status && !state.alarm &&
                             !state.error && !state.sd_active &&
                             (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3));
+    if (cnc_jog && !state.alarm && !state.error) {
+        uint32_t key = unsigned(on) | unsigned(brief_busy) << 1 | unsigned(steady_selection) << 2 |
+                       unsigned(state.online) << 3 | unsigned(state.identified) << 4 | unsigned(state.status) << 5 |
+                       unsigned(continuous) << 6 | unsigned(state.coordinates) << 7 | unsigned(state.wco_known) << 8 |
+                       unsigned(state.modal_known) << 9;
+        if (key == jog_control_key) { refresh_jog_data(); return; }
+        jog_control_key = key;
+        ++jog_control_updates;
+    } else if (cnc_jog) jog_control_key = UINT32_MAX;
     enable(probe_btn, on, brief_busy);
     tools_enable(accessories_btn, on);
     enable_choices(speed_choices, on, steady_selection);
@@ -1783,13 +1814,13 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     for (const auto &m : macros->entries) if (*m.name) ++macro_count;
     snprintf(buffer, size,
              "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"diameter\":%.3f,\"feed\":%.3f,\"inset\":%.3f,\"tx\":%.0f,\"rx\":%.0f,"
-             "\"baud\":%.0f,\"usb_connection\":%d,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"jog_speed\":%u,\"jog_hold_ms\":%lu,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
+             "\"baud\":%.0f,\"usb_connection\":%d,\"inches\":%d,\"step\":%d,\"step_mm\":%.3f,\"page\":%d,\"actuator_mode\":%d,\"a_rotary\":%d,\"macro_count\":%u,\"preview_view\":%u,\"local_preview\":%d,\"single_probe\":%d,\"probe_surface\":%u,\"brightness\":%u,\"rgb_ready\":%d,\"rgb_color\":%lu,\"can_setup\":%d,\"probe_open\":%d,\"continuous\":%d,\"mode_checked\":%d,\"jog_speed\":%u,\"jog_hold_ms\":%lu,\"jog_control_updates\":%lu,\"jog_enabled\":%d,\"scroll_y\":%d,\"dialog\":\"%s\",\"number_value\":%.6f,\"probe_edit_x\":%.6f,\"probe_edit_y\":%.6f,\"probe_edit_z\":%.6f,\"probe_edit_feed\":%.6f,\"probe_edit_inset\":%.6f,\"header_x\":%d,\"header_y\":%d,\"header_w\":%d,\"header_h\":%d,\"form_w\":%d,\"form_h\":%d,\"form_kind\":\"%s\"}",
              prefs.probe.x, prefs.probe.y, prefs.probe.z, prefs.probe.diameter, prefs.probe.feed, prefs.probe.inset, prefs.tx,
              prefs.rx, prefs.baud, usb_connection, inches, step_index, jog_step_mm(inches, step_index), page, actuator_mode, a_rotary, macro_count, cached_view, local_preview_show, single_probe, probe_surface_choice, screen_brightness, hardware_led_ready(), (unsigned long)hardware_led_color(), ready(), probe_start != nullptr, continuous,
              page == JogPage && !actuator_mode && mode_choices
                  ? (lv_buttonmatrix_has_button_ctrl(mode_choices, 1, LV_BUTTONMATRIX_CTRL_CHECKED) ? 1
                     : lv_buttonmatrix_has_button_ctrl(mode_choices, 0, LV_BUTTONMATRIX_CTRL_CHECKED) ? 0 : -1)
-                 : -1, jog_speed, (unsigned long)jog_hold_ms, body ? lv_obj_get_scroll_y(body) : 0, dialog,
+                 : -1, jog_speed, (unsigned long)jog_hold_ms, (unsigned long)jog_control_updates, jog_count && !lv_obj_has_state(jog_buttons[0], LV_STATE_DISABLED), body ? lv_obj_get_scroll_y(body) : 0, dialog,
              number ? strtof(lv_textarea_get_text(number),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[0]),nullptr) : 0.0,
              probe_offsets_open ? strtof(lv_textarea_get_text(probe_offset_fields[1]),nullptr) : 0.0,

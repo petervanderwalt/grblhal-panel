@@ -60,3 +60,9 @@ For every executed case record **pass**, **fail** or **not tested**, firmware re
 - Before the held-jog redraw fix, a requested 60 ms Slow jog held the UI for 882 ms and moved 45.24 mm on the bare board. With the same feed preset after the fix, 60/100/150 ms requests moved 1.75/2.92/4.38 mm. Host command round-trip includes later rendering; it is not the cancel-transmission timestamp.
 - The embedded timing check subsequently measured cancel transmission at 65/100/150 ms for 60/100/150 ms holds in isolated demo mode. Slow remains 25% of the moving axes' maximum rate, matching Ooznest Control. No controller settings or offsets were changed by these jog trials.
 - Full embedded model tests passed, including stream window/fault/fresh-Idle completion checks. Live job streaming remains pending.
+
+### Jog appearance follow-up
+
+CNC controls now keep their appearance through Idle/Jog, with live positions and status updated independently. Control styling runs only when availability or the mode selector changes; Wi-Fi labels and signal styling update only when their displayed values change. Native alarm/disconnect disabling and model command guards remain in effect. Rejected busy jog taps do not queue another move or open a blocking notice.
+
+The isolated response check also verifies unchanged jog_control_updates across idle, continuous and incremental cycles, enabled-looking Jog controls with can_setup false, and actual disabling/re-enabling for disconnect and faults. The first live repeat measured 50/60/100 ms holds at 1.46/1.75/2.62 mm; host round trips were 157/169/209 ms. These injected durations do not establish a minimum physical-finger travel; physical tap feel still needs user confirmation.
