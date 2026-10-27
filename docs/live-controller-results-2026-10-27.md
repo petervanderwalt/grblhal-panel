@@ -77,7 +77,57 @@ The current flashed application SHA-256 is
 follow-up does not resolve the earlier controller-SD software-reset issue or
 the unverified coolant feedback.
 
-## Repeating a stage
+## Page benchmark and serial follow-up
+
+The detailed [page benchmark](page-benchmarks.md) separates construction,
+layout, drawing and flush timing. The retained changes reduced median Macros
+from 198.8 to 138.8 ms and Jog from 541.8 to 490.5 ms. Files remained about
+610 ms; Settings and several forms still need attention. No PSRAM or
+framebuffer configuration was changed.
+
+Live follow-up records are under the ignored `captures/live-serial-followup/`
+directory, with stage logs alongside it:
+
+| Case | Result | Evidence |
+|---|---|---|
+| Controller-SD Stop during a non-motion job | Four passes | Uploaded the named 161-byte `000-00-serial-sd-stop-followup.nc`, checked its exact name in the LCD confirmation, then confirmed Stop. Every attempt returned fresh controller identification/status with no LCD restart or receive overflow. `live-serial-followup-run.log`, `live-serial-followup-repeat.log` |
+| Display-SD streaming | Five passes | Tiny, comments/CRLF, near-limit command, 1,004-block file and relative G2/G3 return-to-start arcs. All line counts, byte counts and FNV hashes matched; outstanding bytes peaked at 127 and drained to zero. Positions returned within 0.002 mm. `live-serial-followup-streams.log` |
+| Pause, Resume and overrides | Pass | Held feedback, resumed, changed/restored feed and spindle overrides, cancelled Stop without reset, and verified navigation remained locked during the job. `live-serial-followup-controls.log` |
+| Confirmed streamed-job Stop | Pass | Reset was counted, the stream stopped without Job Complete, and fresh Idle returned. `live-serial-followup-stop.log` |
+| CCW spindle | Rejected by controller | The actual command was `M4 S10000`; the controller returned Error 20, with its unsupported-command description. The spindle stayed off. Cancellation sent nothing. This does not validate CCW output. `live-serial-followup-ccw.log`, `live-serial-followup-ccw-result.log` |
+| Commands after acknowledging CCW error | Unresolved | The UI cleared the error, but the following two-line modal-restoration file received further Error 20 responses and entered Hold. Explicit confirmed reset restored operation; standalone M2 and the identical restoration file then passed. Cause is not established. `live-serial-followup-restore.log`, `live-serial-followup-recover.log`, `live-serial-followup-restore-retry.log` |
+
+The four controller-SD Stop passes do **not** establish a fix for the earlier
+intermittent reset/recovery failure. No controller-protocol change was made
+based only on these successful retries. Coolant output/feedback and the
+physical-input cases listed above remain unverified.
+
+The streaming harness now includes the small relative arc case and checks that
+every successful streaming fixture preserves the starting machine position.
+
+Cleanup restored the original **80 display-SD files** and left only the original
+`tc.macro` on controller SD. All 136 setting values, the complete modal report,
+work offsets and machine positions matched the fresh follow-up baseline. The
+setting-write counter stayed zero, overrides were 100%, spindle/coolant were off,
+and physical touch was restored. Group IDs were excluded from the value comparison:
+reconnection clears group metadata until Machine settings is opened again.
+See `live-serial-followup-cleanup-final.log` and
+`live-serial-followup/controller-final.json`.
+
+The embedded functional checks passed (protocol, fault catalogues, probing model,
+streaming, settings, tools/macros, actuators, upload and viewer parser). The separate
+`staged_external_memory_copy_and_overlapping_move` diagnostic **failed**, so the
+overall `UG TEST` command reported failure. Its cause was not investigated and
+the existing memory workarounds were not changed. See
+`live-serial-followup-selftest.log`. A subsequent pendant reboot successfully
+reconnected to the real controller with no active job or fault;
+`live-serial-followup-boot.log` records that pass.
+
+The retained application SHA-256 is
+`172e10ada0fb968fa9fc40e8e7a96d987619fffa98b055bca74d80bed830bfbc`.
+It is a development build, not a new published release.
+
+### Repeat a stage
 
 Use the ESP-IDF Python environment with pyserial, one COM12 owner, and a freshly confirmed isolated controller:
 

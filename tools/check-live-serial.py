@@ -145,8 +145,12 @@ try:
   before=audit();time.sleep(2);after=audit();assert after['rt80']>before['rt80'] and after['rt3f']==before['rt3f'] and after['writes']==before['writes'];record('pass',case='realtime-0x80',before=before,after=after)
  elif a.stage in ['streams','soak']:
   cases=[('tiny',['G21','G90','G4P0.3','G4P0.3','M2'],None),('crlf',['G21','G90','G4P0.3','M2'],'(header)\r\n g21\r\n\r\ng90 ;absolute\r\n g4 p0.3 (dwell)\r\nm2\r\n'),('long-block',['G21','G90','G4P'+('0'*118)+'.1','G4P0.3','M2'],None),('short-lines',['G21','G90']+['G4P0.001']*1000+['G4P0.3','M2'],None)] if a.stage=='streams' else [('soak',['G21','G90']+['G4P0.001']*10000+['G4P0.3','M2'],None)]
+  if a.stage=='streams':
+   cases.append(('arcs-relative',['G21','G17','G91','G1X0.2F60','G2X-0.2Y0.2I-0.2J0','G3X0.2Y-0.2I0J-0.2','G1X-0.2','G90','M2'],None))
   for name,lines,raw in cases:
-   path=upload(name,raw or '\n'.join(lines)+'\n');start(path,cancel_first=name=='tiny');finish(lines,650 if a.stage=='soak' else 60,capture='stream-complete' if name=='tiny' else None,interval=1 if a.stage=='soak' else .2)
+   position=audit()['machine']
+   path=upload(name,raw or '\n'.join(lines)+'\n');start(path,cancel_first=name=='tiny');result=finish(lines,650 if a.stage=='soak' else 60,capture='stream-complete' if name=='tiny' else None,interval=1 if a.stage=='soak' else .2)
+   assert all(abs(x-y)<.002 for x,y in zip(position,result['machine'])),(name,position,result['machine'])
  elif a.stage=='controls':
   lines=['G21','G91','G1X0.5F15','G1X-0.5','G90','M2'];path=upload('moving-controls','\n'.join(lines)+'\n');start(path);wait(lambda s:s['mode']=='Run');tap(140,472);hold=wait(lambda s:s['mode'].startswith('Hold'),8);time.sleep(.6);assert audit()['mode'].startswith('Hold');shot('stream-paused')
   before=audit();tap(365,472);form('confirmation');tap(264,520);assert audit()['resets']==before['resets'] and not audit()['complete'];tap(116,566);assert data('PREFS')['page']==4
