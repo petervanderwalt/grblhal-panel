@@ -1,15 +1,15 @@
-# Controller communication investigation
+# Controller connections
 
 ## Hardware
 
-The user's display is the [VIEWESMART 7-inch ESP32-P4/C6 board](https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY).
-COM12 is its CH340 UART programming/debugging port. Reserve UART0 for development
+The display is the [VIEWESMART 7-inch ESP32-P4/C6 board](https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY).
+The UART-labelled connector is the programming/debugging port (COM12 on the development PC). Reserve UART0 for development
 screenshots and console input so controller traffic cannot be interpreted as UI
 commands.
 
 The manufacturer's local `examples/esp-idf/11_RS485_Test/main/uart_echo_example_main.c`
 uses UART1, TX27, RX26, 115200 baud, no RTS/CTS, and LDO channel 4 at 3300mV.
-That matches the inherited CNC-link defaults. This is evidence of the vendor's
+Those pins belong to the vendor RS485 example, not the selected TTL UART transport. This is evidence of the vendor's
 example configuration, not proof that the bus wiring or direction handling has
 been verified on this specific board revision. Review the
 [schematic](https://github.com/VIEWESMART/7-1024X600-ESP32-P4-C6-TOUCH-DISPLAY/blob/main/schematic/ESP32-P4-SmartDisplay.sch.pdf)
@@ -27,7 +27,7 @@ RS485 A/B is electrically different from these TTL UART pins.
 
 Existing connection/configuration code is in
 `firmware/viewesmart-p4/main/cnc_link.cpp` and `cnc_link.h`.
-Defaults remain TX27/RX26 for the inherited RS485 path until a transport is chosen.
+The inherited RS485 example uses TX27/RX26; the current TTL sender uses TX37/RX38.
 Do not automatically rewrite saved controller settings during identification.
 
 ## Plugin_panel over RS485
@@ -50,18 +50,16 @@ Source references: [read/write requests](https://github.com/dresco/Plugin_panel/
 [defaults](https://github.com/dresco/Plugin_panel/blob/master/panel.h), and
 [register map](https://github.com/dresco/Plugin_panel/blob/master/docs/modbus_registers.md).
 
-Next practical steps: review the register map and schematic, choose UART sender
-or RS485 panel operation, establish a read-only connection, then test status
-display before enabling any machine action. Neither controller path has been
-hardware-tested in this initial screenshot work.
+Plugin_panel support is not implemented. Review the schematic and register map
+before wiring an RS485 implementation; TTL UART/RS485 hardware checks remain pending.
 
 ## USB3 controller link
 
-Settings can select USB3 CDC ACM instead of UART. USB3 uses the full-speed OTG host routed to GPIO24/25; keep the display UART connector connected to the PC for development. RP2350 2E8A:000A identification, status and grouped settings were read on the bare controller. Motion has not been tested. Software disconnect/reconnect and USB isolation in demo mode passed. `tools/check-usb.py` repeats these checks on the isolated RP2350 development board; confirm machine isolation before running it.
+Settings can select USB3 CDC ACM instead of UART. USB3 uses the full-speed OTG host routed to GPIO24/25; keep the display UART connector connected to the PC for development. RP2350 2E8A:000A identification, status and grouped settings were read on the bare controller. Jog and job-streaming protocol checks passed on the bare controller; physical machine operation has not been tested. See [controller testing](controller-testing.md). Software disconnect/reconnect and USB isolation in demo mode passed. `tools/check-usb.py` repeats these checks on the isolated RP2350 development board; confirm machine isolation before running it.
 
 A normal startup alarm is released by explicit Unlock (`$X`), following Ooznest Control `performUnlock()` in `js/ui/alarms_and_errors.js`. Unlock does not home the machine or establish its position. The panel automatically opens a fault confirmation when an alarm first appears; a generic `<Alarm>` report is shown as Machine locked rather than a fabricated alarm number.
 
-USB3 was built against this workstation's ESP-IDF 5.3.4 tree with P4 full-speed host support. Stock older SDK support and other CDC ACM controllers have not been verified. The CH340 UART socket remains separate from the native USB host.
+USB3 was built against this workstation's ESP-IDF 5.3.4 tree with P4 full-speed host support. Stock older SDK support and other CDC ACM controllers have not been verified. The UART socket remains separate from the native USB host.
 
 Logical Disconnect disables application TX/RX and lowers DTR while retaining the claimed CDC interface. Reconnect starts a fresh model identification without recreating USB endpoints. Physical loss or a transport error closes the handle. This avoids the intermittent reopen failure observed during repeated logical sessions.
 

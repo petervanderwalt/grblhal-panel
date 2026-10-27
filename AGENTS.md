@@ -154,41 +154,34 @@ Filter realtime characters from filenames and honour `UNUSABLE` entries.
 Design for landscape, two-handed pendant use. On Jog, keep compact vertical DRO
 rows on the left and group the entire XYZ pad on the right, with Z immediately
 beside XY and a blank centre. Use Jog / Files / Macros / Diag / Settings navigation.
-Jog work coordinates use 28 px type and DRO rows have no coloured borders.
+Jog work coordinates use the custom Roboto Condensed font; DRO rows have no coloured borders.
 Do not show protocol command bytes or a redundant units/WCS footer to end users.
 The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
 duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
-Jog / Files / Macros / Diag / Settings tab accents are blue / green / teal / orange, with opaque
-backgrounds and a solid selected fill; no top selection line. Tab changes are immediate, without content animation or an animation layer.
-Keep the header and tab bar stationary. Mode and speed
-selection update in place; only change matrix disabled flags when readiness changes.
-Command-busy locks input immediately but keeps setup colours steady for the first
-200 ms while Idle; offline, faults, Hold and sustained busy states use pale disabled styling.
-Speed/mode selectors retain their checked palette throughout Idle/Jog while input
-is unavailable; they still grey out for disconnect, Hold, alarms and errors.
-Use subtle button
-gradients and card shadows. Fault pages use red accents on the full-screen graphite/card layout; successful
-completion uses green. Include simulated alarms and errors in workflow checks.
-Axis jog uses X red / Y green / Z blue; XY diagonals use teal. Home and Zero
-use quiet flat backgrounds with subtle axis-coloured outlines; DRO action buttons
-are quiet too. Keep the jog pad and orange Probe action prominent.
-Neutral buttons and dropdowns use light fills and dark text. Jog speed and mode
-use native one-checked button matrices with pale blue selection styling.
-Probe and jog selectors are disabled and pale whenever machine setup is unavailable.
+The bottom dock uses a black background, white selected pill and muted inactive
+icons/labels. Tab changes are immediate, without content animation or an animation
+layer. Keep the shared header and dock stationary.
+Jog uses black cards on graphite, dark neutral controls, coral X arrows, mint Y
+arrows and cyan Z text. Diagonals and Home/Zero actions are neutral. Probe and
+Tools are neutral icon buttons. Mode selection is lime; selected speed is white.
+Use native one-checked button matrices. Disabled controls use dark charcoal and
+muted text/arrows; Continuous also dims the distance dropdown and its chevron.
+Update controls in place. Idle/Jog feedback must not repeatedly restyle or grey
+out the whole pad; faults, disconnects and unavailable setup still disable it.
 Set per-item DISABLED controls on button matrices as well as the widget state.
+Fault pages use red accents; successful completion uses green. Include simulated
+alarms and errors in workflow checks.
 The Settings section is labelled Probe, without Defaults.
-Jog DRO and jog-pad cards are both 440 px high. There is no small footer status
+Jog card geometry is defined in panel_jog_concept.inc. There is no small footer status
 label. Notices use dialogs; the header alarm/error status reopens fault dialogs.
-Disabled dropdowns use solid light backgrounds and muted dark text and chevrons.
-Disabled XY/diagonal arrow strokes use the same muted dark colour as Z button text.
 File preview controls and filename are inset inside the card. Use the eight
 cached views and physical pinch zoom, without +/- buttons or success notices.
-The file-list interior is white; the main grey background separates the cards.
+The file-list interior is black; graphite separates the cards.
 Wi-Fi Scan/Disconnect sit below the title band; Close is in its top-right corner.
 Secondary screens fill the LCD with graphite, a title/close control above a rounded
 black content card, and rounded dark controls. No floating or translucent overlays.
 Probe Configuration uses separate rounded settings and numeric-keypad cards, matching Jog.
-Wi-Fi lists use white, borderless rows; the whole network row remains tappable.
+Wi-Fi lists use dark, borderless rows; the whole network row remains tappable.
 Scan rows show signal strength followed by a lock icon for secured networks; open
 networks have no lock. The Font Awesome glyph and license are in main/assets/.
 Files and Settings have no DRO. Probe is a full-screen page launched from Jog; remove Probe and Zero /
@@ -513,7 +506,7 @@ existing framebuffer staging and volatile byte-copy workarounds unchanged.
 Full-screen pages poll only their visible controls; do not repeatedly restyle
 whole lists from enable() or redraw hidden Jog controls behind an opaque page.
 
-USB3 CDC ACM host uses peripheral_map bit 1 and GPIO24/25, routed with usb_serial_jtag_ll_phy_select(1). Reserve the USB host/class tasks before UI widgets; keep CDC buffers at 256 bytes and usb_host_cdc_acm 2.4.1 for safe allocation-failure cleanup. Demo mode disables both controller transports. UG USB STATE reports enumeration and traffic. RP2350 2E8A:000A identification, feedback and reconnect were verified; motion remains untested. Normal boot locks unlock with $X, as in Ooznest performUnlock; do not reset or home automatically.
+USB3 CDC ACM host uses peripheral_map bit 1 and GPIO24/25, routed with usb_serial_jtag_ll_phy_select(1). Reserve the USB host/class tasks before UI widgets; keep CDC buffers at 256 bytes and usb_host_cdc_acm 2.4.1 for safe allocation-failure cleanup. Demo mode disables both controller transports. UG USB STATE reports enumeration and traffic. RP2350 2E8A:000A identification, feedback, reconnect, jogging and job-streaming protocol were verified on the bare controller; physical machine operation remains untested. Normal boot locks unlock with $X, as in Ooznest performUnlock; do not reset or home automatically.
 
 The selected controller transport connects on pendant boot. Explicit Disconnect suppresses retries until Connect or reboot; demo mode remains fully isolated. USB re-enumeration and identification timeout retry only identification, never interrupted jobs/macros. A persistent USB open failure with a physically present device cycles root-port power through the SDK, without changing the controller's supply or settings. tools/check-controller-boot.py checks startup and can watch a physical controller reset; capture complete UART output for any LCD restart.
 
@@ -529,6 +522,6 @@ The dependency patch also removes unsupported RGB565_SWAPPED format checks from 
 
 The browser installer must pulse reset explicitly with `loader.after('custom_reset', false, 'D0|R1|W100|R0|W100')`. Pinned esptool-js 0.7.0's default HardReset releases RTS without asserting it, leaving this CH340-connected board in the flasher stub after a verified write. Keep DTR released before the RTS pulse. Verify a browser install by reading firmware status afterward without another host reset.
 
-Live serial evidence is in docs/live-controller-results-2026-10-27.md and the staged tools/check-live-serial.py harness. UG AUDIT exposes read-only stream accounting, polling, raw reports and settings. See docs/device-ui-development.md for indices and restricted test-file cleanup. Never assume controller SD rows are sorted; verify the actual selected filename. Soft-limit testing requires successful homing, not merely $20=1. Critical alarms use explicit reset, three-second wait and $X; disconnect/Stop cancels the pending unlock. Recognise grblHAL's [MSG:Pgm End] and require later fresh Idle for controller-SD completion, including files with no Run report. Refresh modal state and offsets after either SD source completes.
+Live serial evidence is in docs/controller-testing.md and the staged tools/check-live-serial.py harness. UG AUDIT exposes read-only stream accounting, polling, raw reports and settings. See docs/device-ui-development.md for indices and restricted test-file cleanup. Never assume controller SD rows are sorted; verify the actual selected filename. Soft-limit testing requires successful homing, not merely $20=1. Critical alarms use explicit reset, three-second wait and $X; disconnect/Stop cancels the pending unlock. Recognise grblHAL's [MSG:Pgm End] and require later fresh Idle for controller-SD completion, including files with no Run report. Refresh modal state and offsets after either SD source completes.
 
 Controller fault descriptions use structured $EA/$EE at connection time: the real controller defers $EE during Hold. The runtime provides a bounded 256-entry PSRAM catalogue with explicit byte copies; do not replace it with internal-heap strings or bulk PSRAM copies. Unknown/unsupported codes retain fallback text. Alarm/error popups update from State.fault_description only when the code and type match; local sender errors remain separate. UG AUDIT -18 reports catalogue counts/current description. The live fault/homing stages assert actual controller descriptions and preserve the first streamed error while draining cancelled responses.

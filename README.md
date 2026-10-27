@@ -176,8 +176,7 @@ swipes over USB UART. Demonstration mode disconnects both controller USB and UAR
 supplies sample machine feedback for UI checks.
 
 - [Development instructions and source map](AGENTS.md)
-- [Live controller test plan](docs/live-controller-test-plan.md)
-- [Live controller results — 27 October 2026](docs/live-controller-results-2026-10-27.md)
+- [Controller testing and known issues](docs/controller-testing.md)
 - [LCD page benchmarks](docs/page-benchmarks.md)
 - [Screenshot, touch injection and test guide](docs/device-ui-development.md)
 - [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)

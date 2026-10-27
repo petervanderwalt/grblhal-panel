@@ -329,7 +329,7 @@ connection attempt finishes; an early scan must not cancel the startup reconnect
 `tools/check-live-serial.py --isolated-controller --stage inspect` records a live
 controller baseline. Use `--output` for a separate run directory. The other
 stages exercise actual controller replies; they are not demo tests. Read the
-[test plan](live-controller-test-plan.md) and [recorded results](live-controller-results-2026-10-27.md)
+[controller testing guide](controller-testing.md)
 before selecting motion, homing or fault stages. Confirm machine isolation first.
 
 The UART session accepts `audit` and `audit INDEX` (`UG AUDIT` on the wire):
