@@ -154,10 +154,8 @@ Do not show protocol command bytes or a redundant units/WCS footer to end users.
 The top-right header is a Wi-Fi shortcut with SSID/IP or Not connected; do not
 duplicate the active tab name there. Signal brightness uses the C6 RSSI reading.
 Jog / Files / Macros / Diag / Settings tab accents are blue / green / teal / orange, with opaque
-backgrounds and a solid selected fill; no top selection line. Tab taps slide the
-shared page_layer horizontally for 220 ms; keep the header and tab bar stationary.
-The animation layer holds controls only during the slide; restore their root
-parent afterward. Page rebuilds cancel slides and restore x=0. Mode and speed
+backgrounds and a solid selected fill; no top selection line. Tab changes are immediate, without content animation or an animation layer.
+Keep the header and tab bar stationary. Mode and speed
 selection update in place; only change matrix disabled flags when readiness changes.
 Command-busy locks input immediately but keeps setup colours steady for the first
 200 ms while Idle; offline, faults, Hold and sustained busy states use pale disabled styling.
@@ -476,7 +474,7 @@ object can otherwise retain reverted PSRAM buffer experiments.
 
 Settings keeps its heading above the rounded outer card, matching Files/Macros.
 The flat scrollable list is inset inside that card; keep the heading stationary
-while scrolling and include it in the normal page slide.
+while scrolling. Tab changes remain immediate.
 
 The main CNC dock is Jog / Files / Macros / Diag / Settings. Preserve
 page IDs Jog=0, Files=1, Settings=2, Macros=3, Job=4, Complete=5; Diagnostics=6.

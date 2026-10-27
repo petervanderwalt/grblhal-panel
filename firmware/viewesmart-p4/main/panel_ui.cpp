@@ -78,7 +78,7 @@ static lv_obj_t *jog_tools, *wcs_dropdown, *feed_slider, *spindle_slider, *feed_
 static int fault_seen = 0;
 static uint32_t override_sent = 0;
 static void show_probe(lv_event_t * = nullptr);
-static lv_obj_t *left_surface, *right_surface, *tabview, *page_layer;
+static lv_obj_t *left_surface, *right_surface, *tabview;
 static lv_obj_t *wifi_header, *wifi_header_name, *wifi_header_ip, *wifi_icon;
 static lv_obj_t *root, *body, *brand_label, *state_label, *axis_work[3], *axis_machine[3],
     *axis_card[3], *nav[5];
@@ -158,17 +158,6 @@ static void refresh(lv_timer_t *);
 static void machine_closed();
 static void machine_refresh();
 static void show_machine_settings(lv_event_t *);
-static void parent_page_content(lv_obj_t *parent) {
-    lv_obj_t *objects[] = {left_surface, right_surface, axis_card[0], axis_card[1], axis_card[2],
-                           machine_heading, work_heading, dro_actions, jog_tools, job_controls, body, stop_btn, page_title};
-    for (auto obj : objects)
-        if (obj && lv_obj_get_parent(obj) != parent)
-            lv_obj_set_parent(obj, parent);
-    if (parent == root && wifi_header && state_label) {
-        lv_obj_move_foreground(wifi_header);
-        lv_obj_move_foreground(state_label);
-    }
-}
 static void show_page(int target) {
     page = target;
     build_page();
@@ -993,24 +982,13 @@ static void navigate(lv_event_t *e) {
     if (state.sd_active || page == JobPage || page == CompletePage)
         return;
     int target_tab = lv_tabview_get_tab_active(tabview);
-    int current_tab = tab_for_page(page);
     int target = tab_pages[target_tab];
     if (target == page)
         return;
-    int direction = target_tab > current_tab ? 1 : -1;
     close_modal();
     preview_show = false;
     show_page(target);
-    parent_page_content(page_layer);
-    lv_anim_t slide;
-    lv_anim_init(&slide);
-    lv_anim_set_var(&slide, page_layer);
-    lv_anim_set_exec_cb(&slide, [](void *obj, int32_t x) { lv_obj_set_x((lv_obj_t *)obj, x); });
-    lv_anim_set_values(&slide, direction * 1024, 0);
-    lv_anim_set_duration(&slide, 220);
-    lv_anim_set_path_cb(&slide, lv_anim_path_ease_out);
-    lv_anim_set_completed_cb(&slide, [](lv_anim_t *) { parent_page_content(root); });
-    lv_anim_start(&slide);
+
 }
 static void visibility(lv_obj_t *o, bool visible) {
     if (visible)
@@ -1270,9 +1248,8 @@ static void build_page() {
     runtime_snapshot(state);
     if (state.cycle_axis >= 0)
         runtime_action(Action::JogCancel);
-    lv_anim_delete(page_layer, nullptr);
-    lv_obj_set_x(page_layer, 0);
-    parent_page_content(root);
+    lv_obj_move_foreground(wifi_header);
+    lv_obj_move_foreground(state_label);
     concept_restore();
     if (page_title) { lv_obj_delete(page_title); page_title = nullptr; }
     release_jog();
@@ -1723,11 +1700,6 @@ extern "C" void panel_ui_create() {
     lv_obj_t *header = box(root, 0, 0, 1024, 136, EDGE);
     lv_obj_set_style_radius(header, 0, 0);
     lv_obj_set_style_border_width(header, 0, 0);
-    page_layer = box(root, 0, 0, 1024, 528);
-    lv_obj_set_style_bg_opa(page_layer, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(page_layer, 0, 0);
-    lv_obj_set_style_radius(page_layer, 0, 0);
-    lv_obj_remove_flag(page_layer, LV_OBJ_FLAG_CLICKABLE);
     left_surface = surface(root, 8, 64, 488, 440);
     right_surface = surface(root, 500, 64, 516, 440);
     brand_label = label(root, "grblHAL", 16, 20, 148, 22, WHITE);
