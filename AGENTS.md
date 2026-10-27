@@ -1,5 +1,21 @@
 # Working on grblhal-panel
 
+## SD card sharing
+
+`panel_webdav.cpp` exposes only the LCD SD at `/sd/` on the existing HTTP port
+47820; the persisted Settings switch defaults off. Keep the runtime/SD access
+lease around all file handles so jobs, previews and transfers cannot overlap.
+Receive uploads in bounded 256 KiB PSRAM batches, but perform SD reads/writes
+through aligned internal DMA buffers, retaining explicit byte copies on this P4.
+The private `.panel-webdav` journal/recovery copy protects interrupted replacement;
+recover it before publishing the card and never discard an unexplained backup.
+Windows drive support uses real temporary exclusive LOCK/UNLOCK leases.
+`tools/check-webdav.py` checks HTTP operations and optional large-file hashes;
+`tools/check-webdav-ui.py` checks the Settings switch, transfer page and job
+exclusion. Its busy phase needs a freshly confirmed isolated controller and runs
+only a dwell job. Use `UG DAV TEST` for the non-writing parser self-check.
+See [docs/sd-card-sharing.md](docs/sd-card-sharing.md).
+
 ## Project and hardware
 
 - Repository: https://github.com/petervanderwalt/grblhal-panel

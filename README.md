@@ -18,7 +18,7 @@ or rotary A.
 The CNC landscape layout puts the position readout on the left and the jog controls
 on the right for two-handed use. Large controls, axis colours and clear alarm
 screens keep the common machine operations within reach. Bottom tabs switch
-between Jog, Files, Macros, Diag and Settings with a short sliding transition.
+between Jog, Files, Macros, Diag and Settings immediately.
 
 Settings also offers an **Actuator** mode for independent X/Y/Z/A
 mechanisms. It replaces Jog, Files and Macros with an **Actuators** screen. Configure
@@ -156,6 +156,13 @@ Settings includes a persistent screen-brightness slider. The onboard RGB LED
 provides a supplementary machine-status indication. See the
 [interface colour roles and hardware indicators](docs/color-scheme.md).
 
+## SD card sharing
+
+Enable **SD card sharing / WebDAV** at the bottom of Settings to access the LCD's
+SD card over Wi-Fi. Browse, upload, download, rename and delete from a WebDAV
+client or mapped drive. The LCD shows transfer progress; file operations are
+blocked during jobs. See [connecting your computer](docs/sd-card-sharing.md).
+
 ## Build and development
 
 With ESP-IDF 5.3.4 installed and its environment activated:
@@ -254,6 +261,13 @@ Click a screenshot to open it at full size.
 | **USB controller connection**<br><br>Connect a CDC ACM grblHAL controller to USB3. UART remains selectable for wired serial connections. | [<img src="docs/screenshots/panel-settings-usb.png" alt="USB3 controller connected" width="640">](docs/screenshots/panel-settings-usb.png) |
 | **UART controller connection**<br><br>TX37 and RX38 are fixed for the hardware. Set the controller baud rate here. | [<img src="docs/screenshots/panel-settings-uart.png" alt="UART connection and baud setting" width="640">](docs/screenshots/panel-settings-uart.png) |
 | **Inch display setting**<br><br>Switch the LCD measurement system to inches. Internal geometry and generated motion remain in millimetres. | [<img src="docs/screenshots/panel-settings-inch.png" alt="Inch units selected in settings" width="640">](docs/screenshots/panel-settings-inch.png) |
+
+### SD card sharing
+
+| Features and use | Preview |
+| --- | --- |
+| **Wi-Fi drive**<br><br>Enable WebDAV to browse and manage the LCD SD card from your computer. The address stays visible in Settings. | [<img src="docs/screenshots/panel-settings-sharing.png" alt="SD card sharing setting and WebDAV address" width="640">](docs/screenshots/panel-settings-sharing.png) |
+| **File transfer**<br><br>Long operations show the filename, transferred size and progress. Transfers reserve the card; new jobs wait until they finish. | [<img src="docs/screenshots/panel-sd-transfer.png" alt="Large WebDAV upload progress on the LCD" width="640">](docs/screenshots/panel-sd-transfer.png) |
 
 ### grblHAL machine settings
 

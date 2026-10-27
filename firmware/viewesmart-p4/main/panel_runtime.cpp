@@ -520,6 +520,20 @@ bool runtime_background_idle() {
         !model.state.alarm&&!model.state.error&&(!model.state.online||!strcmp(model.state.mode,"Idle"));
     xSemaphoreGive(mutex);return ok;
 }
+bool runtime_file_access_begin() {
+    // A catalogue rescan may be finishing; never wait for it while holding the link mutex.
+    for(unsigned attempt=0;attempt<50;attempt++) {
+        xSemaphoreTake(mutex,portMAX_DELAY);
+        auto &s=model.state;
+        bool idle=!s.sd_active && !s.busy && !s.probing && !s.uploading && !s.macro_running &&
+            !s.recovering && s.cycle_axis<0 && (!s.online || (s.status && !strcmp(s.mode,"Idle")));
+        bool ok=idle && storage_remote_begin();
+        xSemaphoreGive(mutex);
+        if(ok || !idle)return ok;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return false;
+}
 void runtime_snapshot(State &s) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     // Avoid ROM PSRAM-to-PSRAM copies on this P4 revision, as for framebuffer staging.
@@ -531,6 +545,9 @@ void runtime_snapshot(State &s) {
 bool runtime_action(Action a, const char *text, float x, float y) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     bool ok = false;
+    if (storage_remote_active() && a != Action::Stop && a != Action::JogCancel) {
+        xSemaphoreGive(mutex); return false;
+    }
     switch (a) {
     case Action::FeedOverride:
     case Action::SpindleOverride:
@@ -644,13 +661,13 @@ bool runtime_action(Action a, const char *text, float x, float y) {
 }
 bool runtime_settings_load() {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.settings_load();
+    bool ok = !storage_remote_active() && model.settings_load();
     xSemaphoreGive(mutex);
     return ok;
 }
 bool runtime_setting_write(int id, const char *value) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.setting_write(id, value);
+    bool ok = !storage_remote_active() && model.setting_write(id, value);
     xSemaphoreGive(mutex);
     return ok;
 }
@@ -661,25 +678,25 @@ void runtime_settings_snapshot(SettingsCatalog &catalog) {
 }
 bool runtime_actuator_type(bool rotary) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.actuator_type(rotary);
+    bool ok = !storage_remote_active() && model.actuator_type(rotary);
     xSemaphoreGive(mutex);
     return ok;
 }
 bool runtime_actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.actuator_move(axis, target, feed, end1, end2, rotary);
+    bool ok = !storage_remote_active() && model.actuator_move(axis, target, feed, end1, end2, rotary);
     xSemaphoreGive(mutex);
     return ok;
 }
 bool runtime_actuator_cycle(int axis, float feed, float end1, float end2, bool rotary) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.actuator_cycle(axis, feed, end1, end2, rotary);
+    bool ok = !storage_remote_active() && model.actuator_cycle(axis, feed, end1, end2, rotary);
     xSemaphoreGive(mutex);
     return ok;
 }
 bool runtime_actuator_cycle_speed(float feed) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = model.actuator_cycle_speed(feed);
+    bool ok = !storage_remote_active() && model.actuator_cycle_speed(feed);
     if (demo && ok)
         model.receive("<Idle|FS:0,0>", now()); // Position-bearing test feedback completes the restart.
     xSemaphoreGive(mutex);
@@ -687,7 +704,7 @@ bool runtime_actuator_cycle_speed(float feed) {
 }
 bool runtime_probe(const ProbeSettings &s, int axis, int direction) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = axis < 0 ? model.probe_corner(s) : model.probe_surface(s, axis, direction);
+    bool ok = !storage_remote_active() && (axis < 0 ? model.probe_corner(s) : model.probe_surface(s, axis, direction));
     xSemaphoreGive(mutex);
     return ok;
 }
@@ -765,7 +782,7 @@ bool runtime_upload_local(const char *path, const char *data, size_t size) {
 }
 bool runtime_can_upload() {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ready = link_ready() && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    bool ready = link_ready() && !demo && !storage_remote_active() && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
     xSemaphoreGive(mutex);
     return ready;
 }
@@ -773,7 +790,7 @@ bool runtime_upload(const char *path, const char *data, size_t size) {
     if (!path || !data || !size || size > MaxPreviewBytes)
         return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ready = link_ready() && !demo && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
+    bool ready = link_ready() && !demo && !storage_remote_active() && model.idle() && model.state.ymodem && !preview_locked && !upload_data;
     if (ready) {
         upload_data = (char *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         ready = upload_data != nullptr;

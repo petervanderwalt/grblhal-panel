@@ -164,6 +164,8 @@ static void command(const char *line)
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strcmp(line,"UG DAV TEST")) {
+        reply(panel_debug_webdav_test()?"@UGOK TEST\n":"@UGERR tests_failed\n");
     } else if (!strcmp(line,"UG PERF")) {
         bsp_display_lock(0);panel_ui_perf(payload,sizeof payload);bsp_display_unlock();
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);

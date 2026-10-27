@@ -3,6 +3,7 @@ idf_component_register(
         main.c
         panel_hardware.cpp
         panel_handoff.cpp
+        panel_webdav.cpp
         panel_actuator_web.cpp
         panel_storage.cpp
         panel_fs.cpp

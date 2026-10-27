@@ -11,6 +11,7 @@ Use the display's current Wi-Fi address, for example `http://192.168.0.34:47820`
 | GET | `/gcam/v1/ping` | gCAM compatibility discovery, readiness, destination and upload-size limit. |
 | POST | `/gcam/v1/load` | Accept a JSON object containing `name` and `gcode`. |
 | GET | `/gcam/v1/status` | Upload state, success, bytes, total, path and message. |
+| WebDAV | `/sd/` | LCD SD card file share; enable it in Settings. |
 | OPTIONS | `/gcam/v1/ping`, `/gcam/v1/load`, `/gcam/v1/status` | Browser preflight for permitted gCAM origins. |
 
 There is no root landing page or `/cnc` page. The actuator dashboard and JSON
@@ -27,7 +28,7 @@ current destination as `display-sd` or `controller-sd`.
 Both accept up to 2 MiB of decoded G-code and never start the uploaded job.
 Display SD rejects existing filenames instead of overwriting them, removes
 failed partial writes, and refreshes the file catalogue after a successful save.
-The idle preview worker then prepares cached views using the configured server.
+Use the explicit Files **Update** action to prepare cached views with the configured server.
 The discovery response uses `app: "gSender"` for gCAM compatibility and
 `product: "grblHAL panel"` to identify the receiver.
 
@@ -37,7 +38,8 @@ Example request body:
 {"name":"bracket.nc","gcode":"G21 G90\nG0 X0 Y0\nM30\n"}
 ```
 
-Larger Display-SD files can be copied onto the card with a reader.
+Larger Display-SD files can be transferred through [SD card sharing](sd-card-sharing.md)
+or copied onto the card with a reader.
 `tools/check-handoff-sd.py` checks the endpoint on the physical pendant using
 a small uniquely named test file and UART-disconnected demo mode.
 

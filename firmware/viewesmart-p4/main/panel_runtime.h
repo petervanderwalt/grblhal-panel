@@ -31,6 +31,7 @@ void runtime_init();
 constexpr int ControllerTxPin=37, ControllerRxPin=38;
 bool runtime_connect(int baud = 115200, bool usb = false);
 bool runtime_link_active();
+bool runtime_file_access_begin();
 void runtime_disconnect();
 void runtime_snapshot(State &state);
 bool runtime_action(Action action, const char *text = nullptr, float a = 0, float b = 0);

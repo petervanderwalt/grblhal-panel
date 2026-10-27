@@ -265,7 +265,7 @@ def main():
                         raise ValueError("Expected tap X Y")
                     exchange(port, "tap", point=point)
                     time.sleep(0.2)
-                elif parts[0] in ("demo", "touch", "rx", "test", "state", "last", "prefs", "perf", "hold", "swipe", "audit", "sd"):
+                elif parts[0] in ("demo", "touch", "rx", "test", "state", "last", "prefs", "perf", "hold", "swipe", "audit", "sd", "dav"):
                     verb = parts[0].upper()
                     payload = parts[1] if len(parts) == 2 else ""
                     if verb in ("DEMO", "TOUCH"):

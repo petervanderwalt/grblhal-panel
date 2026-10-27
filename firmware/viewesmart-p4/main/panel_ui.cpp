@@ -8,6 +8,7 @@
 #include "panel_usb.h"
 #include "panel_storage.h"
 #include "panel_hardware.h"
+#include "panel_webdav.h"
 #include "bsp/touch.h"
 #include "bsp/display.h"
 #include "esp_lcd_touch.h"
@@ -112,6 +113,7 @@ static lv_obj_t *file_box, *file_title, *progress, *progress_text, *time_text, *
     *probe_start, *probe_status, *contact_btn;
 static lv_obj_t *modal = nullptr, *number = nullptr, *number_error = nullptr;
 static bool modal_plain = false, modal_inset_pending = false;
+static bool webdav_open=false;
 static void finish_modal(lv_obj_t *);
 static void form_control_style(lv_obj_t *);
 static bool form_object(lv_obj_t *o) {
@@ -448,7 +450,7 @@ static void enable_choices(lv_obj_t *m, bool on, bool brief_busy = false) {
         lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_DISABLED);
 }
 static bool ready() {
-    return state.online && state.status && state.identified && !state.busy && !state.recovering && !state.alarm && !state.error &&
+    return !storage_remote_active() && state.online && state.status && state.identified && !state.busy && !state.recovering && !state.alarm && !state.error &&
            !state.sd_active && !strcmp(state.mode, "Idle");
 }
 static void notify(const char *s);
@@ -457,6 +459,7 @@ static void result(bool ok) {
         notify("Action unavailable: check connection, machine state and setup.");
 }
 static void close_modal() {
+    webdav_open=false;
     if (preview_update_open) storage_update_cancel();
     preview_update_open = false;
     machine_closed();
@@ -1226,6 +1229,7 @@ static void setting_row(lv_obj_t *parent, const char *title, float value, int y,
 #include "panel_probe_ui.inc"
 #include "panel_probe_config_ui.inc"
 #include "panel_jog_concept.inc"
+#include "panel_webdav_ui.inc"
 static void probe_refresh_ui() {
     bool on = ready();
     char s[160];
@@ -1278,6 +1282,7 @@ static void build_page() {
     lv_obj_clean(body);
     file_prepare_status=file_prepare_spinner=file_prepare_name=nullptr;
     brightness_value = nullptr;
+    dav_toggle=dav_address=nullptr;
     free(cached_pixels);cached_pixels=nullptr;cached_image=cached_status=nullptr;cached_loaded=false;
     perf_mark(ui_perf.clear_us);
     runtime_snapshot(state);
@@ -1430,6 +1435,11 @@ static void build_page() {
         int buttons_y = controller_y + 216;
         controller_connect = button(body, runtime_link_active() || state.online ? "Disconnect" : "Connect controller", 0, buttons_y, 472, 64, connect_click);
         controller_demo = button(body, runtime_is_demo() ? "Exit preview" : "Preview / controller off", 498, buttons_y, 472, 64, demo_click);
+        auto sharing=settings_list_row(body,buttons_y+88,88);
+        label(sharing,"SD card sharing / WebDAV",20,12,620,20);
+        dav_address=label(sharing,"",20,46,620,14,MUTED);
+        dav_toggle=button(sharing,"",680,16,270,56,dav_changed);
+        dav_settings_refresh();
     } else if (page == JobPage) {
         file_title = label(body, state.filename, 0, 0, 500, 20);
         lv_obj_set_style_text_align(file_title, LV_TEXT_ALIGN_CENTER, 0);
@@ -1486,6 +1496,7 @@ static void refresh_jog_data() {
     refresh_dro(false);
     char text[64];
     snprintf(text, sizeof text, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
+    dav_header(text,sizeof text);
     if (strcmp(lv_label_get_text(state_label), text)) lv_label_set_text(state_label, text);
     if (!lv_dropdown_is_open(wcs_dropdown) && state.wcs >= 54 && state.wcs <= 59 &&
         lv_dropdown_get_selected(wcs_dropdown) != (unsigned)(state.wcs - 54))
@@ -1519,6 +1530,7 @@ static void refresh(lv_timer_t *) {
         if (!fault) fault_seen = 0;
         if (fault && fault != fault_seen && !state.recovering) { fault_seen = fault; recover(nullptr); return; }
     }
+    if(dav_refresh())return;
     if (wifi_status) { wifi_refresh_ui(); return; }
     if (wifi_password || number || confirmation || actuator_config_open) return;
     if (probe_status) { probe_refresh_ui(); return; }
@@ -1540,6 +1552,7 @@ static void refresh(lv_timer_t *) {
     }
     if (modal) return; // Full-screen notices do not redraw the covered main page.
     if (page == SettingsPage && !modal && controller_connect) {
+        dav_settings_refresh();
         auto set = [](lv_obj_t *o, const char *text) { if (o && strcmp(lv_label_get_text(o), text)) lv_label_set_text(o, text); };
         set(lv_obj_get_child(controller_connect,0), runtime_link_active() || state.online ? "Disconnect" : "Connect controller");
         set(lv_obj_get_child(controller_demo,0), runtime_is_demo() ? "Exit preview" : "Preview / controller off");
@@ -1580,7 +1593,7 @@ static void refresh(lv_timer_t *) {
     unsigned known_rate_axes = 0;
     for (unsigned i = 0; i < 3; ++i)
         if (isfinite(state.axis_max_rate[i]) && state.axis_max_rate[i] > 0) known_rate_axes |= 1u << i;
-    bool manual_motion = cnc_jog && state.online && state.identified && state.status &&
+    bool manual_motion = !storage_remote_active() && cnc_jog && state.online && state.identified && state.status &&
                          !state.alarm && !state.error && !state.recovering && !state.sd_active && !state.probing && !state.uploading &&
                          !state.macro_failed && !state.job_failed &&
                          (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3));
@@ -1617,6 +1630,7 @@ static void refresh(lv_timer_t *) {
     enable(step_dropdown, on && !continuous, brief_busy && !continuous);
     char s[256];
     snprintf(s, sizeof s, "%s%s", runtime_is_demo() ? "PREVIEW / " : "", state.mode);
+    dav_header(s,sizeof s);
     lv_label_set_text(state_label, s);
     lv_obj_set_style_text_color(state_label,
                                 lv_color_hex(state.alarm || state.error        ? 0xFF888D
@@ -1824,7 +1838,7 @@ extern "C" void panel_ui_settings(char *buffer, size_t size) {
     const char *dialog = probe_offsets_open ? "probe-offsets" : number ? "number-keypad" :
                          server_open ? "preview-server" : machine_editor ? "machine-editor" :
                          machine_browser ? "machine-settings" : modal ? "other" : "none";
-    const char *form_kind = probe_offsets_open ? "probe-configuration" : number ? "numeric" : server_open ? "preview-server" :
+    const char *form_kind = webdav_open ? "sd-transfer" : probe_offsets_open ? "probe-configuration" : number ? "numeric" : server_open ? "preview-server" :
         wifi_password ? "wifi-password" : wifi_list ? "wifi-scan" : spindles_open ? "spindles" : accessories_open ? "tools" :
         macro_editor_open ? "macro-editor" : actuator_config_open ? "actuator-editor" : machine_editor ? "machine-editor" :
         machine_search ? "machine-search" : machine_browser ? "machine-settings" : probe_status ? "probe" :

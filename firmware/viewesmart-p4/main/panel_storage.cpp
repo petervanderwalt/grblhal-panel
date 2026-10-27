@@ -1,5 +1,6 @@
 #include "panel_storage.h"
 #include "panel_file_head.h"
+#include "panel_webdav.h"
 #include "bsp/esp32_p4_ultra.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
@@ -42,6 +43,7 @@ struct Catalog {
 static Catalog *catalog;
 static SemaphoreHandle_t lock;
 static std::atomic<bool> scan_requested{true}, local_source{true};
+static std::atomic<bool> remote_active{false};
 static std::atomic<unsigned> config_revision{0};
 static std::atomic<bool> capture_paused{false}, capture_active{false}, preparing{false};
 static std::atomic<bool> preview_viewing{false};
@@ -114,7 +116,7 @@ static void collect(const char *relative, unsigned depth) {
     }
     closedir(dir);
 }
-static bool available() { return !capture_paused.load() && !preview_viewing.load() && runtime_background_idle(); }
+static bool available() { return !remote_active.load() && !capture_paused.load() && !preview_viewing.load() && runtime_background_idle(); }
 static bool idle() { return update_active.load() && available(); }
 
 // A small path index avoids hashing entire jobs while browsing. Explicit Update verifies content.
@@ -451,6 +453,7 @@ static bool prepare(Entry entry, const char *server, unsigned revision, bool &un
 }
 static void worker(void *) {
     esp_err_t err = bsp_sdcard_mount();
+    if (err == ESP_OK && !webdav_recover()) err = ESP_FAIL;
     ESP_LOGI("panel_sd", "Mount: %s", esp_err_to_name(err));
     xSemaphoreTake(lock, portMAX_DELAY);
     catalog->mounted = err == ESP_OK;
@@ -467,10 +470,13 @@ static void worker(void *) {
             vTaskDelay(pdMS_TO_TICKS(250));
             continue;
         }
-        if (scan_requested.exchange(false)) {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        bool scan = !remote_active.load() && scan_requested.exchange(false);
+        if (scan) catalog->scanning = true;
+        xSemaphoreGive(lock);
+        if (scan) {
             message("Reading display SD...");
             xSemaphoreTake(lock, portMAX_DELAY);
-            catalog->scanning = true;
             catalog->count = 0;
             file_page = 0;
             xSemaphoreGive(lock);
@@ -534,7 +540,7 @@ static void worker(void *) {
 bool storage_update_start() {
     if (!catalog || !available() || preparing.load()) return false;
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool ok = catalog->mounted && !catalog->scanning && !scan_requested.load() && !update_active.load();
+    bool ok = catalog->mounted && !remote_active.load() && !catalog->scanning && !scan_requested.load() && !update_active.load();
     if (ok) {
         for (unsigned i=0;i<catalog->count;++i) catalog->entries[i].tried=false;
         update_done=update_failed=0; *catalog->working=0;
@@ -558,6 +564,7 @@ void storage_init() {
     auto memory = heap_caps_malloc(sizeof(Catalog), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     assert(memory);
     catalog = new (memory) Catalog;
+    webdav_init(); // Load the saved switch before Wi-Fi starts or Settings is drawn.
     nvs_handle_t h;
     if (nvs_open("panelstorage", NVS_READONLY, &h) == ESP_OK) {
         size_t n = sizeof catalog->server;
@@ -571,7 +578,7 @@ void storage_init() {
 bool storage_can_upload() {
     if (!catalog) return false;
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool ok = catalog->mounted && catalog->count < MaxStorageFiles && !update_active.load() && !preparing.load();
+    bool ok = catalog->mounted && catalog->count < MaxStorageFiles && !remote_active.load() && !update_active.load() && !preparing.load();
     xSemaphoreGive(lock);
     return ok;
 }
@@ -597,6 +604,30 @@ bool storage_upload(const char *path, const char *data, size_t size) {
     return ok;
 }
 void storage_scan() { scan_requested = true; }
+bool storage_remote_active() { return remote_active.load(); }
+bool storage_remote_begin() {
+    if (!catalog) return false;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool ok = catalog->mounted && !remote_active && !catalog->scanning &&
+        !update_active && !preparing && !preview_viewing;
+    if (ok) remote_active=true;
+    xSemaphoreGive(lock); return ok;
+}
+void storage_remote_end(bool changed) {
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (changed) scan_requested=true;
+    remote_active=false;
+    xSemaphoreGive(lock);
+}
+void storage_remote_invalidate(const char *path) {
+    // A same-size overwrite within FAT's timestamp resolution must not reuse an old preview.
+    char index[256]; index_path(path,index,sizeof index); unlink(index);
+    size_t n=strlen(path);
+    for (unsigned i=0;i<catalog->count;i++) {
+        const char *p=catalog->entries[i].file.path;
+        if (!strncmp(p,path,n) && p[n]=='/') { index_path(p,index,sizeof index); unlink(index); }
+    }
+}
 bool storage_remove_test_file(const char *name) {
     // Console-only cleanup is restricted to the live-test fixture namespace.
     if (!name || strncmp(name, "000-00-serial-", 14) || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) return false;
@@ -758,6 +789,11 @@ extern "C" void panel_debug_storage(char *buffer, size_t size) {
     cJSON_AddNumberToObject(root, "page", file_page);
     cJSON_AddBoolToObject(root, "mounted", catalog->mounted);
     cJSON_AddBoolToObject(root, "local", storage_source());
+    cJSON_AddBoolToObject(root, "webdav", webdav_enabled());
+    WebdavActivity dav;webdav_activity(dav);
+    cJSON_AddBoolToObject(root,"webdav_active",storage_remote_active());
+    cJSON_AddNumberToObject(root,"webdav_done",dav.done);
+    cJSON_AddNumberToObject(root,"webdav_total",dav.total);
     cJSON_AddBoolToObject(root, "preparing", preparing.load());
     cJSON_AddBoolToObject(root, "update_active", update_active.load());
     cJSON_AddNumberToObject(root, "update_done", update_done);
