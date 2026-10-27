@@ -164,6 +164,9 @@ static void command(const char *line)
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strcmp(line,"UG PERF")) {
+        bsp_display_lock(0);panel_ui_perf(payload,sizeof payload);bsp_display_unlock();
+        snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG AUDIT") || (sscanf(line,"UG AUDIT %d%n",&x,&consumed)==1 && line[consumed]==0)) {
         panel_debug_audit(payload,sizeof payload,!strcmp(line,"UG AUDIT")?-1:x);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);

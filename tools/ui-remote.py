@@ -211,7 +211,7 @@ def main():
     parser.add_argument("--port", default="COM12")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("self-test")
-    for name in ("test", "state", "last", "prefs"):
+    for name in ("test", "state", "last", "prefs", "perf"):
         sub.add_parser(name)
     demo = sub.add_parser("demo")
     demo.add_argument("mode", choices=("on", "off"))
@@ -265,7 +265,7 @@ def main():
                         raise ValueError("Expected tap X Y")
                     exchange(port, "tap", point=point)
                     time.sleep(0.2)
-                elif parts[0] in ("demo", "touch", "rx", "test", "state", "last", "prefs", "hold", "swipe", "audit", "sd"):
+                elif parts[0] in ("demo", "touch", "rx", "test", "state", "last", "prefs", "perf", "hold", "swipe", "audit", "sd"):
                     verb = parts[0].upper()
                     payload = parts[1] if len(parts) == 2 else ""
                     if verb in ("DEMO", "TOUCH"):
@@ -273,7 +273,7 @@ def main():
                     debug(port, (verb + " " + payload).strip())
                     time.sleep(0.2)
                 else:
-                    raise ValueError("Expected shot PATH, tap X Y, hold X Y MS, swipe X1 Y1 X2 Y2, demo on/off, rx LINE, test, state, last, audit [INDEX], sd STATE or quit")
+                    raise ValueError("Expected shot PATH, tap X Y, hold X Y MS, swipe X1 Y1 X2 Y2, demo on/off, rx LINE, test, state, last, perf, audit [INDEX], sd STATE or quit")
         elif args.command == "shot":
             exchange(port, "shot", args.output)
         elif args.command == "tap":

@@ -15,6 +15,7 @@
 #include "panel_macros.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include <assert.h>
 #include <new>
 #include "wifi_bridge.h"
@@ -153,6 +154,7 @@ static lv_obj_t *confirmation_message, *confirmation_action;
 static bool fault_confirmation=false;
 static int fault_confirmation_id=0;
 static void build_page();
+#include "panel_perf.inc"
 static void release_jog();
 static void refresh(lv_timer_t *);
 static void machine_closed();
@@ -476,6 +478,7 @@ static void close_modal() {
     layout_stop();
 }
 static lv_obj_t *open_modal(const char *title, int width = 1024, int height = 600, uint32_t accent = PRIMARY, bool plain = false) {
+    perf_begin(title);
     close_modal();
     modal_plain = plain;
     modal_inset_pending = !plain && (width != 1024 || height != 600);
@@ -492,6 +495,7 @@ static lv_obj_t *open_modal(const char *title, int width = 1024, int height = 60
     label(card, title, plain ? 24 : 40, plain ? 22 : 20, plain ? width - 48 : 864, plain ? 22 : 28,
           plain ? button_text(accent) : accent == RED ? 0xFF8379 : 0xF2F5F4);
     layout_stop();
+    perf_mark(ui_perf.prepare_us);
     return card;
 }
 
@@ -1243,6 +1247,8 @@ static void probe_refresh_ui() {
     }
 }
 static void build_page() {
+    const char *names[]={"Jog","Files","Settings","Macros","Job","Complete","Diag"};
+    perf_begin(names[page]);
     jog_control_key = UINT32_MAX;
     storage_preview_viewing(false);
     runtime_snapshot(state);
@@ -1251,6 +1257,7 @@ static void build_page() {
     lv_obj_move_foreground(wifi_header);
     lv_obj_move_foreground(state_label);
     concept_restore();
+    perf_mark(ui_perf.prepare_us);
     if (page_title) { lv_obj_delete(page_title); page_title = nullptr; }
     release_jog();
     jog_count = 0;
@@ -1272,6 +1279,7 @@ static void build_page() {
     file_prepare_status=file_prepare_spinner=file_prepare_name=nullptr;
     brightness_value = nullptr;
     free(cached_pixels);cached_pixels=nullptr;cached_image=cached_status=nullptr;cached_loaded=false;
+    perf_mark(ui_perf.clear_us);
     runtime_snapshot(state);
     layout_dro();
     visibility(nav[1], !actuator_mode);
@@ -1289,6 +1297,7 @@ static void build_page() {
     lv_obj_set_style_bg_color(body, lv_color_hex(CARD), 0);
     lv_obj_set_style_bg_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_shadow_opa(body, floating ? LV_OPA_TRANSP : LV_OPA_10, 0);
+    perf_mark(ui_perf.setup_us);
     if (page == JogPage && actuator_mode) {
         build_actuators();
     } else if (page == 0) {
@@ -1451,8 +1460,12 @@ static void build_page() {
         label(body, state.filename, 140, 144, 712, 22, WHITE);
         button(body, "OK", 290, 250, 412, 80, job_ok, 0, CARD);
     }
+    perf_mark(ui_perf.create_us);
     concept_layout();
+    perf_mark(ui_perf.style_us);
+    unsigned seq=ui_perf.seq;
     refresh(nullptr);
+    if(seq==ui_perf.seq) { perf_mark(ui_perf.update_us); perf_end(); }
 }
 static void refresh_dro(bool colors = true) {
     char work[32], machine[32];
@@ -1686,6 +1699,7 @@ static void refresh(lv_timer_t *) {
     concept_refresh();
 }
 } // namespace
+extern "C" void panel_ui_perf(char *buffer,size_t size) { perf_report(buffer,size); }
 extern "C" void panel_ui_create() {
     printf("@UGDBG LVGL draw buffer %p\n",lv_display_get_buf_active(lv_display_get_default())->data);
     runtime_init();
@@ -1801,6 +1815,7 @@ extern "C" void panel_ui_create() {
     lv_obj_add_event_cb(stop_btn, stop_click, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), font(22), 0);
     lv_obj_add_event_cb(state_label, recover, LV_EVENT_CLICKED, nullptr);
+    lv_display_add_event_cb(lv_display_get_default(),perf_display,LV_EVENT_ALL,nullptr);
     build_page();
     runtime_connect((int)prefs.baud, usb_connection);
     lv_timer_create(refresh, 100, nullptr);

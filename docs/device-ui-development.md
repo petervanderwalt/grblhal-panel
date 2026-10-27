@@ -1,5 +1,24 @@
 # Device UI development
 
+## Measuring page speed
+
+`python tools/benchmark-pages.py --samples 10 --warm-settings --output captures/page-perf/run.json`
+measures the five CNC tabs and secondary forms on the real display. It opens and
+cancels forms, restores physical touch, and checks that saved preferences stay
+unchanged. Use an idle, isolated controller; it reads settings metadata but sends
+no motion commands. Keep the same SD contents and controller connection for
+before/after runs. Wi-Fi must settle before measurement.
+
+`python tools/ui-remote.py perf` (or `perf` in a session) reads the last completed
+sample through `UG PERF`. Firmware timestamps separate construction phases,
+layout, software drawing, flush callbacks and flush waits. `transition_us` runs
+from construction start to the first completed LVGL refresh; it is not a measured
+LCD scanout time. Drawing includes flush/wait time, so do not add those columns
+together. Host command time includes UART and injected-touch overhead and is not
+the page latency. A screenshot is taken separately, outside the timed run.
+
+The report for the current hardware is [Page benchmarks](page-benchmarks.md).
+
 The firmware in `firmware/viewesmart-p4` exposes screenshot capture, injected touch
 and preview-feedback commands on its UART0 console (COM12, 115200 baud). Captures
 come from the physical LCD framebuffer, including custom drawing. The same native

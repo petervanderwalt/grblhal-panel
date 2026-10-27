@@ -21,6 +21,7 @@ static void concept_place(lv_obj_t *o, int x, int y, int w, int h, bool persiste
 }
 static void concept_clear(lv_obj_t *o) {
     lv_obj_remove_state(o, LV_STATE_USER_1);
+    if (o == body) return; // Its old children are deleted by build_page immediately afterward.
     for (unsigned i = 0; i < lv_obj_get_child_count(o); ++i) concept_clear(lv_obj_get_child(o, i));
 }
 static void concept_restore() {
@@ -124,7 +125,6 @@ static void concept_dock() {
     }
 }
 static void concept_header() {
-    lv_obj_update_layout(root);
     if (concept_header_active()) {
         concept_skin(root, CONCEPT_BG, 0);
         concept_skin(lv_obj_get_child(root, 0), CONCEPT_BG, 0);
@@ -236,7 +236,7 @@ static void concept_aux_layout() {
     lv_obj_set_width(feed_text,466); lv_obj_set_width(spindle_text,466);
     form_control_style(job_pause); form_control_style(stop_btn);
 }
-static void concept_layout() {
+static void concept_layout_content() {
     concept_dock();
     if (!concept_header_active()) return;
     concept_header();
@@ -299,6 +299,14 @@ static void concept_layout() {
             lv_obj_set_style_line_color(line, lv_color_hex(color), LV_STATE_USER_1);
         }
     }
+}
+static void concept_layout() {
+    lv_obj_update_layout(root);
+    // Apply the page palette once instead of refreshing inherited styles per setter.
+    lv_obj_enable_style_refresh(false);
+    concept_layout_content();
+    lv_obj_enable_style_refresh(true);
+    lv_obj_refresh_style(root, LV_PART_ANY, LV_STYLE_PROP_ANY);
 }
 static void concept_refresh() {
     if (concept_header_active())

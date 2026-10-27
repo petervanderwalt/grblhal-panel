@@ -113,6 +113,7 @@ static void build_inputs() {
     const uint32_t colors[] = {RED, GREEN, MUTED};
     for (int i = 0; i < 3; ++i) {
         auto led = lv_led_create(c);
+        lv_obj_set_style_shadow_width(led,6,0); lv_obj_set_style_shadow_spread(led,0,0);
         lv_obj_set_pos(led, 548 + i * 132, 12); lv_obj_set_size(led, 16, 16);
         lv_led_set_color(led, lv_color_hex(colors[i]));
         lv_led_set_brightness(led, i == 2 ? 120 : 255);
@@ -122,6 +123,7 @@ static void build_inputs() {
         int x = 16 + (i / 7) * 312, y = 68 + (i % 7) * 48;
         label(c, input_names[i], x + 36, y, 264, 18);
         input_values[i] = lv_led_create(c);
+        lv_obj_set_style_shadow_width(input_values[i],6,0); lv_obj_set_style_shadow_spread(input_values[i],0,0);
         lv_obj_set_pos(input_values[i], x, y - 2);
         lv_obj_set_size(input_values[i], 22, 22);
         lv_obj_remove_flag(input_values[i], LV_OBJ_FLAG_CLICKABLE);

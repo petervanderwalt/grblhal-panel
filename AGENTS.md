@@ -91,6 +91,11 @@ Inspect every resulting PNG before claiming a UI task complete. Test at least a
 navigation round trip. A capture takes seconds and depends on image complexity;
 do not treat this as video.
 
+For measured page speed, use `tools/benchmark-pages.py` and the read-only
+`UG PERF`/session `perf` command. See `docs/page-benchmarks.md` and
+`docs/device-ui-development.md#measuring-page-speed`. Measure device construction
+and refresh separately from UART/touch round trips; do not time screenshots.
+
 Taps invoke real LVGL events and may activate machine controls. Automated checks
 must use UART-disconnected preview. Before live controller tests outside preview,
 confirm machine isolation; do not assume an earlier disconnection still applies.

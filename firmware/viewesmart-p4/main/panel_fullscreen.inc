@@ -96,7 +96,9 @@ static void form_control_style(lv_obj_t *obj) {
     }
 }
 static void finish_modal(lv_obj_t *card) {
-    if (!modal || modal_plain) return;
+    bool measure=perf_pending && !ui_perf.built;
+    if(measure) perf_mark(ui_perf.create_us);
+    if (!modal || modal_plain) { if(measure) perf_end(); return; }
     // Inset the existing large-form layouts inside the shared page card once.
     if (modal_inset_pending) {
         for (unsigned i = 2; i < lv_obj_get_child_count(card); ++i) {
@@ -111,4 +113,5 @@ static void finish_modal(lv_obj_t *card) {
         modal_inset_pending = false;
     }
     for (unsigned i = 1; i < lv_obj_get_child_count(card); ++i) form_control_style(lv_obj_get_child(card,i));
+    if(measure) { perf_mark(ui_perf.style_us); perf_end(); }
 }
