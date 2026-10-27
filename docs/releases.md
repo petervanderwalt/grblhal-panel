@@ -13,7 +13,7 @@ saved settings should not be assumed compatible.
 
 The release is for the VIEWESMART 7-inch 1024×600 ESP32-P4/C6 with 16 MB flash,
 tested on early P4 revision 1.3. Other panels and later silicon are unverified.
-The browser checks for an ESP32-P4 before offering a write. The C6 coprocessor
+The browser checks for an ESP32-P4 before offering a write. Full browser installation of v0.1.0-beta.3 has been verified on the development LCD: all three images passed write verification, the display booted automatically, and USB, Wi-Fi and saved preferences were retained. The C6 coprocessor
 is not flashed; Wi-Fi requires compatible ESP-Hosted firmware already on it.
 
 If connection fails, close other serial software. Hold BOOT, tap RESET, release
