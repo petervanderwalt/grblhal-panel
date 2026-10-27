@@ -4,12 +4,11 @@ Open https://petervanderwalt.github.io/grblhal-panel/ in desktop Chrome or Edge.
 Connect the display's **UART** socket to the PC with a data cable. Close any
 serial monitors, disconnect the CNC controller and select the UART port.
 
-Choose **First installation** when replacing the original LCD firmware. This
-writes the bootloader at `0x2000`, partition table at `0x8000` and app at
-`0x10000`. For an existing Panel installation, choose **Update** to write only
-the app. Neither path erases the whole flash or writes NVS, internal file storage
-or the SD card. Replacing another firmware changes its partition layout, so its
-saved settings should not be assumed compatible.
+Click **Connect display**, select the UART port, then **Install firmware**.
+Every browser installation writes the bootloader at `0x2000`, partition table
+at `0x8000` and app at `0x10000`. It does not erase the whole flash or write NVS,
+internal file storage or the SD card. Replacing another firmware changes its
+partition layout, so its saved settings should not be assumed compatible.
 
 The release is for the VIEWESMART 7-inch 1024×600 ESP32-P4/C6 with 16 MB flash,
 tested on early P4 revision 1.3. Other panels and later silicon are unverified.
@@ -23,7 +22,7 @@ support for this installer. A successful install resets the display automaticall
 
 The page uses pinned esptool-js 0.7.0, bundled with its dependencies. Downloads
 are checked against the release's SHA-256 manifest before any flash write, and
-esptool verifies written images with MD5. Progress and an expandable log show
+esptool verifies written images with MD5. Progress and the visible log show
 what is happening. Interrupted installs can be retried through the bootloader.
 
 ## Publishing a tester build

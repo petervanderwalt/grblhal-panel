@@ -3,7 +3,7 @@
 [**Install firmware in your browser**](https://petervanderwalt.github.io/grblhal-panel/) · [Download tester releases](https://github.com/petervanderwalt/grblhal-panel/releases)
 
 Use desktop Chrome or Edge with the display's **UART** USB socket. The installer
-supports first installation and application-only updates, without erasing Panel
+writes the bootloader, partition table and application while preserving Panel
 settings or SD files. Builds target the VIEWESMART 7-inch 1024×600 P4/C6 hardware;
 the C6 must already have compatible ESP-Hosted firmware. See
 [browser installation and releases](docs/releases.md).

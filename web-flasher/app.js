@@ -7,14 +7,12 @@ const status=text=>$('status').textContent=text;
 let manifest,transport,loader,busy=false;
 function controls(){
   $('connect').disabled=busy||!manifest||!navigator.serial||!!loader;
-  $('install').disabled=busy||!loader||!$('confirm').checked;
+  $('install').disabled=busy||!loader;
   $('disconnect').disabled=busy||!transport;
-  $('mode').disabled=busy; $('confirm').disabled=busy;
 }
 async function disconnect(){
   try {if(transport) await transport.disconnect();} finally {transport=null;loader=null;controls();}
 }
-$('confirm').onchange=controls;
 $('connect').onclick=async()=>{
   busy=true;controls();
   try {
@@ -32,7 +30,7 @@ $('disconnect').onclick=async()=>{await disconnect();status('Disconnected.');};
 $('install').onclick=async()=>{
   busy=true;controls();$('progress').value=0;
   try {
-    const parts=flashParts(manifest,$('mode').value==='update');
+    const parts=flashParts(manifest);
     const fileArray=[];
     for(const part of parts){
       status(`Downloading and checking ${part.path}…`);$('progress').removeAttribute('value');
@@ -55,7 +53,7 @@ navigator.serial?.addEventListener('disconnect',()=>{if(!busy){loader=null;trans
 try {
   const response=await fetch('firmware/manifest.json',{cache:'no-store'});
   if(!response.ok) throw Error('No firmware release is available yet.');
-  manifest=await response.json();flashParts(manifest,false);
+  manifest=await response.json();flashParts(manifest);
   $('version').textContent=manifest.version;
   $('source').href=`https://github.com/petervanderwalt/grblhal-panel/releases/tag/${encodeURIComponent(manifest.version)}`;
   status(navigator.serial?'Ready. Connect your display to begin.':'Open this page in Chrome or Edge on a desktop computer.');
