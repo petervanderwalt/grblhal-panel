@@ -5,6 +5,10 @@
 namespace panel {
 // Same conservative character-counting window as Ooznest WebSerial, including LF.
 bool stream_self_test();
+struct StreamStats {
+    uint32_t sent_lines=0, ack_lines=0, sent_bytes=0, ack_bytes=0, hash=2166136261u;
+    unsigned high_water=0;
+};
 class Stream {
   public:
     using Send = bool (*)(void *, const char *);
@@ -22,9 +26,11 @@ class Stream {
     uint32_t sent_at() const { return sent_; }
     unsigned outstanding() const { return count_; }
     unsigned in_flight() const { return used_; }
+    const StreamStats &stats() const { return stats_; }
     uint32_t checked_bytes() const { return consumed_; }
 
   private:
+    StreamStats stats_;
     Send send_;
     void *context_;
     FILE *file_ = nullptr;

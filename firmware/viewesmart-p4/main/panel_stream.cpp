@@ -33,6 +33,7 @@ bool Stream::start(FILE *file, uint32_t size, uint32_t now) {
     file_ = file;
     size_ = size;
     ack_bytes_ = 0;
+    stats_ = StreamStats();
     sent_ = now;
     *error_ = 0;
     head_ = count_ = used_ = 0;
@@ -180,12 +181,17 @@ void Stream::tick(uint32_t now, bool allow) {
         pending_[(head_ + count_) % 64] = {length, next_offset_};
         count_++;
         used_ += length;
+        stats_.sent_lines++; stats_.sent_bytes+=length;
+        if (used_>stats_.high_water) stats_.high_water=used_;
+        for (const unsigned char *p=(const unsigned char *)next_; *p; ++p) stats_.hash=(stats_.hash^*p)*16777619u;
+        stats_.hash=(stats_.hash^10u)*16777619u;
         have_ = false;
     }
 }
 void Stream::acknowledge(uint32_t now) {
     if (!file_ || !count_)
         return;
+    stats_.ack_lines++; stats_.ack_bytes+=pending_[head_].length;
     used_ -= pending_[head_].length;
     ack_bytes_ = pending_[head_].offset;
     head_ = (head_ + 1) % 64;

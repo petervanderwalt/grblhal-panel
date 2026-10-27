@@ -85,6 +85,17 @@ bool tools_self_test() {
     ready(); m.receive("[VER:1.1f.20240101:]", 450); m.state.extended = false;
     m.receive("<Idle|Pn:XP>", 451); CHECK(m.state.probe);
     m.receive("<Idle>", 452); CHECK(!m.state.probe && !(m.state.inputs & (1u << ('X'-'A'))));
+    ready(); m.receive("$30=24000", 407); m.receive("$31=1000", 408);
+    CHECK(m.spindle_control(1, 12000)); m.tick(409);
+    m.receive("<Idle|A:S|FS:0,12000>", 15409); m.tick(15409);
+    CHECK(m.state.busy && !m.state.error);
+    m.receive("ok", 15410); m.tick(15411); CHECK(!m.state.busy && !m.state.error);
+    CHECK(m.spindle_control(0, 0)); m.tick(15412);
+    m.receive("<Idle|A:|FS:0,0>", 75413); m.tick(75413);
+    CHECK(m.state.error && !m.state.busy);
+    ready(); CHECK(!m.remove_test_file("tc.macro") && !m.remove_test_file("000-00-serial-../tc.macro") && !m.remove_test_file("000-00-serial-bad!"));
+    CHECK(m.remove_test_file("000-00-serial-test.nc")); m.tick(400);
+    CHECK(!strcmp(last,"$FD=/000-00-serial-test.nc"));
     m.disconnect(); CHECK(!m.macro_run("M5"));
     puts("@UGTEST PASS inputs, accessory controls, validated macros and fresh-Idle completion");
     return true;

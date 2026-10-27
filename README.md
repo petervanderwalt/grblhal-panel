@@ -175,6 +175,7 @@ supplies sample machine feedback for UI checks.
 
 - [Development instructions and source map](AGENTS.md)
 - [Live controller test plan](docs/live-controller-test-plan.md)
+- [Live controller results — 27 October 2026](docs/live-controller-results-2026-10-27.md)
 - [Screenshot, touch injection and test guide](docs/device-ui-development.md)
 - [UART, RS485 and panel-plugin investigation](docs/hardware-and-protocol.md)
 - [Inputs, spindle/coolant and macros](docs/inputs-accessories-macros.md)
@@ -302,7 +303,7 @@ lines and a `0,0,0` marker locate the file's work origin.
 | Features and use | Preview |
 | --- | --- |
 | **Startup lock**<br><br>A startup alarm opens Unlock automatically. Unlock releases the lock without establishing a homed position. | [<img src="docs/screenshots/panel-startup-alarm.png" alt="Machine locked with Unlock and Cancel" width="640">](docs/screenshots/panel-startup-alarm.png) |
-| **Controller alarm**<br><br>Controller alarms appear on a red full-screen page. The header fault indicator can reopen the current alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Red alarm page" width="640">](docs/screenshots/panel-alarm.png) |
+| **Critical alarm**<br><br>Remove the cause, then confirm Reset & unlock. The pendant resets, waits for the controller and unlocks. This does not restore a homed position. The header fault indicator reopens the alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Critical alarm with Reset and unlock confirmation" width="640">](docs/screenshots/panel-alarm.png) |
 | **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error page" width="640">](docs/screenshots/panel-error.png) |
 
 ### Wi-Fi scan, password entry and connection results

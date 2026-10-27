@@ -168,9 +168,28 @@ static bool commands_and_faults() {
     CHECK(model->state.alarm == 2 && !model->zero(1));
     CHECK(model->unlock());
     model->tick(505);
-    CHECK(!strcmp(capture->lines[2], "$X"));
+    CHECK(model->state.recovering && capture->bytes[capture->b - 1] == 0x18 && capture->n == 2);
+    model->begin(600); // Its own reset greeting must preserve the explicit recovery request.
+    model->receive("[VER:1.1f.20261020:]", 601);
+    model->receive("[FIRMWARE:grblHAL]", 602);
+    model->receive("<Alarm:11>", 603);
+    model->tick(900);
+    for (int i=0;i<5;i++) { model->receive("ok", 901+i); model->tick(901+i); }
+    int before = capture->n;
+    model->receive("<Alarm:11>", 3400); model->tick(3400);
+    CHECK(model->state.recovering && capture->n == before);
+    model->receive("<Alarm:11>", 3600); model->tick(3600);
+    CHECK(!model->state.recovering && !strcmp(capture->lines[capture->n-1], "$X"));
+    model->receive("ok", 3601); model->tick(3602);
+    CHECK(capture->n == before+1);
     CHECK(model->stop() && capture->bytes[capture->b - 1] == 0x18);
     CHECK(!model->state.status);
+    ready(); model->receive("<Alarm:10>", 500); CHECK(model->unlock());
+    model->disconnect(); CHECK(!model->state.recovering);
+    ready(); model->receive("<Alarm:11>", 500); before=capture->b;
+    CHECK(model->unlock()); model->tick(501);
+    CHECK(capture->b == before && !strcmp(capture->lines[capture->n-1], "$X"));
+    model->receive("ok",502);model->tick(503);
     return true;
 }
 static bool sd_download() {
@@ -422,6 +441,13 @@ static bool units_overrides_and_completion() {
     model->receive("<Idle>", 504);
     CHECK(!model->state.sd_active && model->state.job_complete);
     ready();
+    model->state.file_count=1; strcpy(model->state.files[0].path,"/tiny.nc");
+    CHECK(model->run("/tiny.nc")); model->tick(500);
+    model->receive("ok",501); model->tick(502);
+    model->receive("<Idle>",503); CHECK(!model->state.job_complete);
+    model->receive("[MSG:Pgm End]",504); CHECK(!model->state.job_complete);
+    model->receive("<Idle>",505); CHECK(model->state.job_complete && !model->state.sd_active);
+    ready();
     model->receive("<Run|SD:42,/test.nc>", 500);
     CHECK(model->stop());
     model->receive("<Idle>", 501);
@@ -437,6 +463,7 @@ static bool units_overrides_and_completion() {
     CHECK(model->state.job_failed && model->unlock());
     model->receive("<Idle>", 502);
     CHECK(!model->state.job_complete);
+    CHECK(model->stop());
     return true;
 }
 static bool lost_feedback_and_write_failure() {

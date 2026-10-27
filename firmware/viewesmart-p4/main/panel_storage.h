@@ -10,6 +10,7 @@ void storage_update_cancel();
 void storage_update_state(bool &active, bool &busy, unsigned &done, unsigned &total, unsigned &failed);
 bool storage_can_upload();
 bool storage_upload(const char *path, const char *data, size_t size);
+bool storage_remove_test_file(const char *name);
 void storage_page(int delta);
 void storage_files(State &state);
 bool storage_source();

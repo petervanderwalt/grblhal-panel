@@ -10,6 +10,8 @@ void panel_debug_demo(bool on);
 bool panel_debug_receive(const char *line);
 void panel_debug_state(char *buffer, size_t size);
 void panel_debug_last(char *buffer, size_t size);
+void panel_debug_audit(char *buffer, size_t size, int item);
+bool panel_debug_remove_test_file(const char *name);
 #ifdef __cplusplus
 }
 #endif

@@ -127,6 +127,7 @@ void Model::begin(uint32_t now) {
     settings.clear();
     state.~State();
     new (&state) State();
+    state.recovering = unlock_pending_;
     now_ = now;
     poll_ = now;
     identified_at_ = 0;
@@ -141,6 +142,7 @@ void Model::begin(uint32_t now) {
     sent_ = now;
 }
 void Model::disconnect() {
+    unlock_pending_ = state.recovering = false;
     state.homed_axes = 0;
     state.machine_known = false;
     cancel("Controller disconnected");
@@ -152,7 +154,7 @@ void Model::disconnect() {
 }
 bool Model::idle() const {
     return state.online && state.identified && state.status && state.cycle_axis < 0 && !strcmp(state.mode, "Idle") && !state.alarm &&
-           !state.error && !state.busy && !state.sd_active && !state.uploading && !state.macro_failed;
+           !state.error && !state.busy && !state.recovering && !state.sd_active && !state.uploading && !state.macro_failed;
 }
 void Model::transfer_finished(uint32_t now) {
     state.uploading = state.busy = state.status = false;
@@ -465,8 +467,14 @@ bool Model::actuator_cycle_speed(float feed) {
     return true;
 }
 bool Model::unlock() {
-    if (!state.online || !state.identified || state.busy || strncmp(state.mode, "Alarm", 5))
+    if (!state.online || !state.identified || state.busy || state.recovering || strncmp(state.mode, "Alarm", 5))
         return false;
+    if (critical_alarm(state.alarm)) {
+        if (!stop()) return false;
+        unlock_pending_ = state.recovering = true;
+        unlock_started_ = now_;
+        return true;
+    }
     state.alarm = state.error = 0;
     return append("$X");
 }
@@ -485,6 +493,7 @@ bool Model::resume() {
 bool Model::stop() {
     if (!realtime_(context_, 0x18))
         return false;
+    unlock_pending_ = state.recovering = false;
     cancel("Reset sent. Wait for controller identification.");
     state.macro_failed = false;
     state.status = false;
@@ -786,6 +795,8 @@ void Model::status_report(const char *line) {
             state.sd_active = false;
             state.job_complete = true;
             state.percent = 100;
+            state.modal_known = false;
+            append("$G"); append("$#");
             copy(state.message, "SD job complete", sizeof state.message);
         }
     }
@@ -1091,7 +1102,7 @@ void Model::receive(const char *line, uint32_t now) {
     }
     if (!strncmp(line, "[MSG:", 5)) {
         copy(state.message, line, sizeof state.message);
-        if (strstr(line, "Program End") && state.sd_active) {
+        if ((!strcmp(line, "[MSG:Pgm End]") || strstr(line, "Program End")) && state.sd_active) {
             state.job_end = true;
         }
         return;
@@ -1168,6 +1179,13 @@ bool Model::coolant_control(unsigned mode) {
     if (mode & 2) append("M8");
     return true;
 }
+bool Model::remove_test_file(const char *name) {
+    if (!idle() || !name || strncmp(name,"000-00-serial-",14) || strpbrk(name,"/\\") || strstr(name,"..") || strlen(name)>140) return false;
+    char path[160], command[192]; snprintf(path,sizeof path,"/%s",name);
+    if (!valid_sd_path(path)) return false;
+    snprintf(command,sizeof command,"$FD=%s",path);
+    return append(command);
+}
 bool Model::macro_run(const char *code) {
     std::vector<std::string> lines;
     if (!idle() || !macro_lines(code, lines)) return false;
@@ -1210,6 +1228,18 @@ void Model::tick(uint32_t now) {
         state.online = false;
         return;
     }
+    if (unlock_pending_) {
+        if (now - unlock_started_ > 10000) {
+            unlock_pending_ = state.recovering = false;
+            state.error = 1;
+            copy(state.message, "Unlock timed out. Check controller before retrying.", sizeof state.message);
+        } else if (now - unlock_started_ >= 3000 && state.status && !state.busy &&
+                   (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Alarm", 5))) {
+            unlock_pending_ = state.recovering = false;
+            state.alarm = state.error = 0;
+            append("$X");
+        }
+    }
     if (state.local_job) {
         stream_.tick(now, !stream_paused_ && !state.alarm && !state.error && (!strcmp(state.mode,"Idle") || !strcmp(state.mode,"Run")));
         state.job_preparing = stream_.checking();
@@ -1242,7 +1272,10 @@ void Model::tick(uint32_t now) {
             cursor_++;
             need_probe_ = got_probe_ = false;
         } else {
-            if (now - sent_ > (homing || state.macro_running ? 300000u : state.probing ? 120000u : 10000u)) {
+            bool spindle = awaiting_ && cursor_ < queued_ &&
+                (queue_[cursor_] == "M5" || queue_[cursor_].compare(0, 3, "M3 ") == 0 || queue_[cursor_].compare(0, 3, "M4 ") == 0);
+            // Spindle ramp/delay can keep a healthy controller busy beyond ten seconds.
+            if (now - sent_ > (homing || state.macro_running ? 300000u : state.probing ? 120000u : spindle ? 60000u : 10000u)) {
                 if (state.macro_running) rt(state.grblhal ? 0x82 : '!');
                 if (state.probing || homing)
                     rt(0x18);

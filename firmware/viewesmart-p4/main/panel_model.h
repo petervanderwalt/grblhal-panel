@@ -5,6 +5,7 @@
 #include "panel_stream.h"
 
 namespace panel {
+inline bool critical_alarm(int code) { return code == 1 || code == 2 || code == 10 || code == 17 || code == 20; }
 constexpr int MaxFiles = 64;
 constexpr size_t MaxPreviewBytes = 2 * 1024 * 1024;
 inline float display_scale(bool inches) { return inches ? 25.4f : 1.f; }
@@ -36,7 +37,7 @@ struct State {
     unsigned spindle_count = 0, spindle_revision = 0;
     bool spindles_loading = false;
     int spindles_result = 0;
-    bool online = false, identified = false, extended = false, status = false;
+    bool online = false, identified = false, extended = false, status = false, recovering = false;
     bool ymodem = false;
     bool coordinates = false, wco_known = false, modal_known = false, inches = false, absolute = true;
     bool report_inches = false, report_units_known = false, probe = false, probe_known = false, contact_ready = false, contact_testing = false;
@@ -89,6 +90,7 @@ class Model {
     bool list();
     bool run(const char *path);
     bool local_stream_done() const { return stream_.done(); }
+    const Stream &stream_diagnostics() const { return stream_; }
     bool run_local(FILE *file, const char *path, uint32_t size, uint32_t now);
     using Download = bool (*)(void *, const char *, size_t);
     bool download(const char *path, Download sink, void *context);
@@ -117,6 +119,7 @@ class Model {
     bool acknowledge_error();
     bool override_target(bool spindle, int percent);
     bool spindle_control(int direction, float rpm);
+    bool remove_test_file(const char *name);
     bool spindle_list();
     bool spindle_select(int number);
     bool coolant_control(unsigned mode);
@@ -129,6 +132,8 @@ class Model {
     void *context_;
     Stream stream_;
     bool stream_paused_ = false;
+    bool unlock_pending_ = false;
+    uint32_t unlock_started_ = 0;
     Download download_sink_ = nullptr;
     void *download_context_ = nullptr;
     bool download_failed_ = false;

@@ -597,6 +597,20 @@ bool storage_upload(const char *path, const char *data, size_t size) {
     return ok;
 }
 void storage_scan() { scan_requested = true; }
+bool storage_remove_test_file(const char *name) {
+    // Console-only cleanup is restricted to the live-test fixture namespace.
+    if (!name || strncmp(name, "000-00-serial-", 14) || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) return false;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool ok = catalog->mounted && !catalog->scanning && !scan_requested && !update_active && !preparing && !preview_viewing;
+    char path[192];
+    if (ok) {
+        int n = snprintf(path, sizeof path, "%s/%s", ROOT, name);
+        ok = n > 0 && n < (int)sizeof path && unlink(path) == 0;
+        if (ok) scan_requested = true;
+    }
+    xSemaphoreGive(lock);
+    return ok;
+}
 bool storage_source(bool local) {
     nvs_handle_t h;
     if (nvs_open("panelstorage", NVS_READWRITE, &h) != ESP_OK) return false;

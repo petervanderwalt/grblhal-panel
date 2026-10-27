@@ -12,6 +12,8 @@
 #include "panel_upload.h"
 #include "panel_storage.h"
 #include "panel_settings_demo.h"
+#include "esp_app_desc.h"
+#include "cJSON.h"
 #include <assert.h>
 #include <new>
 #include <stdio.h>
@@ -46,6 +48,18 @@ static bool preview_write(void *, const char *data, size_t size) {
 }
 static bool rx_overflow = false;
 static uint32_t now() { return xTaskGetTickCount() * portTICK_PERIOD_MS; }
+static uint32_t audit_tx=0,audit_ok=0,audit_errors=0,audit_rt80=0,audit_rt87=0,audit_rt3f=0,audit_resets=0,audit_writes=0,audit_overflow=0;
+static char audit_command[160];
+static char audit_accessories[16];
+static const char *audit_headers[]={"[VER:","[OPT:","[GC:","[G54:","[G55:","[G56:","[G57:","[G58:","[G59:","[G28:","[G30:","[G92:","[TLO:","[PRB:","<","[MSG:"};
+static char audit_reports[16][160];
+static void audit_receive(const char *line) {
+    const char *accessories = line[0]=='<' ? strstr(line,"|A:") : nullptr;
+    if (accessories) snprintf(audit_accessories,sizeof audit_accessories,"%.*s",(int)strcspn(accessories+1,"|>"),accessories+1);
+    if(!strcmp(line,"ok")) audit_ok++;
+    if(!strncmp(line,"error:",6)) audit_errors++;
+    for(unsigned i=0;i<16;i++) if(!strncmp(line,audit_headers[i],strlen(audit_headers[i]))) snprintf(audit_reports[i],sizeof audit_reports[i],"%s",line);
+}
 static bool send_line(void *, const char *s) {
     const char *equal = strchr(s, '=');
     bool setting = s[0] == '$' && equal && equal > s + 1;
@@ -54,6 +68,7 @@ static bool send_line(void *, const char *s) {
         snprintf(last_tx, sizeof last_tx, "%.*s=<hidden>", int(equal - s), s);
     else
         snprintf(last_tx, sizeof last_tx, "%s", s);
+    if (!demo) { audit_tx++; if(setting) audit_writes++; snprintf(audit_command,sizeof audit_command,"%s",last_tx); }
     if (demo) {
         snprintf(pending_line, sizeof pending_line, "%s", s);
         pending = true; pending_count++;
@@ -97,6 +112,7 @@ extern "C" void panel_debug_state(char *b, size_t n) {
         (unsigned long)s.inputs, (unsigned long)s.inputs_known, s.spindle_direction, s.spindle, s.coolant, s.macro_running, active_spindle, s.spindle_count,s.local_job,s.job_preparing,(unsigned long)s.job_bytes,(unsigned long)s.job_total,s.file_total,s.file_offset);
 }
 static bool send_rt(void *, uint8_t b) {
+    if(!demo) { if(b==0x80) audit_rt80++; if(b==0x87) audit_rt87++; if(b=='?') audit_rt3f++; if(b==0x18) audit_resets++; }
     if (b != 0x80 && b != 0x87 && b != '?')
         snprintf(last_tx, sizeof last_tx, "0x%02X", b);
     if (demo)
@@ -105,7 +121,48 @@ static bool send_rt(void *, uint8_t b) {
 }
 static Model *model_instance;
 #define model (*model_instance)
+extern "C" void panel_debug_audit(char *buffer,size_t size,int item) {
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    cJSON *j=cJSON_CreateObject();
+    if(j) {
+        if(item>=0) {
+            if((unsigned)item<model.settings.entries.size()) {
+                const auto &e=model.settings.entries[item];
+                cJSON_AddNumberToObject(j,"id",e.id); cJSON_AddNumberToObject(j,"group",e.group);
+                cJSON_AddBoolToObject(j,"known",e.has_value); cJSON_AddStringToObject(j,"value",e.metadata && e.type==8 ? "<hidden>" : e.value.c_str());
+            } else cJSON_AddBoolToObject(j,"end",true);
+        } else if(item<=-2) {
+            unsigned i=(unsigned)(-(int64_t)item-2);
+            cJSON_AddStringToObject(j,"line",i<16?audit_reports[i]:"");
+        } else {
+            auto &s=model.state; const auto &stream=model.stream_diagnostics();const auto &st=stream.stats();
+#define NUM(name,value) cJSON_AddNumberToObject(j,name,value)
+            NUM("ms",now()); NUM("build",s.build); NUM("rt80",audit_rt80);NUM("rt87",audit_rt87);NUM("rt3f",audit_rt3f);
+            NUM("tx",audit_tx);NUM("ok",audit_ok);NUM("errors",audit_errors);NUM("writes",audit_writes);NUM("resets",audit_resets);NUM("overflow",audit_overflow);
+            NUM("sent",st.sent_lines);NUM("acked",st.ack_lines);NUM("wire_bytes",st.sent_bytes);NUM("acked_wire",st.ack_bytes);NUM("hash",st.hash);NUM("high_water",st.high_water);
+            NUM("in_flight",stream.in_flight());NUM("pending",stream.outstanding());NUM("done",stream.done());NUM("complete",s.job_complete);NUM("failed",s.job_failed);
+            NUM("wcs",s.wcs);NUM("inches",s.inches);NUM("absolute",s.absolute);NUM("feed_override",s.feed_override);NUM("speed_override",s.spindle_override);
+            NUM("status_ms",s.last_status); NUM("settings",model.settings.entries.size());NUM("heap",heap_caps_get_free_size(MALLOC_CAP_INTERNAL));NUM("largest",heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+            cJSON_AddStringToObject(j,"mode",s.mode);cJSON_AddStringToObject(j,"command",audit_command);cJSON_AddStringToObject(j,"app",esp_app_get_description()->version);
+            NUM("recovering",s.recovering);
+            cJSON_AddStringToObject(j,"accessories",audit_accessories);
+            cJSON_AddItemToObject(j,"machine",cJSON_CreateFloatArray(s.machine,4)); cJSON_AddItemToObject(j,"wco",cJSON_CreateFloatArray(s.wco,4));
+#undef NUM
+        }
+        if(!cJSON_PrintPreallocated(j,buffer,size,false)) snprintf(buffer,size,"{\"error\":\"audit buffer too small\"}");
+        cJSON_Delete(j);
+    } else snprintf(buffer,size,"{\"error\":\"audit allocation failed\"}");
+    xSemaphoreGive(mutex);
+}
 static char *upload_data;
+extern "C" bool panel_debug_remove_test_file(const char *name) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    auto &s=model.state;
+    bool no_work=!s.sd_active && !s.busy && !s.probing && !s.macro_running && !s.uploading && s.cycle_axis<0;
+    bool ok = !upload_data && (storage_source() ? no_work && storage_remove_test_file(name) : model.remove_test_file(name));
+    xSemaphoreGive(mutex);
+    return ok;
+}
 static uint32_t upload_revision;
 static bool relist;
 static bool send_raw(void *, const uint8_t *bytes, size_t size) {
@@ -313,6 +370,7 @@ static void worker(void *) {
                         continue;
                     }
                     if (c == '\r' || c == '\n') {
+                        if (overflow) audit_overflow++;
                         if (overflow && model.state.downloading) {
                             model.disconnect();
                             snprintf(model.state.message, sizeof model.state.message,
@@ -323,6 +381,7 @@ static void worker(void *) {
                                      "Controller metadata exceeded the line limit; reconnect");
                         } else if (used && !overflow) {
                             line[used] = 0;
+                            audit_receive(line);
                             model.receive(line, now());
                         }
                         used = 0;

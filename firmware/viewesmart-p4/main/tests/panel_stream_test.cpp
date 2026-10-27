@@ -53,6 +53,8 @@ bool stream_self_test() {
         CHECK(stream.in_flight() < 128);
     }
     CHECK(stream.done() && sent.size() == 102 && stream.acknowledged() == code.size());
+    CHECK(stream.stats().sent_lines==102 && stream.stats().ack_lines==102);
+    CHECK(stream.stats().sent_bytes==stream.stats().ack_bytes && stream.stats().high_water<128);
     stream.cancel();
     sent.clear();
     CHECK(stream.start(file("G1X1\nM3!\n"), 9, 0));

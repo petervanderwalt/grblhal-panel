@@ -164,12 +164,17 @@ static void command(const char *line)
         else if (!strcmp(line,"UG PREFS")) { bsp_display_lock(0);panel_ui_settings(payload,sizeof payload);bsp_display_unlock(); }
         else panel_debug_last(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strcmp(line,"UG AUDIT") || (sscanf(line,"UG AUDIT %d%n",&x,&consumed)==1 && line[consumed]==0)) {
+        panel_debug_audit(payload,sizeof payload,!strcmp(line,"UG AUDIT")?-1:x);
+        snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strncmp(line,"UG PREVIEW SERVER ",18)) {
         bsp_display_lock(0);bool ok=panel_ui_preview_server_field(line+18);bsp_display_unlock();reply(ok?"@UGOK PREVIEW\n":"@UGERR server_field\n");
     } else if (!strcmp(line,"UG USB STATE")) {
         panel_debug_usb(payload,sizeof payload);snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
     } else if (!strcmp(line,"UG SD STATE")) {
         panel_debug_storage(payload,sizeof payload);snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);
+    } else if (!strncmp(line,"UG SD REMOVE TEST ",18)) {
+        reply(panel_debug_remove_test_file(line+18)?"@UGOK REMOVE\n":"@UGERR test_file\n");
     } else if (!strcmp(line,"UG WIFI STATE")) {
         wifi_bridge_debug(payload,sizeof payload);
         snprintf(out,sizeof out,"@UGDATA %s\n",payload);reply(out);

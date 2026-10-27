@@ -454,7 +454,7 @@ static void enable_choices(lv_obj_t *m, bool on, bool brief_busy = false) {
         lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_DISABLED);
 }
 static bool ready() {
-    return state.online && state.status && state.identified && !state.busy && !state.alarm && !state.error &&
+    return state.online && state.status && state.identified && !state.busy && !state.recovering && !state.alarm && !state.error &&
            !state.sd_active && !strcmp(state.mode, "Idle");
 }
 static void notify(const char *s);
@@ -956,11 +956,13 @@ static void recover(lv_event_t *) {
         return;
     }
     if (state.alarm) {
+        bool critical = critical_alarm(state.alarm);
         if (state.alarm < 0) snprintf(title, sizeof title, "Machine locked / Unlock?");
-        else snprintf(title, sizeof title, "ALARM %d / Unlock?", state.alarm);
+        else snprintf(title, sizeof title, "ALARM %d / %s?", state.alarm, critical ? "Reset & unlock" : "Unlock");
         confirm(title,
+                critical ? "Find and remove the alarm cause first.\nReset, wait for the controller, then unlock. Position may be lost." :
                 "Find and remove the alarm cause first.\n$X unlocks; it does not restore a lost position.",
-                unlock, RED, "Unlock");
+                unlock, RED, critical ? "Reset & unlock" : "Unlock");
     } else if (state.error) {
         snprintf(title, sizeof title, "ERROR %d / Acknowledge?", state.error);
         confirm(title, state.message, acknowledge, RED, "OK");
@@ -1502,7 +1504,7 @@ static void refresh(lv_timer_t *) {
     if (modal) {
         int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
-        if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); return; }
+        if (fault && fault != fault_seen && !state.recovering) { fault_seen = fault; recover(nullptr); return; }
     }
     if (wifi_status) { wifi_refresh_ui(); return; }
     if (wifi_password || number || confirmation || actuator_config_open) return;
@@ -1512,14 +1514,14 @@ static void refresh(lv_timer_t *) {
     if (accessories_open || spindles_open || macro_editor_open) {
         int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
-        if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
+        if (fault && fault != fault_seen && !state.recovering) { fault_seen = fault; recover(nullptr); }
         else tools_refresh();
         return;
     }
     if (machine_browser || machine_editor || machine_search) {
         int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
         if (!fault) fault_seen = 0;
-        if (fault && fault != fault_seen) { fault_seen = fault; recover(nullptr); }
+        if (fault && fault != fault_seen && !state.recovering) { fault_seen = fault; recover(nullptr); }
         else machine_refresh();
         return; // The full-screen settings view does not need hidden Jog/Job redraws.
     }
@@ -1566,7 +1568,7 @@ static void refresh(lv_timer_t *) {
     for (unsigned i = 0; i < 3; ++i)
         if (isfinite(state.axis_max_rate[i]) && state.axis_max_rate[i] > 0) known_rate_axes |= 1u << i;
     bool manual_motion = cnc_jog && state.online && state.identified && state.status &&
-                         !state.alarm && !state.error && !state.sd_active && !state.probing && !state.uploading &&
+                         !state.alarm && !state.error && !state.recovering && !state.sd_active && !state.probing && !state.uploading &&
                          !state.macro_failed && !state.job_failed &&
                          (!strcmp(state.mode, "Idle") || !strncmp(state.mode, "Jog", 3));
     // Keep Jog controls visually steady; model actions still reject busy/non-idle commands.
@@ -1674,7 +1676,7 @@ static void refresh(lv_timer_t *) {
     int fault = state.alarm ? (state.alarm < 0 ? 1000 : state.alarm) : -state.error;
     if (!fault)
         fault_seen = 0;
-    if (fault && fault != fault_seen) {
+    if (fault && fault != fault_seen && !state.recovering) {
         fault_seen = fault;
         recover(nullptr);
     }

@@ -304,3 +304,36 @@ connection checks target Braai-Fi only. No macro or machine setting is saved.
 
 The Wi-Fi worker defers a scan queued during saved-network startup until the
 connection attempt finishes; an early scan must not cancel the startup reconnect.
+
+## Live serial diagnostics
+
+`tools/check-live-serial.py --isolated-controller --stage inspect` records a live
+controller baseline. Use `--output` for a separate run directory. The other
+stages exercise actual controller replies; they are not demo tests. Read the
+[test plan](live-controller-test-plan.md) and [recorded results](live-controller-results-2026-10-27.md)
+before selecting motion, homing or fault stages. Confirm machine isolation first.
+
+The UART session accepts `audit` and `audit INDEX` (`UG AUDIT` on the wire):
+
+- No index: lifetime command/poll/error/reset counters, current stream counts,
+  FNV-1a wire hash, outstanding-byte peak, memory and actual machine state.
+- Nonnegative index: one controller setting ID, group and value; an out-of-range
+  index returns `end: true`. These are read-only.
+- -2 through -15: cached VER, OPT, GC, G54–G59, G28, G30, G92, TLO and PRB reports.
+- -16: latest raw realtime status; -17: latest actual `[MSG:...]` report.
+
+Stream counters reset on a new file and survive cancellation for diagnosis.
+Lifetime counters reset when the pendant reboots; intentionally induced faults
+therefore remain visible through later tests. FNV verifies the transmitted
+normalised ASCII plus LF, not the original file's comments or spacing.
+
+`sd REMOVE TEST NAME` removes only filenames beginning `000-00-serial-` from
+the currently selected SD source with no active work (controller SD also needs
+an idle connection). It rejects paths
+and traversal. This console-only command is for removing test fixtures, not a
+general file manager. On controller SD, wait for acknowledgement and refresh
+the listing to verify deletion. Never run an existing user file as a fixture;
+verify the selected filename in the Start confirmation before approving it.
+
+Reboot the pendant after embedded `test` checks before measuring production
+memory: the embedded test models retain their allocated vectors for reuse.

@@ -38,6 +38,10 @@ For streaming evidence, add bounded debug counters if needed: sent/acknowledged 
 
 ## Current evidence and remaining work
 
+The [27 October live results](live-controller-results-2026-10-27.md) supersede the
+older pending-streaming notes below. They distinguish live passes, embedded-only
+checks and the controller recovery failure awaiting a physical power cycle.
+
 - USB3 identifies RP2350 2E8A:000A and receives real position/status reports.
 - Explicit $X cleared the original startup lock. The generic startup-alarm page now has a readable title and Unlock action.
 - The final live read retrieved 135 settings and 23 groups from the current controller firmware. An earlier build reported 145 settings; counts come from the controller, not a fixed pendant list.
