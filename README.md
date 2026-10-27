@@ -4,7 +4,7 @@
 
 Use desktop Chrome or Edge with the display's **UART** USB socket. The installer
 writes the bootloader, partition table and application while preserving Panel
-settings or SD files. Builds target the VIEWESMART 7-inch 1024×600 P4/C6 hardware;
+settings and SD files. Builds target the VIEWESMART 7-inch 1024×600 P4/C6 hardware;
 the C6 must already have compatible ESP-Hosted firmware. See
 [browser installation and releases](docs/releases.md).
 
