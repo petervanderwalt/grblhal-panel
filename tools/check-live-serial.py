@@ -207,8 +207,9 @@ try:
   close();wait(lambda s:s['mode']=='Idle');page(0);baseline=json.loads((a.output/'controller-before.json').read_text())
   modal=baseline['reports'][2]
   assert modal.startswith('[GC:') and 'M5' in modal and 'M9' in modal
-  lines=[modal[4:-1].replace(' ',''),'M2']
-  path=upload('restore-modal','\n'.join(lines)+'\n');start(path);finish(lines,60)
+  # M2 can restore the controller's startup motion mode; apply the snapshot afterward.
+  lines=['M2',modal[4:-1].replace(' ','')]
+  path=upload('restore-modal-final','\n'.join(lines)+'\n');start(path);finish(lines,60)
   observed=base()
   for k,v in baseline['settings'].items():
    if v['known'] and observed['settings'][k]['value']!='<hidden>':assert observed['settings'][k]['value']==v['value'],(k,v,observed['settings'].get(k))

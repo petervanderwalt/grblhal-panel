@@ -40,7 +40,8 @@ For streaming evidence, add bounded debug counters if needed: sent/acknowledged 
 
 The [27 October live results](live-controller-results-2026-10-27.md) supersede the
 older pending-streaming notes below. They distinguish live passes, embedded-only
-checks and the controller recovery failure awaiting a physical power cycle.
+checks, successful physical power-cycle recovery, and the unresolved loss of
+response after software Stop/reset.
 
 - USB3 identifies RP2350 2E8A:000A and receives real position/status reports.
 - Explicit $X cleared the original startup lock. The generic startup-alarm page now has a readable title and Unlock action.
