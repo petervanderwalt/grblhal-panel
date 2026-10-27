@@ -2,7 +2,7 @@
 
 Open https://petervanderwalt.github.io/grblhal-panel/ in desktop Chrome or Edge.
 Connect the display's **UART** socket to the PC with a data cable. Close any
-serial monitors, disconnect the CNC controller and select the CH340 serial port.
+serial monitors, disconnect the CNC controller and select the UART port.
 
 Choose **First installation** when replacing the original LCD firmware. This
 writes the bootloader at `0x2000`, partition table at `0x8000` and app at

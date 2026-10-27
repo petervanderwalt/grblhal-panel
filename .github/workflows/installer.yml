@@ -5,7 +5,7 @@ on:
     types: [completed]
   push:
     branches: [main]
-    paths: ['web-flasher/**', '.github/workflows/installer.yml', 'tools/fetch-release.py']
+    paths: ['web-flasher/**', 'docs/screenshots/panel-jog.png', '.github/workflows/installer.yml', 'tools/fetch-release.py']
   workflow_dispatch:
     inputs:
       tag:

@@ -18,7 +18,7 @@ Hardware: VIEWESMART 7-inch 1024x600 ESP32-P4/C6, tested early P4 revision.
 Source: https://github.com/petervanderwalt/grblhal-panel/tree/{sha}
 Browser installer: https://petervanderwalt.github.io/grblhal-panel/
 Connect the PC to the LCD UART socket. Disconnect the CNC controller first.
-Use Chrome or Edge on desktop. Select the CH340 serial port.
+Use Chrome or Edge on desktop. Select the UART port.
 
 Manual first install (esptool 4.8.1):
 python -m esptool --chip esp32p4 --port PORT --baud 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x2000 bootloader.bin 0x8000 partition-table.bin 0x10000 grblhal-panel.bin
