@@ -85,6 +85,21 @@ static const char *fault_text(bool alarm, int code) {
     }
 }
 Model::Model(Line l, Realtime r, void *c) : line_(l), realtime_(r), context_(c), stream_(l,c) {}
+bool Model::fault_query() const {
+    return cursor_<queued_ && (queue_[cursor_]=="$EA" || queue_[cursor_]=="$EE");
+}
+void Model::request_fault(bool alarm, int code) {
+    if (code<=0 || (state.fault_description_code==code && state.fault_description_alarm==alarm && *state.fault_description)) return;
+    state.fault_description_code=code; state.fault_description_alarm=alarm;
+    *state.fault_description=0;
+    for (unsigned i=0;i<fault_count_;i++) if (fault_entries_[i].code==code && fault_entries_[i].alarm==alarm) {
+        // Keep the existing early-P4 workaround: no bulk PSRAM-to-PSRAM copies.
+        volatile char *dst=state.fault_description;
+        const volatile char *src=fault_entries_[i].text;
+        for (unsigned n=0;n<sizeof state.fault_description;n++) { dst[n]=src[n]; if (!src[n]) break; }
+        break;
+    }
+}
 void Model::cancel(const char *message) {
     if (state.local_job) { state.job_failed = true; stream_.cancel(); }
     state.local_job = state.job_preparing = false; stream_paused_ = false;
@@ -122,6 +137,7 @@ void Model::cancel(const char *message) {
     copy(state.message, message, sizeof state.message);
 }
 void Model::begin(uint32_t now) {
+    fault_count_=fault_drain_=0;
     bool interrupted = state.local_job;
     stream_.cancel();
     settings.clear();
@@ -142,6 +158,8 @@ void Model::begin(uint32_t now) {
     sent_ = now;
 }
 void Model::disconnect() {
+    fault_count_=fault_drain_=0;
+    state.fault_description_code=0; *state.fault_description=0;
     unlock_pending_ = state.recovering = false;
     state.homed_axes = 0;
     state.machine_known = false;
@@ -469,6 +487,7 @@ bool Model::actuator_cycle_speed(float feed) {
 bool Model::unlock() {
     if (!state.online || !state.identified || state.busy || state.recovering || strncmp(state.mode, "Alarm", 5))
         return false;
+    fault_drain_=0; state.fault_description_code=0; *state.fault_description=0;
     if (critical_alarm(state.alarm)) {
         if (!stop()) return false;
         unlock_pending_ = state.recovering = true;
@@ -494,6 +513,7 @@ bool Model::stop() {
     if (!realtime_(context_, 0x18))
         return false;
     unlock_pending_ = state.recovering = false;
+    fault_drain_=0; state.fault_description_code=0; *state.fault_description=0;
     cancel("Reset sent. Wait for controller identification.");
     state.macro_failed = false;
     state.status = false;
@@ -534,6 +554,7 @@ bool Model::acknowledge_error() {
     if (state.alarm || strncmp(state.mode, "Idle", 4) || state.busy)
         return false;
     state.error = 0;
+    fault_drain_=0; state.fault_description_code=0; *state.fault_description=0;
     copy(state.message, "Error acknowledged. Check setup before continuing.", sizeof state.message);
     return true;
 }
@@ -645,6 +666,7 @@ void Model::status_report(const char *line) {
         state.alarm = atoi(state.mode + 6);
     else if (!strncmp(state.mode, "Alarm", 5) && !state.alarm)
         state.alarm = -1;
+    if (state.alarm>0) request_fault(true,state.alarm);
     state.status = true;
     state.last_status = now_;
     if (actuator_pending_ && !state.busy && !strcmp(state.mode, "Idle"))
@@ -800,7 +822,8 @@ void Model::status_report(const char *line) {
             copy(state.message, "SD job complete", sizeof state.message);
         }
     }
-    if (!strncmp(state.mode, "Alarm", 5) || !strncmp(state.mode, "Door", 4))
+    bool reading=cursor_<queued_ && (fault_query() || queue_[cursor_]=="$G" || queue_[cursor_]=="$#" || queue_[cursor_]=="$$");
+    if ((!strncmp(state.mode, "Alarm", 5) || !strncmp(state.mode, "Door", 4)) && !reading)
         cancel("Machine interlock active. Check controller before recovery.");
     if (state.local_job && stream_.done() && !strcmp(state.mode,"Idle") && !state.job_failed && !state.alarm && !state.error) {
         stream_.cancel(); state.local_job = state.job_preparing = state.sd_active = state.busy = false;
@@ -846,6 +869,36 @@ void Model::receive(const char *line, uint32_t now) {
         return;
     if (!state.online)
         return;
+    if (fault_drain_ && (!strcmp(line,"ok") || !strncmp(line,"error:",6))) { fault_drain_--; return; }
+    bool alarm_record=!strncmp(line,"[ALARMCODE:",11);
+    const char *fault_prefix=alarm_record ? "[ALARMCODE:" : "[ERRORCODE:";
+    size_t prefix_size=strlen(fault_prefix);
+    if (fault_capacity_ && !strncmp(line,fault_prefix,prefix_size)) {
+        char *end;
+        long code=strtol(line+prefix_size,&end,10);
+        if (end==line+prefix_size || *end!='|' || code<=0 || code>65535) return;
+        const char *name=end+1, *description=strchr(name,'|'), *last=strrchr(name,']');
+        if (!description || !last || description>=last || last[1]) return;
+        char text[192];
+        snprintf(text,sizeof text,"%.*s%s%.*s",
+                 (int)(description-name)>48 ? 48 : (int)(description-name),name,
+                 description+1<last ? "\n" : "",(int)(last-description-1),description+1);
+        unsigned i=0;
+        while(i<fault_count_ && (fault_entries_[i].code!=code || fault_entries_[i].alarm!=alarm_record)) i++;
+        if(i==fault_capacity_) return;
+        if(i==fault_count_) fault_count_++;
+        fault_entries_[i].code=(int)code; fault_entries_[i].alarm=alarm_record;
+        volatile char *dst=fault_entries_[i].text;
+        for(unsigned n=0;n<sizeof text;n++) { dst[n]=text[n]; if(!text[n]) break; }
+        if(state.fault_description_code==code && state.fault_description_alarm==alarm_record) {
+            *state.fault_description=0; request_fault(alarm_record,(int)code);
+        }
+        return;
+    }
+    if (fault_query() && awaiting_ && !strncmp(line,"error:",6)) {
+        awaiting_=false; cursor_++;
+        return; // Older firmware may not support enumeration; preserve the original fault.
+    }
     if (!strncmp(line, "[NEWOPT:", 8)) {
         state.ymodem = false;
         const char *p = line + 8;
@@ -1068,6 +1121,7 @@ void Model::receive(const char *line, uint32_t now) {
         state.file_revision++;
     }
     if (!strncmp(line, "ALARM:", 6) || !strncmp(line, "error:", 6)) {
+        unsigned outstanding=state.local_job ? stream_.outstanding() : awaiting_ ? 1 : 0;
         if (state.local_job) rt(state.grblhal ? 0x82 : '!');
         if (state.spindles_loading && awaiting_ && cursor_ < queued_ && queue_[cursor_] == "$SPINDLESH" && line[0] == 'e') {
             cancel("Spindle discovery unavailable");
@@ -1088,6 +1142,8 @@ void Model::receive(const char *line, uint32_t now) {
         snprintf(message, sizeof message, "%s%s%s", fault_text(alarm, code), cursor_ < queued_ ? " / " : "",
                  setting_password_ && state.settings_saving ? "Password setting" : cursor_ < queued_ ? queue_[cursor_].c_str() : "");
         cancel(message);
+        fault_drain_=alarm ? outstanding : outstanding ? outstanding-1 : 0;
+        request_fault(alarm,code);
         return;
     }
     if (!strncmp(line, "[HOME:", 6)) {
@@ -1217,6 +1273,7 @@ void Model::tick(uint32_t now) {
         append("$G");
         append("$#");
         append("$$");
+        if (state.grblhal && fault_capacity_) { append("$EA"); append("$EE"); }
     }
     bool settings_io = state.settings_loading || state.settings_saving;
     if ((!state.downloading && !settings_io && ((state.status && now - state.last_status > 2000) ||
@@ -1276,6 +1333,7 @@ void Model::tick(uint32_t now) {
                 (queue_[cursor_] == "M5" || queue_[cursor_].compare(0, 3, "M3 ") == 0 || queue_[cursor_].compare(0, 3, "M4 ") == 0);
             // Spindle ramp/delay can keep a healthy controller busy beyond ten seconds.
             if (now - sent_ > (homing || state.macro_running ? 300000u : state.probing ? 120000u : spindle ? 60000u : 10000u)) {
+                if (fault_query()) { disconnect(); return; }
                 if (state.macro_running) rt(state.grblhal ? 0x82 : '!');
                 if (state.probing || homing)
                     rt(0x18);

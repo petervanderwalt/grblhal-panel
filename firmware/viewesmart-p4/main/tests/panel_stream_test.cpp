@@ -108,6 +108,11 @@ bool stream_self_test() {
     m.tick(402);
     m.receive("error:20", 403);
     CHECK(m.state.job_failed && !m.state.local_job && !m.state.job_complete);
+    auto before_lookup=sent.size(); m.tick(800); CHECK(sent.size()==before_lookup);
+    m.receive("error:9",801); CHECK(m.state.error==20); // Drain the cancelled block, preserving the first fault.
+    m.tick(1000); CHECK(sent.size()==before_lookup);
+    m.tick(1100); CHECK(sent.size()==before_lookup);
+    CHECK(m.state.error==20 && m.state.job_failed && !m.state.job_complete);
     ready();
     f = file("G1X1\n");
     CHECK(m.run_local(f, "/test.nc", 5, 400));

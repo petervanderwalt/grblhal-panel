@@ -53,7 +53,7 @@ static void ready() {
     model->receive("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F100 S0]", 3);
     model->receive("<Idle|MPos:110,70,0|WCO:100,50,-5|FS:0,0|Pn:i>", 4);
     model->tick(300);
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
         model->receive("ok", 301 + i);
         model->tick(301 + i);
     }
@@ -488,6 +488,39 @@ static bool lost_feedback_and_write_failure() {
     CHECK(!strcmp(capture->lines[0], "$H"));
     return true;
 }
+static bool controller_fault_descriptions() {
+    static FaultDescription entries[3];
+    model->fault_buffer(entries,3); ready();
+    model->receive("[ALARMCODE:11|Controller lock|Home this controller first.]",400);
+    model->receive("[ERRORCODE:20|Custom command error|Controller-specific explanation.]",401);
+    model->receive("[ERRORCODE:no|Bad|Malformed]",402);
+    model->receive("[ERRORCODE:21|Bad]",403);
+    CHECK(model->fault_count(true)==1 && model->fault_count(false)==1);
+    model->receive("<Alarm:11>",500); model->tick(800);
+    CHECK(capture->n==0 && model->state.alarm==11);
+    CHECK(!strcmp(model->state.fault_description,"Controller lock\nHome this controller first."));
+    model->receive("<Alarm:11>",900); model->tick(1200); CHECK(capture->n==0);
+    CHECK(model->unlock()); model->receive("ok",1201); model->tick(1202);
+    CHECK(!*model->state.fault_description);
+    model->receive("<Idle>",1203); model->receive("error:20",1300);
+    CHECK(!strcmp(model->state.fault_description,"Custom command error\nController-specific explanation."));
+    std::string report="[ERRORCODE:253|Custom driver error|"+std::string(500,'x')+"]";
+    model->receive(report.c_str(),1301); model->receive("error:253",1302);
+    CHECK(strlen(model->state.fault_description)==191);
+    model->receive("[ERRORCODE:254|Extra|Beyond capacity]",1303); model->receive("error:254",1304);
+    CHECK(!*model->state.fault_description); // Overflow and unknown codes retain fallback text.
+    ready(); CHECK(model->fault_count(true)==0 && model->fault_count(false)==0);
+    model->state.error=1; model->tick(800); CHECK(capture->n==0 && !*model->state.fault_description);
+    model->begin(0); model->receive("[VER:1.1f.20261020:]",1); model->receive("[FIRMWARE:grblHAL]",2);
+    model->receive("<Idle>",3); model->tick(300);
+    for(int i=0;i<3;i++) { model->receive("ok",301+i); model->tick(301+i); }
+    CHECK(!strcmp(capture->lines[capture->n-1],"$EA"));
+    model->receive("error:3",304); model->tick(305); CHECK(!strcmp(capture->lines[capture->n-1],"$EE"));
+    model->receive("error:3",306); model->tick(307); CHECK(!model->state.error && !model->state.busy);
+    model->disconnect(); CHECK(!*model->state.fault_description);
+    model->fault_buffer(nullptr,0);
+    return true;
+}
 } // namespace
 bool model_self_test() {
     if (!capture) {
@@ -508,7 +541,8 @@ bool model_self_test() {
                           {"corner_sequence", corner_sequence},
                           {"single_surface_sequence_and_quick_contact", surface_sequence},
                           {"units_overrides_and_completion", units_overrides_and_completion},
-                          {"feedback_and_write_failure", lost_feedback_and_write_failure}};
+                          {"feedback_and_write_failure", lost_feedback_and_write_failure},
+                          {"controller_fault_descriptions", controller_fault_descriptions}};
     for (const auto &t : tests) {
         if (!t.fn())
             return false;

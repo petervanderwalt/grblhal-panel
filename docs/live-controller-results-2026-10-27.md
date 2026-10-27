@@ -48,7 +48,34 @@ During the long run, internal free memory held at about 34 KB once streaming set
 - Final restoration passed after reconnect: all 136 controller setting values, work offsets and complete modal report matched `controller-before.json`. The host setting-write counter remained zero. The controller fixture was deleted and a refreshed listing showed only the original `tc.macro`. The two local restoration fixtures were deleted too, leaving 80 onboard files, live Idle on Jog, spindle/coolant off and touch enabled. See `controller-after.json`, `controller-retry-run.log` and `live-final-cleanup.log`.
 - The restoration fixture applies the saved modal report after M2: on this controller M2 selected G1 even when the previous block selected G0. This was a test-order correction, not a controller-settings change.
 
-The current flashed working application SHA-256 is `00bab1bc07a644ab4be6cc3970776dcaf6546562da85ae128e398bbb3904eb2e`. All embedded checks passed in `cleanup-final-selftest.log`. It is a working build based on main `1539d00`, not a new published release.
+The serial-test application SHA-256 was `00bab1bc07a644ab4be6cc3970776dcaf6546562da85ae128e398bbb3904eb2e`. All embedded checks passed in `cleanup-final-selftest.log`. That working build was based on main `1539d00`, not a published release.
+
+## Controller-supplied fault descriptions
+
+The follow-up build reads structured `$EA` and `$EE` reports during connection.
+The real RP2350 supplied **22 alarms and 84 errors**. Descriptions are cached
+before a job starts: the attempted on-demand `$EE` read was deferred while the
+controller was in Hold. The final implementation sends no catalogue request
+after a streamed fault.
+
+- Embedded checks passed for custom codes, malformed records, long descriptions,
+  bounded-cache overflow, reconnect clearing, unsupported enumeration and
+  preservation of the first streamed error while draining later responses.
+- Live G999 produced Error 20 and displayed the controller's description.
+  Homing without switches produced Alarm 9 and displayed its controller-supplied
+  explanation. Stop/Unlock recovery and the final 136-setting, offset and modal
+  comparison passed. See `fault-descriptions-fault.log`,
+  `fault-descriptions-homing.log` and `fault-descriptions-restore.log`.
+- Test fixtures were removed, leaving 80 display-SD files. Manual jogging and
+  zeroing resumed afterward; those user changes were left intact.
+  `fault-descriptions-final.log` records the final catalogue and state.
+
+README alarm/error images were recaptured from these actual LCD fault screens.
+The current flashed application SHA-256 is
+`232aa9b8a49343c6d07b8772b9148e3ba12da559d7bf5dd4500fa00901d270bc`;
+`fault-descriptions-selftest.log` contains the passing embedded suite. This
+follow-up does not resolve the earlier controller-SD software-reset issue or
+the unverified coolant feedback.
 
 ## Repeating a stage
 

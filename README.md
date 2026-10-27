@@ -99,7 +99,9 @@ controllerâ€™s reported values. Setup navigation is hidden until the job en
 After Job Complete is acknowledged, the pendant returns to Jog.
 
 Alarms and command errors appear in red full-screen pages. The header fault indicator
-reopens the current fault. Job Stop asks for confirmation before sending a controller reset; check position
+reopens the current fault. Descriptions come from the connected controller, including
+driver and plugin codes; built-in text remains available when a description is missing.
+Job Stop asks for confirmation before sending a controller reset; check position
 and re-home as needed afterward. Emergency stopping remains a hardware function.
 
 The PC renderer accepts files up to 512 MiB and 15 million segments. It handles
@@ -303,7 +305,7 @@ lines and a `0,0,0` marker locate the file's work origin.
 | Features and use | Preview |
 | --- | --- |
 | **Startup lock**<br><br>A startup alarm opens Unlock automatically. Unlock releases the lock without establishing a homed position. | [<img src="docs/screenshots/panel-startup-alarm.png" alt="Machine locked with Unlock and Cancel" width="640">](docs/screenshots/panel-startup-alarm.png) |
-| **Critical alarm**<br><br>Remove the cause, then confirm Reset & unlock. The pendant resets, waits for the controller and unlocks. This does not restore a homed position. The header fault indicator reopens the alarm. | [<img src="docs/screenshots/panel-alarm.png" alt="Critical alarm with Reset and unlock confirmation" width="640">](docs/screenshots/panel-alarm.png) |
+| **Controller alarm**<br><br>The controller supplies the explanation, including driver and plugin codes. Clear the cause before unlocking. Critical alarms offer Reset & unlock; neither action restores a homed position. | [<img src="docs/screenshots/panel-alarm.png" alt="Controller-supplied homing alarm description" width="640">](docs/screenshots/panel-alarm.png) |
 | **Command error**<br><br>Command errors appear separately with the reported error. Review the cause before acknowledging or recovering. | [<img src="docs/screenshots/panel-error.png" alt="Red unsupported-command error page" width="640">](docs/screenshots/panel-error.png) |
 
 ### Wi-Fi scan, password entry and connection results

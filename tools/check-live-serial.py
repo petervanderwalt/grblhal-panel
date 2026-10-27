@@ -20,6 +20,15 @@ def data(key='STATE'):
    time.sleep(.2)
 def tap(x,y):r.exchange(port,'tap',point=(x,y));record('tap',x=x,y=y);time.sleep(.35)
 def audit():return data('AUDIT')
+
+def fault_detail(code,alarm):
+ end=time.monotonic()+10
+ while time.monotonic()<end:
+  detail=data('AUDIT -18')
+  if detail['code']==code and detail['alarm']==alarm and detail['description']:
+   record('controller-fault-description',detail=detail);return detail
+  time.sleep(.2)
+ raise AssertionError(('Controller fault description missing',detail))
 def wait(predicate,timeout=20,interval=.25):
  end=time.monotonic()+timeout
  while time.monotonic()<end:
@@ -46,6 +55,14 @@ def settings():
  return result
 
 def upload(name,code):
+ end=time.monotonic()+45
+ while time.monotonic()<end:
+  try:
+   with urllib.request.urlopen(f'http://{a.host}:47820/gcam/v1/ping',timeout=3) as res:ready=json.load(res)
+   if ready['accepting']:break
+  except urllib.error.URLError:pass
+  time.sleep(.5)
+ else:raise TimeoutError('Wi-Fi handoff did not become ready')
  path=f'000-00-serial-{name}.nc';request=urllib.request.Request(f'http://{a.host}:47820/gcam/v1/load',data=json.dumps({'name':path,'gcode':code}).encode(),headers={'Content-Type':'application/json'})
  try:
   with urllib.request.urlopen(request,timeout=15) as res:result=json.load(res);assert res.status==202
@@ -139,9 +156,9 @@ try:
   cmd('SWIPE 770 444 748 444');wait(lambda s:s['speed_override']==100)
   tap(140,472);wait(lambda s:s['mode']=='Run');finish(lines,40)
  elif a.stage=='fault':
-  lines=['G21','G90','G4P0.3','G999','G4P1','M2'];path=upload('invalid-command','\n'.join(lines)+'\n');start(path);s=wait(lambda s:s['failed'] or s['errors']>error_baseline,10);assert not s['complete'];record('expected-controller-error',state=data(),audit=s);shot('stream-error')
+  lines=['G21','G90','G4P0.3','G999','G4P1','M2'];path=upload('invalid-command','\n'.join(lines)+'\n');start(path);s=wait(lambda s:s['failed'] or s['errors']>error_baseline,10);assert not s['complete'];record('expected-controller-error',state=data(),audit=s);fault_detail(20,False);shot('stream-error')
  elif a.stage=='homing':
-  page(0);tap(87,410);form('confirmation');tap(760,520);s=wait(lambda s:s['mode']=='Alarm' or s['errors']>error_baseline,120,.5);record('expected-homing-failure',state=data(),audit=s);assert not s['complete'];shot('homing-error')
+  page(0);tap(87,410);form('confirmation');tap(760,520);s=wait(lambda s:s['mode']=='Alarm' or s['errors']>error_baseline,120,.5);record('expected-homing-failure',state=data(),audit=s);assert not s['complete'];fault_detail(data()['alarm'],True);shot('homing-error')
  elif a.stage=='jog':
   page(0);prefs=data('PREFS');record('jog-original',prefs=prefs)
   def step(index):

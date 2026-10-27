@@ -149,6 +149,9 @@ static bool probe_offsets_open = false;
 static lv_obj_t *probe_offset_fields[5] = {}, *probe_offsets_keyboard = nullptr, *probe_offsets_error = nullptr;
 static char probe_offsets_initial[5][24];
 static bool (*confirmation)() = nullptr;
+static lv_obj_t *confirmation_message, *confirmation_action;
+static bool fault_confirmation=false;
+static int fault_confirmation_id=0;
 static void build_page();
 static void release_jog();
 static void refresh(lv_timer_t *);
@@ -477,6 +480,7 @@ static void close_modal() {
     number = nullptr;
     number_error = nullptr;
     confirmation = nullptr;
+    confirmation_message=confirmation_action=nullptr; fault_confirmation=false;
     wifi_password_error = nullptr;
     wifi_status = wifi_list = wifi_spinner = wifi_scan_btn = wifi_disconnect_btn = wifi_password = nullptr;
     probe_start = probe_status = contact_btn = nullptr;
@@ -537,11 +541,12 @@ static void confirm(const char *title, const char *text, bool (*fn)(), uint32_t 
                     const char *action = "Confirm", uint32_t action_color = GREEN, uint32_t cancel_color = RED) {
     auto c = open_modal(title, 1024, 600, accent);
     auto message = label(c, text, 80, 150, 864, 22, MUTED);
+    confirmation_message=message;
     lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
     confirmation = fn;
     auto cancel = button(c, "Cancel", 40, 488, 448, 64, cancelled, 0, cancel_color);
     if (cancel_color != RED) lv_obj_add_state(cancel, LV_STATE_USER_2);
-    button(c, action, 536, 488, 448, 64, confirmed, 0, action_color);
+    confirmation_action=button(c, action, 536, 488, 448, 64, confirmed, 0, action_color);
     finish_modal(c);
 }
 
@@ -948,24 +953,33 @@ static void connect_click(lv_event_t *) {
 static void demo_click(lv_event_t *) { runtime_demo(!runtime_is_demo()); }
 static bool unlock() { return runtime_action(Action::Unlock); }
 static bool acknowledge() { return runtime_action(Action::Acknowledge); }
+static void fault_message(char *text,size_t size) {
+    bool alarm=state.alarm!=0;
+    int code=alarm ? state.alarm : state.error;
+    bool described=state.fault_description_code==code && state.fault_description_alarm==alarm && *state.fault_description;
+    const char *detail=described ? state.fault_description : state.message;
+    const char *instruction=alarm && !state.job_failed && !state.macro_failed ?
+        (critical_alarm(code) ? "\n\nRemove the cause first. Reset, wait, then unlock. Position may be lost." :
+                               "\n\nRemove the cause first. Unlock does not restore a lost position.") : "";
+    snprintf(text,size,"%s%s",detail,instruction);
+}
 static void recover(lv_event_t *) {
     char title[64];
+    char description[512]; fault_message(description,sizeof description);
+    fault_confirmation_id=state.alarm ? (state.alarm<0 ? 1000 : state.alarm) : -state.error;
     if ((state.macro_failed || state.job_failed) && (state.alarm || state.error)) {
         snprintf(title, sizeof title, "%s %d / Stop %s?", state.alarm ? "ALARM" : "ERROR", state.alarm ? state.alarm : state.error, state.macro_failed ? "macro" : "job");
-        confirm(title, state.message, stop, RED, "Stop", RED);
+        confirm(title, description, stop, RED, "Stop", RED); fault_confirmation=true;
         return;
     }
     if (state.alarm) {
         bool critical = critical_alarm(state.alarm);
         if (state.alarm < 0) snprintf(title, sizeof title, "Machine locked / Unlock?");
         else snprintf(title, sizeof title, "ALARM %d / %s?", state.alarm, critical ? "Reset & unlock" : "Unlock");
-        confirm(title,
-                critical ? "Find and remove the alarm cause first.\nReset, wait for the controller, then unlock. Position may be lost." :
-                "Find and remove the alarm cause first.\n$X unlocks; it does not restore a lost position.",
-                unlock, RED, critical ? "Reset & unlock" : "Unlock");
+        confirm(title,description,unlock, RED, critical ? "Reset & unlock" : "Unlock"); fault_confirmation=true;
     } else if (state.error) {
         snprintf(title, sizeof title, "ERROR %d / Acknowledge?", state.error);
-        confirm(title, state.message, acknowledge, RED, "OK");
+        confirm(title, description, acknowledge, RED, "OK"); fault_confirmation=true;
     }
     else
         notify("No active alarm or command error.");
@@ -1491,6 +1505,15 @@ static void refresh_jog_data() {
 static void refresh(lv_timer_t *) {
     runtime_snapshot(state);
     hardware_status(state);
+    if (fault_confirmation && confirmation_message) {
+        int active=state.alarm ? (state.alarm<0 ? 1000 : state.alarm) : -state.error;
+        if (active==fault_confirmation_id) {
+            char description[512]; fault_message(description,sizeof description);
+            if (strcmp(lv_label_get_text(confirmation_message),description)) lv_label_set_text(confirmation_message,description);
+        }
+        if ((state.busy && confirmation!=stop) || state.recovering) lv_obj_add_state(confirmation_action,LV_STATE_DISABLED);
+        else lv_obj_remove_state(confirmation_action,LV_STATE_DISABLED);
+    }
     if (state.sd_active && page != JobPage) {
         close_modal();
         show_page(JobPage);

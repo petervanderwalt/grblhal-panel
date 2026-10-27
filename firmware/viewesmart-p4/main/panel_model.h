@@ -29,6 +29,11 @@ struct Spindle {
     bool active = false, limits_known = false;
     float minimum = 0, maximum = 0;
 };
+struct FaultDescription {
+    int code;
+    bool alarm;
+    char text[192];
+};
 struct State {
     bool local_job = false, job_preparing = false;
     uint32_t job_bytes = 0, job_total = 0;
@@ -66,6 +71,9 @@ struct State {
     uint32_t download_bytes = 0, download_total = 0, download_revision = 0;
     char download_path[160] = "";
     int alarm = 0, error = 0, wcs = 54, line = 0, file_count = 0, probe_stage = 0, probe_axis = -1;
+    int fault_description_code = 0;
+    bool fault_description_alarm = false;
+    char fault_description[192] = "";
     uint32_t build = 0, last_status = 0, job_started = 0, elapsed = 0, file_revision = 0;
     float machine[4] = {}, work[4] = {}, wco[4] = {}, feed = 0, spindle = 0, percent = 0;
     float axis_max_rate[4] = {};
@@ -82,6 +90,8 @@ class Model {
     Model(Line line, Realtime realtime, void *context);
     State state;
     SettingsCatalog settings;
+    void fault_buffer(FaultDescription *entries, unsigned capacity) { fault_entries_=entries; fault_capacity_=entries ? capacity : 0; fault_count_=0; }
+    unsigned fault_count(bool alarm) const { unsigned n=0; for(unsigned i=0;i<fault_count_;i++) if(fault_entries_[i].alarm==alarm) n++; return n; }
     void begin(uint32_t now);
     void disconnect();
     void receive(const char *line, uint32_t now);
@@ -132,6 +142,11 @@ class Model {
     void *context_;
     Stream stream_;
     bool stream_paused_ = false;
+    FaultDescription *fault_entries_ = nullptr;
+    unsigned fault_capacity_ = 0, fault_count_ = 0;
+    unsigned fault_drain_ = 0;
+    void request_fault(bool alarm, int code);
+    bool fault_query() const;
     bool unlock_pending_ = false;
     uint32_t unlock_started_ = 0;
     Download download_sink_ = nullptr;

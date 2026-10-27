@@ -321,6 +321,7 @@ The UART session accepts `audit` and `audit INDEX` (`UG AUDIT` on the wire):
   index returns `end: true`. These are read-only.
 - -2 through -15: cached VER, OPT, GC, G54–G59, G28, G30, G92, TLO and PRB reports.
 - -16: latest raw realtime status; -17: latest actual `[MSG:...]` report.
+- -18: current controller fault description and cached alarm/error counts.
 
 Stream counters reset on a new file and survive cancellation for diagnosis.
 Lifetime counters reset when the pendant reboots; intentionally induced faults
@@ -337,3 +338,17 @@ verify the selected filename in the Start confirmation before approving it.
 
 Reboot the pendant after embedded `test` checks before measuring production
 memory: the embedded test models retain their allocated vectors for reuse.
+
+Fault descriptions are read with the structured `$EA` and `$EE` reports after
+identification, before jobs begin. `$EAG`/`$EEG` are the CSV variants; see
+[grblHAL report extensions](https://github.com/grblHAL/core/wiki/Report-extensions#alarm-codes).
+The controller defers ordinary command processing in Hold, so fetching a catalogue
+only after a streamed error is too late. Keep these reads in the acknowledged
+startup queue. Unsupported enumeration preserves the original fault and fallback.
+
+The runtime supplies an optional 256-entry external-RAM buffer, keeping catalogue
+strings out of the internal UI heap. Retain the explicit byte copies used for
+this P4 revision. Entries reset on reconnect, support driver/plugin code numbers,
+and truncate displayed text to 191 bytes. Overflow, allocation failure and unknown
+codes retain fallback descriptions. Local sender errors never borrow a controller
+description merely because they reuse a numeric code.

@@ -131,6 +131,12 @@ extern "C" void panel_debug_audit(char *buffer,size_t size,int item) {
                 cJSON_AddNumberToObject(j,"id",e.id); cJSON_AddNumberToObject(j,"group",e.group);
                 cJSON_AddBoolToObject(j,"known",e.has_value); cJSON_AddStringToObject(j,"value",e.metadata && e.type==8 ? "<hidden>" : e.value.c_str());
             } else cJSON_AddBoolToObject(j,"end",true);
+        } else if(item==-18) {
+            cJSON_AddNumberToObject(j,"code",model.state.fault_description_code);
+            cJSON_AddBoolToObject(j,"alarm",model.state.fault_description_alarm);
+            cJSON_AddStringToObject(j,"description",model.state.fault_description);
+            cJSON_AddNumberToObject(j,"alarms",model.fault_count(true));
+            cJSON_AddNumberToObject(j,"errors",model.fault_count(false));
         } else if(item<=-2) {
             unsigned i=(unsigned)(-(int64_t)item-2);
             cJSON_AddStringToObject(j,"line",i<16?audit_reports[i]:"");
@@ -430,6 +436,8 @@ void runtime_init() {
     assert(mutex);
     void *memory=heap_caps_malloc(sizeof(Model),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     assert(memory);model_instance=new(memory) Model(send_line,send_rt,nullptr);
+    auto faults=(FaultDescription *)heap_caps_malloc(256*sizeof(FaultDescription),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    model.fault_buffer(faults,256); // Optional: allocation failure leaves the built-in descriptions available.
     // Reserve USB task stacks before the settings/widgets fragment internal RAM.
     usb_prepare();
     storage_init();
