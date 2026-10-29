@@ -11,6 +11,7 @@
 #include "app_lcd.h"
 #include "esp_attr.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "app_lcd";
 // Survives watchdog resets: 1=header, 2=decode, 3=copy start, 4=copy wait, 6=done.
@@ -34,6 +35,20 @@ static const jpeg_decode_cfg_t decode_cfg = {
     .output_format = JPEG_DECODE_OUT_FORMAT_RGB565,
     .rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_BGR,
 };
+
+static void check_jpeg_rejection(void)
+{
+    // Espressif's regression case: table ID 4 used to write outside qt_tbl.
+    const uint8_t bad_table[71] = {0xff, 0xd8, 0xff, 0xdb, 0, 0x43, 4, [7 ... 70] = 1};
+    const uint8_t truncated[] = {0xff, 0xd8, 0xff, 0xe0, 0xff, 0xff};
+    jpeg_decode_picture_info_t info;
+    uint32_t size;
+    assert(jpeg_decoder_get_info(truncated, sizeof(truncated), &info) != ESP_OK);
+    assert(jpeg_decoder_process(decoder, &decode_cfg, bad_table, sizeof(bad_table),
+                                decoded, decoded_size, &size) != ESP_OK);
+    assert(heap_caps_check_integrity_all(true));
+    ESP_LOGI(TAG, "PASS: malformed JPEG rejected; heap intact");
+}
 
 void app_lcd_draw(uint8_t *buf, uint32_t len, uint16_t width, uint16_t height)
 {
@@ -76,6 +91,7 @@ esp_err_t app_lcd_init(void)
                                     ((EXAMPLE_LCD_V_RES + 15U) & ~15U) * 2U,
                                     &memory, &decoded_size);
     ESP_RETURN_ON_FALSE(decoded, ESP_ERR_NO_MEM, TAG, "JPEG buffer");
+    check_jpeg_rejection();
     copy_done = xSemaphoreCreateBinary();
     ESP_RETURN_ON_FALSE(copy_done, ESP_ERR_NO_MEM, TAG, "LCD copy semaphore");
     esp_lcd_panel_io_handle_t io;

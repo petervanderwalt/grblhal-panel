@@ -64,6 +64,7 @@ esp_err_t app_hid_init(void);
 
 #if CFG_TUD_VENDOR
 esp_err_t app_vendor_init(void);
+void app_vendor_reset(void);
 #endif
 
 #if CFG_TUD_AUDIO

@@ -12,6 +12,16 @@
 
 static const char *TAG = "app_vendor";
 static frame_t *current_frame = NULL;
+static bool skip_frame;
+static frame_info_t skip_frame_info;
+
+void app_vendor_reset(void)
+{
+    if (current_frame) frame_return_empty(current_frame);
+    current_frame = NULL;
+    skip_frame = false;
+    memset(&skip_frame_info, 0, sizeof(skip_frame_info));
+}
 
 //--------------------------------------------------------------------+
 // Vendor callbacks
@@ -90,15 +100,18 @@ static bool buffer_fill(frame_t *frame, uint8_t *buf, uint32_t len)
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize)
 {
     static uint8_t rx_buf[CONFIG_USB_VENDOR_RX_BUFSIZE];
-    static bool skip_frame = false;
-    static frame_info_t skip_frame_info = {0};
 
     while (tud_vendor_n_available(itf)) {
         if (!current_frame && !skip_frame && tud_vendor_n_available(itf) < sizeof(udisp_frame_header_t)) {
             break;
         }
 
-        int read_res = tud_vendor_n_read(itf, rx_buf, CONFIG_USB_VENDOR_RX_BUFSIZE);
+        // USB is a byte stream: never consume the next frame's header as payload.
+        uint32_t read_len = sizeof(udisp_frame_header_t);
+        if (current_frame) read_len = current_frame->info.total - current_frame->info.received;
+        else if (skip_frame) read_len = skip_frame_info.total - skip_frame_info.received;
+        if (read_len > sizeof(rx_buf)) read_len = sizeof(rx_buf);
+        int read_res = tud_vendor_n_read(itf, rx_buf, read_len);
         if (read_res > 0) {
             if (!current_frame && !skip_frame) {
                 if (read_res < sizeof(udisp_frame_header_t)) {

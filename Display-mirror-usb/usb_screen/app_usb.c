@@ -94,12 +94,14 @@ esp_err_t app_usb_init(void)
 // Invoked when device is mounted
 void tud_mount_cb(void)
 {
+    app_vendor_reset();
     ESP_LOGI(TAG, "USB Mount");
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
+    app_vendor_reset();
     ESP_LOGI(TAG, "USB Un-Mount");
 }
 
