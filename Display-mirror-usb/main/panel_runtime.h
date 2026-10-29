@@ -1,0 +1,60 @@
+#pragma once
+#include "panel_model.h"
+namespace panel {
+enum class Action {
+    List,
+    Run,
+    Preview,
+    Jog,
+    Spindle,
+    SpindleList,
+    SpindleSelect,
+    Coolant,
+    Macro,
+    ActuatorHome,
+    Zero,
+    GotoZero,
+    Wcs,
+    Home,
+    Unlock,
+    Pause,
+    Resume,
+    Stop,
+    JogCancel,
+    Contact,
+    Acknowledge,
+    FeedOverride,
+    SpindleOverride,
+    JobAcknowledged
+};
+void runtime_init();
+constexpr int ControllerTxPin=37, ControllerRxPin=38;
+bool runtime_connect(int baud = 115200, bool usb = false);
+bool runtime_link_active();
+bool runtime_file_access_begin();
+void runtime_disconnect();
+void runtime_snapshot(State &state);
+bool runtime_action(Action action, const char *text = nullptr, float a = 0, float b = 0);
+bool runtime_probe(const ProbeSettings &settings, int axis = -1, int direction = -1);
+bool runtime_actuator_move(int axis, float target, float feed, float end1, float end2, bool rotary = false);
+bool runtime_actuator_type(bool rotary);
+bool runtime_settings_load();
+bool runtime_setting_write(int id, const char *value);
+void runtime_settings_snapshot(SettingsCatalog &catalog);
+bool runtime_actuator_cycle(int axis, float feed, float end1, float end2, bool rotary = false);
+bool runtime_actuator_cycle_speed(float feed);
+void runtime_demo(bool on);
+bool runtime_is_demo();
+bool runtime_inject(const char *line);
+void runtime_last_tx(char *buffer, size_t size);
+bool model_self_test();
+bool actuator_self_test();
+bool tools_self_test();
+bool runtime_preview_acquire(const char **data, size_t *size);
+void runtime_preview_release();
+bool runtime_can_upload();
+bool runtime_can_upload_local();
+bool runtime_upload_local(const char *path, const char *data, size_t size);
+bool runtime_upload(const char *path, const char *data, size_t size);
+void runtime_cancel_upload();
+} // namespace panel
